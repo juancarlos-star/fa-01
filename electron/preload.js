@@ -23,5 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   addUnitsRange: (productId, codigoInicio, codigoFin) =>
     ipcRenderer.invoke('units:addRange', { product_id: productId, codigoInicio, codigoFin }),
   deleteUnit: (id) => ipcRenderer.invoke('units:delete', { id }),
-  writeOffUnit: (id, motivo, usuario) => ipcRenderer.invoke('units:writeOff', { id, motivo, usuario })
+  writeOffUnit: (id, motivo, usuario) => ipcRenderer.invoke('units:writeOff', { id, motivo, usuario }),
+  // Historial de descargos
+  listDescargos: () => ipcRenderer.invoke('descargos:list')
 });
