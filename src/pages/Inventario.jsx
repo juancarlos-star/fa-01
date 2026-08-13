@@ -160,35 +160,17 @@ export default function Inventario() {
           </datalist>
         </div>
         <div>
+         <div>
           <label>Categoria</label><br />
-          <div style={{ display: 'flex', gap: '0.3rem' }}>
-            <input
-              list="categorias-sugeridas"
-              value={form.categoria}
-              onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-              placeholder="Ej: Telefono"
-            />
-            <button type="button" onClick={() => setMostrarNuevaCategoria(!mostrarNuevaCategoria)}>
-              + Nueva
-            </button>
-          </div>
-          <datalist id="categorias-sugeridas">
+          <select
+            value={form.categoria}
+            onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+          >
+            <option value="">-- Selecciona --</option>
             {categorias.map((c) => (
-              <option key={c.id} value={c.nombre} />
+              <option key={c.id} value={c.nombre}>{c.nombre}</option>
             ))}
-          </datalist>
-          {mostrarNuevaCategoria && (
-            <div style={{ display: 'flex', gap: '0.3rem', marginTop: '0.3rem' }}>
-              <input
-                value={nuevaCategoria}
-                onChange={(e) => setNuevaCategoria(e.target.value)}
-                placeholder="Nombre de la nueva categoria"
-              />
-              <button type="button" onClick={handleCrearCategoria}>
-                Guardar
-              </button>
-            </div>
-          )}
+          </select>
         </div>
         <div>
           <label>Precio (USD)</label><br />
