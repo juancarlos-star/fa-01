@@ -40,13 +40,9 @@ app.on('window-all-closed', () => {
 ipcMain.handle('auth:login', (event, { username, password }) => {
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
-  if (!user) {
-    return { ok: false, message: 'Usuario no encontrado o inactivo' };
-  }
+  if (!user) return { ok: false, message: 'Usuario no encontrado o inactivo' };
   const valid = bcrypt.compareSync(password, user.password_hash);
-  if (!valid) {
-    return { ok: false, message: 'Contrasena incorrecta' };
-  }
+  if (!valid) return { ok: false, message: 'Contrasena incorrecta' };
   return {
     ok: true,
     user: { id: user.id, username: user.username, full_name: user.full_name, role: user.role }
@@ -62,9 +58,7 @@ ipcMain.handle('users:list', () => {
 ipcMain.handle('users:create', (event, { username, password, full_name, role }) => {
   const db = getDb();
   const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
-  if (exists) {
-    return { ok: false, message: 'Ese nombre de usuario ya existe' };
-  }
+  if (exists) return { ok: false, message: 'Ese nombre de usuario ya existe' };
   const hash = bcrypt.hashSync(password, 10);
   db.prepare(
     'INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime("now"))'
@@ -97,15 +91,9 @@ ipcMain.handle('categories:list', () => {
 ipcMain.handle('categories:create', (event, { nombre }) => {
   const db = getDb();
   const limpio = (nombre || '').trim();
-  if (!limpio) {
-    return { ok: false, message: 'El nombre de la categoria no puede estar vacio' };
-  }
-  const exists = db
-    .prepare('SELECT id FROM categorias WHERE LOWER(nombre) = LOWER(?)')
-    .get(limpio);
-  if (exists) {
-    return { ok: false, message: 'Esa categoria ya existe' };
-  }
+  if (!limpio) return { ok: false, message: 'El nombre de la categoria no puede estar vacio' };
+  const exists = db.prepare('SELECT id FROM categorias WHERE LOWER(nombre) = LOWER(?)').get(limpio);
+  if (exists) return { ok: false, message: 'Esa categoria ya existe' };
   db.prepare('INSERT INTO categorias (nombre, created_at) VALUES (?, datetime(\'now\'))').run(limpio);
   return { ok: true };
 });
@@ -116,15 +104,11 @@ ipcMain.handle('products:list', (event, { tipo } = {}) => {
   const rows = tipo
     ? db.prepare('SELECT * FROM products WHERE tipo = ? ORDER BY nombre').all(tipo)
     : db.prepare('SELECT * FROM products ORDER BY tipo, nombre').all();
-
   const countStmt = db.prepare(
     "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'"
   );
-
   return rows.map((p) => {
-    if (p.tipo === 'accesorio') {
-      return { ...p, stock_disponible: p.stock_cantidad };
-    }
+    if (p.tipo === 'accesorio') return { ...p, stock_disponible: p.stock_cantidad };
     const c = countStmt.get(p.id).c;
     return { ...p, stock_disponible: c };
   });
@@ -141,35 +125,24 @@ ipcMain.handle('products:names', (event, { tipo } = {}) => {
 ipcMain.handle('products:create', (event, data) => {
   const db = getDb();
   const { tipo, nombre, categoria, precio, stock_minimo, codigo_barras, stock_cantidad } = data;
-
-  if (!tipo || !nombre) {
-    return { ok: false, message: 'Tipo y nombre son obligatorios' };
-  }
-
+  if (!tipo || !nombre) return { ok: false, message: 'Tipo y nombre son obligatorios' };
   const info = db
     .prepare(
       `INSERT INTO products (tipo, nombre, categoria, precio, stock_minimo, stock_cantidad, codigo_barras, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
     )
     .run(
-      tipo,
-      nombre,
-      categoria || '',
-      precio || 0,
-      stock_minimo || 0,
+      tipo, nombre, categoria || '', precio || 0, stock_minimo || 0,
       tipo === 'accesorio' ? (stock_cantidad || 0) : 0,
       tipo === 'accesorio' ? (codigo_barras || '') : null
     );
-
   return { ok: true, id: info.lastInsertRowid };
 });
 
 ipcMain.handle('products:delete', (event, { id }) => {
   const db = getDb();
   const unitsCount = db.prepare('SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ?').get(id).c;
-  if (unitsCount > 0) {
-    return { ok: false, message: 'No se puede eliminar: tiene unidades (IMEI/SIM) registradas' };
-  }
+  if (unitsCount > 0) return { ok: false, message: 'No se puede eliminar: tiene unidades (IMEI/SIM) registradas' };
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
   return { ok: true };
 });
@@ -215,13 +188,9 @@ ipcMain.handle('units:list', (event, { product_id }) => {
 
 ipcMain.handle('units:add', (event, { product_id, codigo }) => {
   const db = getDb();
-  if (!codigo || !codigo.trim()) {
-    return { ok: false, message: 'El codigo no puede estar vacio' };
-  }
+  if (!codigo || !codigo.trim()) return { ok: false, message: 'El codigo no puede estar vacio' };
   const exists = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get(codigo.trim());
-  if (exists) {
-    return { ok: false, message: 'Ese codigo ya esta registrado' };
-  }
+  if (exists) return { ok: false, message: 'Ese codigo ya esta registrado' };
   db.prepare(
     `INSERT INTO inventory_units (product_id, codigo, estado, created_at) VALUES (?, ?, 'disponible', datetime('now'))`
   ).run(product_id, codigo.trim());
@@ -231,72 +200,44 @@ ipcMain.handle('units:add', (event, { product_id, codigo }) => {
 function calcularRango(codigoInicio, codigoFin) {
   const a = codigoInicio.trim();
   const b = codigoFin.trim();
-
-  if (a.length !== b.length) {
-    return { ok: false, message: 'El primer y el ultimo codigo deben tener la misma longitud' };
-  }
-
+  if (a.length !== b.length) return { ok: false, message: 'El primer y el ultimo codigo deben tener la misma longitud' };
   let i = 0;
   while (i < a.length && a[i] === b[i]) i++;
-
   const prefijo = a.slice(0, i);
   const restoA = a.slice(i);
   const restoB = b.slice(i);
-
   if (!/^\d+$/.test(restoA) || !/^\d+$/.test(restoB)) {
     return { ok: false, message: 'La parte que cambia entre los dos codigos debe ser numerica' };
   }
-
   const ancho = restoA.length;
   const numA = parseInt(restoA, 10);
   const numB = parseInt(restoB, 10);
-
-  if (numA > numB) {
-    return { ok: false, message: 'El primer codigo debe ser menor o igual al ultimo' };
-  }
-
-  if (numB - numA + 1 > 5000) {
-    return { ok: false, message: 'El rango es demasiado grande (mas de 5000 codigos). Verifica los codigos escaneados' };
-  }
-
+  if (numA > numB) return { ok: false, message: 'El primer codigo debe ser menor o igual al ultimo' };
+  if (numB - numA + 1 > 5000) return { ok: false, message: 'El rango es demasiado grande (mas de 5000 codigos). Verifica los codigos escaneados' };
   const codigos = [];
-  for (let n = numA; n <= numB; n++) {
-    codigos.push(prefijo + String(n).padStart(ancho, '0'));
-  }
+  for (let n = numA; n <= numB; n++) codigos.push(prefijo + String(n).padStart(ancho, '0'));
   return { ok: true, codigos };
 }
 
 ipcMain.handle('units:addRange', (event, { product_id, codigoInicio, codigoFin }) => {
   const db = getDb();
-  if (!codigoInicio || !codigoFin) {
-    return { ok: false, message: 'Debes escanear o escribir el primer y el ultimo codigo' };
-  }
-
+  if (!codigoInicio || !codigoFin) return { ok: false, message: 'Debes escanear o escribir el primer y el ultimo codigo' };
   const rango = calcularRango(codigoInicio, codigoFin);
-  if (!rango.ok) {
-    return rango;
-  }
-
+  if (!rango.ok) return rango;
   const insertStmt = db.prepare(
     `INSERT INTO inventory_units (product_id, codigo, estado, created_at) VALUES (?, ?, 'disponible', datetime('now'))`
   );
   const existsStmt = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?');
-
   let agregados = 0;
   let saltados = 0;
-
   const transaccion = db.transaction((codigos) => {
     for (const codigo of codigos) {
-      if (existsStmt.get(codigo)) {
-        saltados++;
-        continue;
-      }
+      if (existsStmt.get(codigo)) { saltados++; continue; }
       insertStmt.run(product_id, codigo);
       agregados++;
     }
   });
   transaccion(rango.codigos);
-
   return { ok: true, total: rango.codigos.length, agregados, saltados };
 });
 
@@ -304,9 +245,7 @@ ipcMain.handle('units:delete', (event, { id }) => {
   const db = getDb();
   const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(id);
   if (!unit) return { ok: false, message: 'No encontrado' };
-  if (unit.estado === 'vendido') {
-    return { ok: false, message: 'No se puede eliminar una unidad ya vendida' };
-  }
+  if (unit.estado === 'vendido') return { ok: false, message: 'No se puede eliminar una unidad ya vendida' };
   db.prepare('DELETE FROM inventory_units WHERE id = ?').run(id);
   return { ok: true };
 });
@@ -315,12 +254,8 @@ ipcMain.handle('units:writeOff', (event, { id, motivo, usuario }) => {
   const db = getDb();
   const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(id);
   if (!unit) return { ok: false, message: 'No encontrado' };
-  if (unit.estado !== 'disponible') {
-    return { ok: false, message: 'Solo se pueden dar de baja unidades disponibles' };
-  }
-  if (!motivo || !motivo.trim()) {
-    return { ok: false, message: 'Debes indicar un motivo para el descargo' };
-  }
+  if (unit.estado !== 'disponible') return { ok: false, message: 'Solo se pueden dar de baja unidades disponibles' };
+  if (!motivo || !motivo.trim()) return { ok: false, message: 'Debes indicar un motivo para el descargo' };
   const transaccion = db.transaction(() => {
     db.prepare("UPDATE inventory_units SET estado = 'de_baja' WHERE id = ?").run(id);
     db.prepare(
@@ -335,15 +270,186 @@ ipcMain.handle('units:writeOff', (event, { id, motivo, usuario }) => {
 // ---------- IPC: Historial de descargos ----------
 ipcMain.handle('descargos:list', () => {
   const db = getDb();
+  return db.prepare(
+    `SELECT d.id, d.cantidad, d.motivo, d.usuario, d.created_at,
+            p.nombre AS producto_nombre, p.tipo AS producto_tipo,
+            u.codigo AS unidad_codigo
+     FROM descargos d
+     JOIN products p ON p.id = d.product_id
+     LEFT JOIN inventory_units u ON u.id = d.unit_id
+     ORDER BY d.id DESC`
+  ).all();
+});
+
+// ---------- IPC: Configuracion (settings) ----------
+ipcMain.handle('settings:get', () => {
+  const db = getDb();
+  const rows = db.prepare('SELECT key, value FROM settings').all();
+  const obj = {};
+  rows.forEach((r) => { obj[r.key] = r.value; });
+  return obj;
+});
+
+ipcMain.handle('settings:update', (event, values) => {
+  const db = getDb();
+  const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+  const transaccion = db.transaction((vals) => {
+    Object.keys(vals).forEach((k) => stmt.run(k, String(vals[k])));
+  });
+  transaccion(values);
+  return { ok: true };
+});
+
+// ---------- IPC: Clientes ----------
+ipcMain.handle('clientes:list', () => {
+  const db = getDb();
+  return db.prepare('SELECT * FROM clientes ORDER BY nombre').all();
+});
+
+ipcMain.handle('clientes:search', (event, { query }) => {
+  const db = getDb();
+  const q = `%${(query || '').trim()}%`;
   return db
+    .prepare('SELECT * FROM clientes WHERE nombre LIKE ? OR rif_cedula LIKE ? ORDER BY nombre LIMIT 20')
+    .all(q, q);
+});
+
+ipcMain.handle('clientes:create', (event, data) => {
+  const db = getDb();
+  const { nombre, rif_cedula, telefono, direccion, email } = data;
+  if (!nombre || !nombre.trim()) return { ok: false, message: 'El nombre del cliente es obligatorio' };
+  const info = db
     .prepare(
-      `SELECT d.id, d.cantidad, d.motivo, d.usuario, d.created_at,
-              p.nombre AS producto_nombre, p.tipo AS producto_tipo,
-              u.codigo AS unidad_codigo
-       FROM descargos d
-       JOIN products p ON p.id = d.product_id
-       LEFT JOIN inventory_units u ON u.id = d.unit_id
-       ORDER BY d.id DESC`
+      `INSERT INTO clientes (nombre, rif_cedula, telefono, direccion, email, created_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))`
     )
-    .all();
+    .run(nombre.trim(), rif_cedula || '', telefono || '', direccion || '', email || '');
+  return { ok: true, id: info.lastInsertRowid };
+});
+
+// ---------- IPC: Facturacion ----------
+ipcMain.handle('facturas:crear', (event, payload) => {
+  const db = getDb();
+  const { cliente, items, usuario } = payload;
+
+  if (!items || items.length === 0) {
+    return { ok: false, message: 'La factura debe tener al menos un producto' };
+  }
+
+  const settingsRows = db.prepare('SELECT key, value FROM settings').all();
+  const settings = {};
+  settingsRows.forEach((r) => { settings[r.key] = r.value; });
+  const tasaCambio = parseFloat(settings.tasa_cambio) || 1;
+  const ivaPorcentaje = parseFloat(settings.iva_porcentaje) || 0;
+
+  // Validar disponibilidad antes de tocar nada
+  for (const item of items) {
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
+    if (!product) return { ok: false, message: `Producto no encontrado (id ${item.product_id})` };
+
+    if (product.tipo === 'accesorio') {
+      if (item.cantidad > product.stock_cantidad) {
+        return { ok: false, message: `Stock insuficiente de "${product.nombre}"` };
+      }
+    } else {
+      if (!item.unit_id) return { ok: false, message: `Falta seleccionar el codigo (IMEI/SIM/USIM) de "${product.nombre}"` };
+      const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(item.unit_id);
+      if (!unit || unit.estado !== 'disponible') {
+        return { ok: false, message: `El codigo seleccionado de "${product.nombre}" ya no esta disponible` };
+      }
+    }
+  }
+
+  let subtotalUsd = 0;
+  items.forEach((item) => {
+    subtotalUsd += (parseFloat(item.precio_unitario) || 0) * (parseInt(item.cantidad, 10) || 1);
+  });
+  const ivaUsd = subtotalUsd * (ivaPorcentaje / 100);
+  const totalUsd = subtotalUsd + ivaUsd;
+  const subtotalBs = subtotalUsd * tasaCambio;
+  const ivaBs = ivaUsd * tasaCambio;
+  const totalBs = totalUsd * tasaCambio;
+
+  let clienteId = null;
+  let clienteNombre = 'Consumidor final';
+  let clienteRif = '';
+
+  const transaccion = db.transaction(() => {
+    if (cliente && cliente.id) {
+      const c = db.prepare('SELECT * FROM clientes WHERE id = ?').get(cliente.id);
+      if (c) {
+        clienteId = c.id;
+        clienteNombre = c.nombre;
+        clienteRif = c.rif_cedula || '';
+      }
+    } else if (cliente && cliente.nombre && cliente.nombre.trim()) {
+      const info = db
+        .prepare(
+          `INSERT INTO clientes (nombre, rif_cedula, telefono, direccion, email, created_at)
+           VALUES (?, ?, ?, ?, ?, datetime('now'))`
+        )
+        .run(cliente.nombre.trim(), cliente.rif_cedula || '', cliente.telefono || '', cliente.direccion || '', cliente.email || '');
+      clienteId = info.lastInsertRowid;
+      clienteNombre = cliente.nombre.trim();
+      clienteRif = cliente.rif_cedula || '';
+    }
+
+    const facturaInfo = db
+      .prepare(
+        `INSERT INTO facturas
+         (cliente_id, cliente_nombre, cliente_rif, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+      )
+      .run(clienteId, clienteNombre, clienteRif, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '');
+
+    const facturaId = facturaInfo.lastInsertRowid;
+
+    const insertItem = db.prepare(
+      `INSERT INTO factura_items (factura_id, product_id, unit_id, tipo, descripcion, codigo, cantidad, precio_unitario_usd, subtotal_usd)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    for (const item of items) {
+      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
+      const cantidad = parseInt(item.cantidad, 10) || 1;
+      const precioUnit = parseFloat(item.precio_unitario) || 0;
+      const subtotalItem = precioUnit * cantidad;
+      let codigo = null;
+
+      if (product.tipo === 'accesorio') {
+        db.prepare('UPDATE products SET stock_cantidad = stock_cantidad - ? WHERE id = ?').run(cantidad, product.id);
+      } else {
+        db.prepare("UPDATE inventory_units SET estado = 'vendido' WHERE id = ?").run(item.unit_id);
+        const unit = db.prepare('SELECT codigo FROM inventory_units WHERE id = ?').get(item.unit_id);
+        codigo = unit ? unit.codigo : null;
+      }
+
+      insertItem.run(facturaId, product.id, item.unit_id || null, product.tipo, product.nombre, codigo, cantidad, precioUnit, subtotalItem);
+    }
+
+    return facturaId;
+  });
+
+  const facturaId = transaccion();
+
+  return {
+    ok: true,
+    facturaId,
+    numero: String(facturaId).padStart(6, '0'),
+    totalUsd,
+    totalBs
+  };
+});
+
+ipcMain.handle('facturas:list', () => {
+  const db = getDb();
+  return db.prepare('SELECT * FROM facturas ORDER BY id DESC').all();
+});
+
+ipcMain.handle('facturas:detalle', (event, { id }) => {
+  const db = getDb();
+  const factura = db.prepare('SELECT * FROM facturas WHERE id = ?').get(id);
+  if (!factura) return { ok: false, message: 'Factura no encontrada' };
+  const items = db.prepare('SELECT * FROM factura_items WHERE factura_id = ?').all(id);
+  return { ok: true, factura, items };
 });
