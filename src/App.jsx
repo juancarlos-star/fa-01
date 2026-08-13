@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Login from './pages/Login.jsx';
 import UsersAdmin from './pages/UsersAdmin.jsx';
+import Inventario from './pages/Inventario.jsx';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -24,7 +25,7 @@ export default function App() {
         </p>
         <nav>
           <button onClick={() => setView('inicio')}>Inicio</button>
-          <button onClick={() => setView('inventario')}>Inventario (proximamente)</button>
+          <button onClick={() => setView('inventario')}>Inventario</button>
           <button onClick={() => setView('facturacion')}>Facturacion (proximamente)</button>
           {user.role === 'administrador' && (
             <button onClick={() => setView('usuarios')}>Usuarios</button>
@@ -36,9 +37,10 @@ export default function App() {
         {view === 'inicio' && (
           <div>
             <h1>Bienvenido, {user.full_name}</h1>
-            <p>Los modulos de inventario y facturacion se agregaran en las proximas fases.</p>
+            <p>Los modulos de facturacion se agregaran en las proximas fases.</p>
           </div>
         )}
+        {view === 'inventario' && <Inventario />}
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
     </div>
