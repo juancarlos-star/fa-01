@@ -23,6 +23,7 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
 }
+mainWindow.webContents.openDevTools({ mode: 'detach' });
 
 app.whenReady().then(() => {
   initDb();
