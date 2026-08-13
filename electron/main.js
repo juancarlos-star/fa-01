@@ -22,8 +22,9 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+
+  mainWindow.webContents.openDevTools({ mode: 'detach' });
 }
-mainWindow.webContents.openDevTools({ mode: 'detach' });
 
 app.whenReady().then(() => {
   initDb();
@@ -89,6 +90,28 @@ ipcMain.handle('users:changePassword', (event, { id, newPassword }) => {
   return { ok: true };
 });
 
+// ---------- IPC: Categorias ----------
+ipcMain.handle('categories:list', () => {
+  const db = getDb();
+  return db.prepare('SELECT * FROM categorias ORDER BY nombre').all();
+});
+
+ipcMain.handle('categories:create', (event, { nombre }) => {
+  const db = getDb();
+  const limpio = (nombre || '').trim();
+  if (!limpio) {
+    return { ok: false, message: 'El nombre de la categoria no puede estar vacio' };
+  }
+  const exists = db
+    .prepare('SELECT id FROM categorias WHERE LOWER(nombre) = LOWER(?)')
+    .get(limpio);
+  if (exists) {
+    return { ok: false, message: 'Esa categoria ya existe' };
+  }
+  db.prepare('INSERT INTO categorias (nombre, created_at) VALUES (?, datetime(\'now\'))').run(limpio);
+  return { ok: true };
+});
+
 // ---------- IPC: Inventario - productos ----------
 ipcMain.handle('products:list', (event, { tipo } = {}) => {
   const db = getDb();
@@ -107,6 +130,14 @@ ipcMain.handle('products:list', (event, { tipo } = {}) => {
     const c = countStmt.get(p.id).c;
     return { ...p, stock_disponible: c };
   });
+});
+
+ipcMain.handle('products:names', (event, { tipo } = {}) => {
+  const db = getDb();
+  const rows = tipo
+    ? db.prepare('SELECT DISTINCT nombre FROM products WHERE tipo = ? ORDER BY nombre').all(tipo)
+    : db.prepare('SELECT DISTINCT nombre FROM products ORDER BY nombre').all();
+  return rows.map((r) => r.nombre);
 });
 
 ipcMain.handle('products:create', (event, data) => {
@@ -174,6 +205,79 @@ ipcMain.handle('units:add', (event, { product_id, codigo }) => {
     `INSERT INTO inventory_units (product_id, codigo, estado, created_at) VALUES (?, ?, 'disponible', datetime('now'))`
   ).run(product_id, codigo.trim());
   return { ok: true };
+});
+
+// Detecta el prefijo fijo y la parte numerica entre dos codigos para generar el rango
+function calcularRango(codigoInicio, codigoFin) {
+  const a = codigoInicio.trim();
+  const b = codigoFin.trim();
+
+  if (a.length !== b.length) {
+    return { ok: false, message: 'El primer y el ultimo codigo deben tener la misma longitud' };
+  }
+
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+
+  const prefijo = a.slice(0, i);
+  const restoA = a.slice(i);
+  const restoB = b.slice(i);
+
+  if (!/^\d+$/.test(restoA) || !/^\d+$/.test(restoB)) {
+    return { ok: false, message: 'La parte que cambia entre los dos codigos debe ser numerica' };
+  }
+
+  const ancho = restoA.length;
+  const numA = parseInt(restoA, 10);
+  const numB = parseInt(restoB, 10);
+
+  if (numA > numB) {
+    return { ok: false, message: 'El primer codigo debe ser menor o igual al ultimo' };
+  }
+
+  if (numB - numA + 1 > 5000) {
+    return { ok: false, message: 'El rango es demasiado grande (mas de 5000 codigos). Verifica los codigos escaneados' };
+  }
+
+  const codigos = [];
+  for (let n = numA; n <= numB; n++) {
+    codigos.push(prefijo + String(n).padStart(ancho, '0'));
+  }
+  return { ok: true, codigos };
+}
+
+ipcMain.handle('units:addRange', (event, { product_id, codigoInicio, codigoFin }) => {
+  const db = getDb();
+  if (!codigoInicio || !codigoFin) {
+    return { ok: false, message: 'Debes escanear o escribir el primer y el ultimo codigo' };
+  }
+
+  const rango = calcularRango(codigoInicio, codigoFin);
+  if (!rango.ok) {
+    return rango;
+  }
+
+  const insertStmt = db.prepare(
+    `INSERT INTO inventory_units (product_id, codigo, estado, created_at) VALUES (?, ?, 'disponible', datetime('now'))`
+  );
+  const existsStmt = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?');
+
+  let agregados = 0;
+  let saltados = 0;
+
+  const transaccion = db.transaction((codigos) => {
+    for (const codigo of codigos) {
+      if (existsStmt.get(codigo)) {
+        saltados++;
+        continue;
+      }
+      insertStmt.run(product_id, codigo);
+      agregados++;
+    }
+  });
+  transaccion(rango.codigos);
+
+  return { ok: true, total: rango.codigos.length, agregados, saltados };
 });
 
 ipcMain.handle('units:delete', (event, { id }) => {
