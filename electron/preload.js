@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   addProductStock: (id, cantidad, usuario) => ipcRenderer.invoke('products:addStock', { id, cantidad, usuario }),
   writeOffProductStock: (id, cantidad, motivo, usuario) =>
     ipcRenderer.invoke('products:writeOffStock', { id, cantidad, motivo, usuario }),
-  // Inventario - unidades (IMEI / SIM / USIM)
+  // Inventario - unidades
   listUnits: (productId) => ipcRenderer.invoke('units:list', { product_id: productId }),
   addUnit: (productId, codigo) => ipcRenderer.invoke('units:add', { product_id: productId, codigo }),
   addUnitsRange: (productId, codigoInicio, codigoFin) =>
@@ -25,5 +25,16 @@ contextBridge.exposeInMainWorld('api', {
   deleteUnit: (id) => ipcRenderer.invoke('units:delete', { id }),
   writeOffUnit: (id, motivo, usuario) => ipcRenderer.invoke('units:writeOff', { id, motivo, usuario }),
   // Historial de descargos
-  listDescargos: () => ipcRenderer.invoke('descargos:list')
+  listDescargos: () => ipcRenderer.invoke('descargos:list'),
+  // Configuracion
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  updateSettings: (values) => ipcRenderer.invoke('settings:update', values),
+  // Clientes
+  listClientes: () => ipcRenderer.invoke('clientes:list'),
+  searchClientes: (query) => ipcRenderer.invoke('clientes:search', { query }),
+  createCliente: (data) => ipcRenderer.invoke('clientes:create', data),
+  // Facturacion
+  crearFactura: (payload) => ipcRenderer.invoke('facturas:crear', payload),
+  listFacturas: () => ipcRenderer.invoke('facturas:list'),
+  detalleFactura: (id) => ipcRenderer.invoke('facturas:detalle', { id })
 });
