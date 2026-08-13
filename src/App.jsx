@@ -2,20 +2,17 @@ import React, { useState } from 'react';
 import Login from './pages/Login.jsx';
 import UsersAdmin from './pages/UsersAdmin.jsx';
 import Inventario from './pages/Inventario.jsx';
-
+import CategoriasAdmin from './pages/CategoriasAdmin.jsx';
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('inicio');
-
   if (!user) {
     return <Login onLogin={setUser} />;
   }
-
   const handleLogout = () => {
     setUser(null);
     setView('inicio');
   };
-
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -27,6 +24,9 @@ export default function App() {
           <button onClick={() => setView('inicio')}>Inicio</button>
           <button onClick={() => setView('inventario')}>Inventario</button>
           <button onClick={() => setView('facturacion')}>Facturacion (proximamente)</button>
+          {user.role === 'administrador' && (
+            <button onClick={() => setView('categorias')}>Categorias</button>
+          )}
           {user.role === 'administrador' && (
             <button onClick={() => setView('usuarios')}>Usuarios</button>
           )}
@@ -40,8 +40,8 @@ export default function App() {
             <p>Los modulos de facturacion se agregaran en las proximas fases.</p>
           </div>
         )}
-        {view === 'inventario' && <Inventario />}
-        
+        {view === 'inventario' && <Inventario currentUser={user} />}
+        {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
     </div>
