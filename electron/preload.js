@@ -14,11 +14,14 @@ contextBridge.exposeInMainWorld('api', {
   listProductNames: (tipo) => ipcRenderer.invoke('products:names', { tipo }),
   createProduct: (data) => ipcRenderer.invoke('products:create', data),
   deleteProduct: (id) => ipcRenderer.invoke('products:delete', { id }),
-  adjustStock: (id, delta) => ipcRenderer.invoke('products:adjustStock', { id, delta }),
-  // Inventario - unidades (IMEI / SIM)
+  addProductStock: (id, cantidad, usuario) => ipcRenderer.invoke('products:addStock', { id, cantidad, usuario }),
+  writeOffProductStock: (id, cantidad, motivo, usuario) =>
+    ipcRenderer.invoke('products:writeOffStock', { id, cantidad, motivo, usuario }),
+  // Inventario - unidades (IMEI / SIM / USIM)
   listUnits: (productId) => ipcRenderer.invoke('units:list', { product_id: productId }),
   addUnit: (productId, codigo) => ipcRenderer.invoke('units:add', { product_id: productId, codigo }),
   addUnitsRange: (productId, codigoInicio, codigoFin) =>
     ipcRenderer.invoke('units:addRange', { product_id: productId, codigoInicio, codigoFin }),
-  deleteUnit: (id) => ipcRenderer.invoke('units:delete', { id })
+  deleteUnit: (id) => ipcRenderer.invoke('units:delete', { id }),
+  writeOffUnit: (id, motivo, usuario) => ipcRenderer.invoke('units:writeOff', { id, motivo, usuario })
 });
