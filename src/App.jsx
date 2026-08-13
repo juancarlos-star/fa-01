@@ -4,6 +4,9 @@ import UsersAdmin from './pages/UsersAdmin.jsx';
 import Inventario from './pages/Inventario.jsx';
 import CategoriasAdmin from './pages/CategoriasAdmin.jsx';
 import HistorialDescargos from './pages/HistorialDescargos.jsx';
+import Configuracion from './pages/Configuracion.jsx';
+import Facturacion from './pages/Facturacion.jsx';
+import Facturas from './pages/Facturas.jsx';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -24,13 +27,17 @@ export default function App() {
         </p>
         <nav>
           <button onClick={() => setView('inicio')}>Inicio</button>
+          <button onClick={() => setView('facturacion')}>Facturar</button>
+          <button onClick={() => setView('facturas')}>Historial de facturas</button>
           <button onClick={() => setView('inventario')}>Inventario</button>
-          <button onClick={() => setView('facturacion')}>Facturacion (proximamente)</button>
           {user.role === 'administrador' && (
             <button onClick={() => setView('categorias')}>Categorias</button>
           )}
           {user.role === 'administrador' && (
-            <button onClick={() => setView('descargos')}>Historial de descargos</button>
+            <button onClick={() => setView('descargos')}>Descargos</button>
+          )}
+          {user.role === 'administrador' && (
+            <button onClick={() => setView('configuracion')}>Configuracion</button>
           )}
           {user.role === 'administrador' && (
             <button onClick={() => setView('usuarios')}>Usuarios</button>
@@ -42,12 +49,15 @@ export default function App() {
         {view === 'inicio' && (
           <div>
             <h1>Bienvenido, {user.full_name}</h1>
-            <p>Los modulos de facturacion se agregaran en las proximas fases.</p>
+            <p>Usa el menu para facturar, ver el historial o gestionar el inventario.</p>
           </div>
         )}
+        {view === 'facturacion' && <Facturacion currentUser={user} />}
+        {view === 'facturas' && <Facturas />}
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'descargos' && user.role === 'administrador' && <HistorialDescargos />}
+        {view === 'configuracion' && user.role === 'administrador' && <Configuracion />}
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
     </div>
