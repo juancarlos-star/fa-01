@@ -4,6 +4,7 @@ const { app } = require('electron');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 let db;
+
 function getDbPath() {
   const userDataPath = app.getPath('userData');
   if (!fs.existsSync(userDataPath)) {
@@ -11,6 +12,7 @@ function getDbPath() {
   }
   return path.join(userDataPath, 'facturacion.db');
 }
+
 function getDb() {
   if (!db) {
     db = new Database(getDbPath());
@@ -94,6 +96,45 @@ function initDb() {
       created_at TEXT NOT NULL,
       FOREIGN KEY (product_id) REFERENCES products(id)
     );
+    CREATE TABLE IF NOT EXISTS clientes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre TEXT NOT NULL,
+      rif_cedula TEXT,
+      telefono TEXT,
+      direccion TEXT,
+      email TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS facturas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cliente_id INTEGER,
+      cliente_nombre TEXT,
+      cliente_rif TEXT,
+      subtotal_usd REAL NOT NULL,
+      iva_usd REAL NOT NULL,
+      total_usd REAL NOT NULL,
+      tasa_cambio REAL NOT NULL,
+      subtotal_bs REAL NOT NULL,
+      iva_bs REAL NOT NULL,
+      total_bs REAL NOT NULL,
+      iva_porcentaje REAL NOT NULL,
+      usuario TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+    );
+    CREATE TABLE IF NOT EXISTS factura_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      factura_id INTEGER NOT NULL,
+      product_id INTEGER,
+      unit_id INTEGER,
+      tipo TEXT,
+      descripcion TEXT NOT NULL,
+      codigo TEXT,
+      cantidad INTEGER NOT NULL DEFAULT 1,
+      precio_unitario_usd REAL NOT NULL,
+      subtotal_usd REAL NOT NULL,
+      FOREIGN KEY (factura_id) REFERENCES facturas(id)
+    );
   `);
 
   migrarProductsSiHaceFalta(database);
@@ -105,6 +146,7 @@ function initDb() {
   insertSetting.run('moneda_principal', 'USD');
   insertSetting.run('nombre_tienda', 'Tienda Movistar');
   insertSetting.run('rif_tienda', '');
+  insertSetting.run('iva_porcentaje', '16');
 
   const insertCategoria = database.prepare(
     'INSERT OR IGNORE INTO categorias (nombre, created_at) VALUES (?, datetime(\'now\'))'
