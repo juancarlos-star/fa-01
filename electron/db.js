@@ -74,9 +74,8 @@ function initDb() {
   );
   insertCategoria.run('Telefono');
   insertCategoria.run('SimCard');
-  insertCategoria.run('Accesorios Android');
-  insertCategoria.run('Accesorios Apple');
-
+  insertCategoria.run('Accesorios');
+  
   // Semilla: usuario administrador por defecto, solo si no hay ningun usuario
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {
