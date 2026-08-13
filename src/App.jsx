@@ -3,6 +3,8 @@ import Login from './pages/Login.jsx';
 import UsersAdmin from './pages/UsersAdmin.jsx';
 import Inventario from './pages/Inventario.jsx';
 import CategoriasAdmin from './pages/CategoriasAdmin.jsx';
+import HistorialDescargos from './pages/HistorialDescargos.jsx';
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('inicio');
@@ -28,6 +30,9 @@ export default function App() {
             <button onClick={() => setView('categorias')}>Categorias</button>
           )}
           {user.role === 'administrador' && (
+            <button onClick={() => setView('descargos')}>Historial de descargos</button>
+          )}
+          {user.role === 'administrador' && (
             <button onClick={() => setView('usuarios')}>Usuarios</button>
           )}
           <button onClick={handleLogout}>Cerrar sesion</button>
@@ -42,6 +47,7 @@ export default function App() {
         )}
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
+        {view === 'descargos' && user.role === 'administrador' && <HistorialDescargos />}
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
     </div>
