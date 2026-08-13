@@ -3,10 +3,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
   { key: 'simcard', label: 'SIM Cards' },
+  { key: 'usim', label: 'USIM' },
   { key: 'accesorio', label: 'Accesorios' }
 ];
 
-export default function Inventario() {
+export default function Inventario({ currentUser }) {
   const [tab, setTab] = useState('equipo');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -24,6 +25,8 @@ export default function Inventario() {
     codigo_barras: '',
     stock_cantidad: ''
   });
+
+  const esAdmin = currentUser?.role === 'administrador';
 
   const cargarProductos = useCallback(async () => {
     setLoading(true);
@@ -87,8 +90,40 @@ export default function Inventario() {
     cargarProductos();
   };
 
-  const handleAjustarStock = async (id, delta) => {
-    await window.api.adjustStock(id, delta);
+  const handleRegistrarCompra = async (id) => {
+    const cantidadStr = window.prompt('Cantidad a ingresar (compra):');
+    if (cantidadStr === null) return;
+    const cantidad = parseInt(cantidadStr, 10);
+    if (!cantidad || cantidad <= 0) {
+      alert('Cantidad invalida');
+      return;
+    }
+    const res = await window.api.addProductStock(id, cantidad, currentUser?.username);
+    if (!res.ok) {
+      alert(res.message);
+      return;
+    }
+    cargarProductos();
+  };
+
+  const handleRegistrarDescargoAccesorio = async (id) => {
+    const cantidadStr = window.prompt('Cantidad a descargar:');
+    if (cantidadStr === null) return;
+    const cantidad = parseInt(cantidadStr, 10);
+    if (!cantidad || cantidad <= 0) {
+      alert('Cantidad invalida');
+      return;
+    }
+    const motivo = window.prompt('Motivo del descargo (ej: dañado, perdido, robado):');
+    if (!motivo || !motivo.trim()) {
+      alert('Debes indicar un motivo');
+      return;
+    }
+    const res = await window.api.writeOffProductStock(id, cantidad, motivo, currentUser?.username);
+    if (!res.ok) {
+      alert(res.message);
+      return;
+    }
     cargarProductos();
   };
 
@@ -227,15 +262,19 @@ export default function Inventario() {
                     <td style={{ color: bajoStock ? 'red' : 'inherit', fontWeight: bajoStock ? 'bold' : 'normal' }}>
                       {p.stock_disponible} {bajoStock && '⚠ stock bajo'}
                     </td>
-                    <td style={{ display: 'flex', gap: '0.4rem' }}>
+                    <td style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                       {tab === 'accesorio' ? (
-                        <>
-                          <button onClick={() => handleAjustarStock(p.id, 1)}>+1</button>
-                          <button onClick={() => handleAjustarStock(p.id, -1)}>-1</button>
-                        </>
+                        esAdmin ? (
+                          <>
+                            <button onClick={() => handleRegistrarCompra(p.id)}>+ Compra</button>
+                            <button onClick={() => handleRegistrarDescargoAccesorio(p.id)}>Descargo</button>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: '0.8rem', color: '#666' }}>Solo admin ajusta stock</span>
+                        )
                       ) : (
                         <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}>
-                          {expandedId === p.id ? 'Ocultar' : tab === 'equipo' ? 'Ver IMEIs' : 'Ver SIMs'}
+                          {expandedId === p.id ? 'Ocultar' : 'Ver unidades'}
                         </button>
                       )}
                       <button onClick={() => handleEliminar(p.id)}>Eliminar</button>
@@ -244,7 +283,12 @@ export default function Inventario() {
                   {expandedId === p.id && tab !== 'accesorio' && (
                     <tr>
                       <td colSpan={5} style={{ background: '#f8fafc', padding: '0.75rem' }}>
-                        <UnidadesProducto productId={p.id} tipo={tab} onChange={cargarProductos} />
+                        <UnidadesProducto
+                          productId={p.id}
+                          tipo={tab}
+                          onChange={cargarProductos}
+                          currentUser={currentUser}
+                        />
                       </td>
                     </tr>
                   )}
@@ -258,7 +302,7 @@ export default function Inventario() {
   );
 }
 
-function UnidadesProducto({ productId, tipo, onChange }) {
+function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
   const [units, setUnits] = useState([]);
   const [nuevoCodigo, setNuevoCodigo] = useState('');
   const [error, setError] = useState('');
@@ -266,6 +310,8 @@ function UnidadesProducto({ productId, tipo, onChange }) {
   const [codigoInicio, setCodigoInicio] = useState('');
   const [codigoFin, setCodigoFin] = useState('');
   const [rangoInfo, setRangoInfo] = useState('');
+
+  const esAdmin = currentUser?.role === 'administrador';
 
   const cargar = useCallback(async () => {
     const data = await window.api.listUnits(productId);
@@ -322,7 +368,19 @@ function UnidadesProducto({ productId, tipo, onChange }) {
     onChange();
   };
 
-  const label = tipo === 'equipo' ? 'IMEI' : 'Codigo SIM (ICCID)';
+  const handleDarDeBaja = async (id) => {
+    const motivo = window.prompt('Motivo del descargo (ej: dañado, perdido, robado):');
+    if (!motivo || !motivo.trim()) return;
+    const res = await window.api.writeOffUnit(id, motivo, currentUser?.username);
+    if (!res.ok) {
+      alert(res.message);
+      return;
+    }
+    cargar();
+    onChange();
+  };
+
+  const label = tipo === 'equipo' ? 'IMEI' : tipo === 'usim' ? 'Codigo USIM' : 'Codigo SIM (ICCID)';
 
   return (
     <div>
@@ -336,7 +394,7 @@ function UnidadesProducto({ productId, tipo, onChange }) {
         <button type="submit">+ Agregar {label}</button>
       </form>
 
-      {tipo === 'simcard' && (
+      {(tipo === 'simcard' || tipo === 'usim') && (
         <form
           onSubmit={handleGenerarRango}
           style={{
@@ -390,7 +448,10 @@ function UnidadesProducto({ productId, tipo, onChange }) {
                 {u.codigo} — <em>{u.estado}</em>
               </span>
               {u.estado === 'disponible' && (
-                <button onClick={() => handleEliminarUnidad(u.id)}>Eliminar</button>
+                <span style={{ display: 'flex', gap: '0.4rem' }}>
+                  {esAdmin && <button onClick={() => handleDarDeBaja(u.id)}>Dar de baja</button>}
+                  <button onClick={() => handleEliminarUnidad(u.id)}>Eliminar</button>
+                </span>
               )}
             </li>
           ))}
