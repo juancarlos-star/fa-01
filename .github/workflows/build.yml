@@ -24,7 +24,7 @@ jobs:
         run: npm run build
 
       - name: Generar instalador .exe
-        run: npm run dist
+        run: npm run dist -- --publish=never
 
       - name: Subir instalador como artefacto
         uses: actions/upload-artifact@v4
