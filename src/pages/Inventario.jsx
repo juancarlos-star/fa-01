@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import PromptModal from '../components/PromptModal.jsx';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
@@ -13,6 +14,7 @@ export default function Inventario({ currentUser }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const [modal, setModal] = useState(null);
 
   const [categorias, setCategorias] = useState([]);
   const [nombresSugeridos, setNombresSugeridos] = useState([]);
@@ -90,40 +92,51 @@ export default function Inventario({ currentUser }) {
     cargarProductos();
   };
 
-  const handleRegistrarCompra = async (id) => {
-    const cantidadStr = window.prompt('Cantidad a ingresar (compra):');
-    if (cantidadStr === null) return;
-    const cantidad = parseInt(cantidadStr, 10);
-    if (!cantidad || cantidad <= 0) {
-      alert('Cantidad invalida');
-      return;
-    }
-    const res = await window.api.addProductStock(id, cantidad, currentUser?.username);
-    if (!res.ok) {
-      alert(res.message);
-      return;
-    }
-    cargarProductos();
+  // ---- Modales para Compra y Descargo de accesorios ----
+
+  const abrirModalCompra = (productId) => {
+    setModal({ tipo: 'compra', productId });
   };
 
-  const handleRegistrarDescargoAccesorio = async (id) => {
-    const cantidadStr = window.prompt('Cantidad a descargar:');
-    if (cantidadStr === null) return;
-    const cantidad = parseInt(cantidadStr, 10);
-    if (!cantidad || cantidad <= 0) {
-      alert('Cantidad invalida');
-      return;
+  const abrirModalDescargoAccesorio = (productId) => {
+    setModal({ tipo: 'descargoAccesorio', productId });
+  };
+
+  const cerrarModal = () => setModal(null);
+
+  const confirmarModal = async (values) => {
+    if (modal.tipo === 'compra') {
+      const cantidad = parseInt(values.cantidad, 10);
+      if (!cantidad || cantidad <= 0) {
+        alert('Cantidad invalida');
+        return;
+      }
+      const res = await window.api.addProductStock(modal.productId, cantidad, currentUser?.username);
+      if (!res.ok) {
+        alert(res.message);
+        return;
+      }
     }
-    const motivo = window.prompt('Motivo del descargo (ej: dañado, perdido, robado):');
-    if (!motivo || !motivo.trim()) {
-      alert('Debes indicar un motivo');
-      return;
+
+    if (modal.tipo === 'descargoAccesorio') {
+      const cantidad = parseInt(values.cantidad, 10);
+      if (!cantidad || cantidad <= 0) {
+        alert('Cantidad invalida');
+        return;
+      }
+      const res = await window.api.writeOffProductStock(
+        modal.productId,
+        cantidad,
+        values.motivo,
+        currentUser?.username
+      );
+      if (!res.ok) {
+        alert(res.message);
+        return;
+      }
     }
-    const res = await window.api.writeOffProductStock(id, cantidad, motivo, currentUser?.username);
-    if (!res.ok) {
-      alert(res.message);
-      return;
-    }
+
+    setModal(null);
     cargarProductos();
   };
 
@@ -266,8 +279,8 @@ export default function Inventario({ currentUser }) {
                       {tab === 'accesorio' ? (
                         esAdmin ? (
                           <>
-                            <button onClick={() => handleRegistrarCompra(p.id)}>+ Compra</button>
-                            <button onClick={() => handleRegistrarDescargoAccesorio(p.id)}>Descargo</button>
+                            <button onClick={() => abrirModalCompra(p.id)}>+ Compra</button>
+                            <button onClick={() => abrirModalDescargoAccesorio(p.id)}>Descargo</button>
                           </>
                         ) : (
                           <span style={{ fontSize: '0.8rem', color: '#666' }}>Solo admin ajusta stock</span>
@@ -298,6 +311,27 @@ export default function Inventario({ currentUser }) {
           </tbody>
         </table>
       )}
+
+      {modal?.tipo === 'compra' && (
+        <PromptModal
+          title="Registrar compra (agregar stock)"
+          fields={[{ name: 'cantidad', label: 'Cantidad a ingresar', type: 'number', required: true, autoFocus: true }]}
+          onConfirm={confirmarModal}
+          onCancel={cerrarModal}
+        />
+      )}
+
+      {modal?.tipo === 'descargoAccesorio' && (
+        <PromptModal
+          title="Registrar descargo"
+          fields={[
+            { name: 'cantidad', label: 'Cantidad a descargar', type: 'number', required: true, autoFocus: true },
+            { name: 'motivo', label: 'Motivo (ej: dañado, perdido, robado)', type: 'textarea', required: true }
+          ]}
+          onConfirm={confirmarModal}
+          onCancel={cerrarModal}
+        />
+      )}
     </div>
   );
 }
@@ -306,6 +340,7 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
   const [units, setUnits] = useState([]);
   const [nuevoCodigo, setNuevoCodigo] = useState('');
   const [error, setError] = useState('');
+  const [modalBaja, setModalBaja] = useState(null);
 
   const [codigoInicio, setCodigoInicio] = useState('');
   const [codigoFin, setCodigoFin] = useState('');
@@ -359,6 +394,7 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
   };
 
   const handleEliminarUnidad = async (id) => {
+    if (!window.confirm('Eliminar este codigo? Esta accion no deja registro.')) return;
     const res = await window.api.deleteUnit(id);
     if (!res.ok) {
       alert(res.message);
@@ -368,14 +404,16 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
     onChange();
   };
 
-  const handleDarDeBaja = async (id) => {
-    const motivo = window.prompt('Motivo del descargo (ej: dañado, perdido, robado):');
-    if (!motivo || !motivo.trim()) return;
-    const res = await window.api.writeOffUnit(id, motivo, currentUser?.username);
+  const abrirModalBaja = (unitId) => setModalBaja({ unitId });
+  const cerrarModalBaja = () => setModalBaja(null);
+
+  const confirmarBaja = async (values) => {
+    const res = await window.api.writeOffUnit(modalBaja.unitId, values.motivo, currentUser?.username);
     if (!res.ok) {
       alert(res.message);
       return;
     }
+    setModalBaja(null);
     cargar();
     onChange();
   };
@@ -449,13 +487,24 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
               </span>
               {u.estado === 'disponible' && (
                 <span style={{ display: 'flex', gap: '0.4rem' }}>
-                  {esAdmin && <button onClick={() => handleDarDeBaja(u.id)}>Dar de baja</button>}
+                  {esAdmin && <button onClick={() => abrirModalBaja(u.id)}>Dar de baja</button>}
                   <button onClick={() => handleEliminarUnidad(u.id)}>Eliminar</button>
                 </span>
               )}
             </li>
           ))}
         </ul>
+      )}
+
+      {modalBaja && (
+        <PromptModal
+          title="Dar de baja (descargo)"
+          fields={[
+            { name: 'motivo', label: 'Motivo (ej: dañado, perdido, robado)', type: 'textarea', required: true, autoFocus: true }
+          ]}
+          onConfirm={confirmarBaja}
+          onCancel={cerrarModalBaja}
+        />
       )}
     </div>
   );
