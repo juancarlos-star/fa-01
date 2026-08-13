@@ -18,6 +18,32 @@ function getDb() {
   }
   return db;
 }
+
+function migrarProductsSiHaceFalta(database) {
+  const row = database
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='products'")
+    .get();
+  if (row && row.sql && row.sql.includes("'accesorio'") && !row.sql.includes("'usim'")) {
+    database.exec(`
+      ALTER TABLE products RENAME TO products_old;
+      CREATE TABLE products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tipo TEXT NOT NULL CHECK(tipo IN ('equipo','simcard','usim','accesorio')),
+        nombre TEXT NOT NULL,
+        categoria TEXT,
+        precio REAL NOT NULL DEFAULT 0,
+        stock_minimo INTEGER NOT NULL DEFAULT 0,
+        stock_cantidad INTEGER NOT NULL DEFAULT 0,
+        codigo_barras TEXT,
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO products (id, tipo, nombre, categoria, precio, stock_minimo, stock_cantidad, codigo_barras, created_at)
+        SELECT id, tipo, nombre, categoria, precio, stock_minimo, stock_cantidad, codigo_barras, created_at FROM products_old;
+      DROP TABLE products_old;
+    `);
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -41,7 +67,7 @@ function initDb() {
     );
     CREATE TABLE IF NOT EXISTS products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tipo TEXT NOT NULL CHECK(tipo IN ('equipo','simcard','accesorio')),
+      tipo TEXT NOT NULL CHECK(tipo IN ('equipo','simcard','usim','accesorio')),
       nombre TEXT NOT NULL,
       categoria TEXT,
       precio REAL NOT NULL DEFAULT 0,
@@ -54,12 +80,24 @@ function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       product_id INTEGER NOT NULL,
       codigo TEXT NOT NULL UNIQUE,
-      estado TEXT NOT NULL DEFAULT 'disponible' CHECK(estado IN ('disponible','vendido')),
+      estado TEXT NOT NULL DEFAULT 'disponible' CHECK(estado IN ('disponible','vendido','de_baja')),
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    );
+    CREATE TABLE IF NOT EXISTS descargos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      unit_id INTEGER,
+      cantidad INTEGER NOT NULL DEFAULT 1,
+      motivo TEXT NOT NULL,
+      usuario TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (product_id) REFERENCES products(id)
     );
   `);
-  // Semilla: tasa de cambio y moneda principal, solo si no existen
+
+  migrarProductsSiHaceFalta(database);
+
   const insertSetting = database.prepare(
     'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
   );
@@ -68,15 +106,14 @@ function initDb() {
   insertSetting.run('nombre_tienda', 'Tienda Movistar');
   insertSetting.run('rif_tienda', '');
 
-  // Semilla: categorias iniciales, solo si no existen
   const insertCategoria = database.prepare(
     'INSERT OR IGNORE INTO categorias (nombre, created_at) VALUES (?, datetime(\'now\'))'
   );
   insertCategoria.run('Telefono');
   insertCategoria.run('SimCard');
+  insertCategoria.run('Usim');
   insertCategoria.run('Accesorios');
-  
-  // Semilla: usuario administrador por defecto, solo si no hay ningun usuario
+
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {
     const hash = bcrypt.hashSync('admin123', 10);
