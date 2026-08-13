@@ -3,9 +3,7 @@ const fs = require('fs');
 const { app } = require('electron');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
-
 let db;
-
 function getDbPath() {
   const userDataPath = app.getPath('userData');
   if (!fs.existsSync(userDataPath)) {
@@ -13,7 +11,6 @@ function getDbPath() {
   }
   return path.join(userDataPath, 'facturacion.db');
 }
-
 function getDb() {
   if (!db) {
     db = new Database(getDbPath());
@@ -21,7 +18,6 @@ function getDb() {
   }
   return db;
 }
-
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -34,12 +30,15 @@ function initDb() {
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL
     );
-
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
-
+    CREATE TABLE IF NOT EXISTS categorias (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre TEXT UNIQUE NOT NULL,
+      created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       tipo TEXT NOT NULL CHECK(tipo IN ('equipo','simcard','accesorio')),
@@ -51,7 +50,6 @@ function initDb() {
       codigo_barras TEXT,
       created_at TEXT NOT NULL
     );
-
     CREATE TABLE IF NOT EXISTS inventory_units (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       product_id INTEGER NOT NULL,
@@ -61,7 +59,6 @@ function initDb() {
       FOREIGN KEY (product_id) REFERENCES products(id)
     );
   `);
-
   // Semilla: tasa de cambio y moneda principal, solo si no existen
   const insertSetting = database.prepare(
     'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
@@ -70,6 +67,15 @@ function initDb() {
   insertSetting.run('moneda_principal', 'USD');
   insertSetting.run('nombre_tienda', 'Tienda Movistar');
   insertSetting.run('rif_tienda', '');
+
+  // Semilla: categorias iniciales, solo si no existen
+  const insertCategoria = database.prepare(
+    'INSERT OR IGNORE INTO categorias (nombre, created_at) VALUES (?, datetime(\'now\'))'
+  );
+  insertCategoria.run('Telefono');
+  insertCategoria.run('SimCard');
+  insertCategoria.run('Accesorios Android');
+  insertCategoria.run('Accesorios Apple');
 
   // Semilla: usuario administrador por defecto, solo si no hay ningun usuario
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
@@ -82,5 +88,4 @@ function initDb() {
       .run('admin', hash, 'Administrador', 'administrador');
   }
 }
-
 module.exports = { getDb, initDb };
