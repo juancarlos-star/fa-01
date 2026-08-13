@@ -41,6 +41,7 @@ export default function App() {
           </div>
         )}
         {view === 'inventario' && <Inventario />}
+        
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
     </div>
