@@ -176,17 +176,40 @@ ipcMain.handle('products:delete', (event, { id }) => {
   return { ok: true };
 });
 
-ipcMain.handle('products:adjustStock', (event, { id, delta }) => {
+ipcMain.handle('products:addStock', (event, { id, cantidad, usuario }) => {
   const db = getDb();
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
   if (!product) return { ok: false, message: 'Producto no encontrado' };
   if (product.tipo !== 'accesorio') return { ok: false, message: 'Solo aplica a accesorios' };
-  const nuevoStock = Math.max(0, product.stock_cantidad + delta);
+  const n = parseInt(cantidad, 10);
+  if (!n || n <= 0) return { ok: false, message: 'Cantidad invalida' };
+  const nuevoStock = product.stock_cantidad + n;
   db.prepare('UPDATE products SET stock_cantidad = ? WHERE id = ?').run(nuevoStock, id);
   return { ok: true, stock: nuevoStock };
 });
 
-// ---------- IPC: Inventario - unidades (IMEI / SIM) ----------
+ipcMain.handle('products:writeOffStock', (event, { id, cantidad, motivo, usuario }) => {
+  const db = getDb();
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+  if (!product) return { ok: false, message: 'Producto no encontrado' };
+  if (product.tipo !== 'accesorio') return { ok: false, message: 'Solo aplica a accesorios' };
+  const n = parseInt(cantidad, 10);
+  if (!n || n <= 0) return { ok: false, message: 'Cantidad invalida' };
+  if (!motivo || !motivo.trim()) return { ok: false, message: 'Debes indicar un motivo para el descargo' };
+  if (n > product.stock_cantidad) return { ok: false, message: 'No puedes descargar mas de lo que hay en stock' };
+  const nuevoStock = product.stock_cantidad - n;
+  const transaccion = db.transaction(() => {
+    db.prepare('UPDATE products SET stock_cantidad = ? WHERE id = ?').run(nuevoStock, id);
+    db.prepare(
+      `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at)
+       VALUES (?, NULL, ?, ?, ?, datetime('now'))`
+    ).run(id, n, motivo.trim(), usuario || '');
+  });
+  transaccion();
+  return { ok: true, stock: nuevoStock };
+});
+
+// ---------- IPC: Inventario - unidades (IMEI / SIM / USIM) ----------
 ipcMain.handle('units:list', (event, { product_id }) => {
   const db = getDb();
   return db.prepare('SELECT * FROM inventory_units WHERE product_id = ? ORDER BY created_at DESC').all(product_id);
@@ -199,7 +222,7 @@ ipcMain.handle('units:add', (event, { product_id, codigo }) => {
   }
   const exists = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get(codigo.trim());
   if (exists) {
-    return { ok: false, message: 'Ese codigo (IMEI/SIM) ya esta registrado' };
+    return { ok: false, message: 'Ese codigo ya esta registrado' };
   }
   db.prepare(
     `INSERT INTO inventory_units (product_id, codigo, estado, created_at) VALUES (?, ?, 'disponible', datetime('now'))`
@@ -207,7 +230,6 @@ ipcMain.handle('units:add', (event, { product_id, codigo }) => {
   return { ok: true };
 });
 
-// Detecta el prefijo fijo y la parte numerica entre dos codigos para generar el rango
 function calcularRango(codigoInicio, codigoFin) {
   const a = codigoInicio.trim();
   const b = codigoFin.trim();
@@ -288,5 +310,26 @@ ipcMain.handle('units:delete', (event, { id }) => {
     return { ok: false, message: 'No se puede eliminar una unidad ya vendida' };
   }
   db.prepare('DELETE FROM inventory_units WHERE id = ?').run(id);
+  return { ok: true };
+});
+
+ipcMain.handle('units:writeOff', (event, { id, motivo, usuario }) => {
+  const db = getDb();
+  const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(id);
+  if (!unit) return { ok: false, message: 'No encontrado' };
+  if (unit.estado !== 'disponible') {
+    return { ok: false, message: 'Solo se pueden dar de baja unidades disponibles' };
+  }
+  if (!motivo || !motivo.trim()) {
+    return { ok: false, message: 'Debes indicar un motivo para el descargo' };
+  }
+  const transaccion = db.transaction(() => {
+    db.prepare("UPDATE inventory_units SET estado = 'de_baja' WHERE id = ?").run(id);
+    db.prepare(
+      `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at)
+       VALUES (?, ?, 1, ?, ?, datetime('now'))`
+    ).run(unit.product_id, id, motivo.trim(), usuario || '');
+  });
+  transaccion();
   return { ok: true };
 });
