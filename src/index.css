@@ -1,0 +1,163 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #f2f4f7;
+  color: #1a1a2e;
+}
+
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #0057a3, #00a3e0);
+}
+
+.login-card {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  width: 320px;
+}
+
+.login-card h1 {
+  font-size: 1.3rem;
+  margin-bottom: 1.5rem;
+  color: #0057a3;
+  text-align: center;
+}
+
+.login-card input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.login-card button {
+  width: 100%;
+  padding: 10px;
+  background: #0057a3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.login-card button:hover {
+  background: #004380;
+}
+
+.error-text {
+  color: #d92d20;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  background: #0057a3;
+  color: white;
+  padding: 1.5rem 1rem;
+}
+
+.sidebar h2 {
+  font-size: 1.1rem;
+  margin-bottom: 2rem;
+}
+
+.sidebar nav a, .sidebar nav button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: white;
+  padding: 0.6rem;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.sidebar nav button:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+.content {
+  flex: 1;
+  padding: 2rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+th, td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #eaecf0;
+  font-size: 0.9rem;
+}
+
+th {
+  background: #f2f4f7;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+}
+
+.badge.active {
+  background: #d1fadf;
+  color: #027a48;
+}
+
+.badge.inactive {
+  background: #fee4e2;
+  color: #b42318;
+}
+
+.form-box {
+  background: white;
+  padding: 1.2rem;
+  border-radius: 8px;
+  max-width: 400px;
+  margin-bottom: 1.5rem;
+}
+
+.form-box input, .form-box select {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+}
+
+.form-box button {
+  padding: 8px 16px;
+  background: #0057a3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
