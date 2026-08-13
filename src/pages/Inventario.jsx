@@ -15,8 +15,6 @@ export default function Inventario() {
 
   const [categorias, setCategorias] = useState([]);
   const [nombresSugeridos, setNombresSugeridos] = useState([]);
-  const [mostrarNuevaCategoria, setMostrarNuevaCategoria] = useState(false);
-  const [nuevaCategoria, setNuevaCategoria] = useState('');
 
   const [form, setForm] = useState({
     nombre: '',
@@ -77,20 +75,6 @@ export default function Inventario() {
     setForm({ nombre: '', categoria: '', precio: '', stock_minimo: '', codigo_barras: '', stock_cantidad: '' });
     cargarProductos();
     cargarNombresSugeridos();
-  };
-
-  const handleCrearCategoria = async (e) => {
-    e.preventDefault();
-    if (!nuevaCategoria.trim()) return;
-    const res = await window.api.createCategory(nuevaCategoria.trim());
-    if (!res.ok) {
-      alert(res.message);
-      return;
-    }
-    setForm({ ...form, categoria: nuevaCategoria.trim() });
-    setNuevaCategoria('');
-    setMostrarNuevaCategoria(false);
-    cargarCategorias();
   };
 
   const handleEliminar = async (id) => {
@@ -160,7 +144,6 @@ export default function Inventario() {
           </datalist>
         </div>
         <div>
-         <div>
           <label>Categoria</label><br />
           <select
             value={form.categoria}
