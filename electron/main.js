@@ -22,8 +22,6 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
-
-  mainWindow.webContents.openDevTools({ mode: 'detach' });
 }
 
 app.whenReady().then(() => {
@@ -332,4 +330,20 @@ ipcMain.handle('units:writeOff', (event, { id, motivo, usuario }) => {
   });
   transaccion();
   return { ok: true };
+});
+
+// ---------- IPC: Historial de descargos ----------
+ipcMain.handle('descargos:list', () => {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT d.id, d.cantidad, d.motivo, d.usuario, d.created_at,
+              p.nombre AS producto_nombre, p.tipo AS producto_tipo,
+              u.codigo AS unidad_codigo
+       FROM descargos d
+       JOIN products p ON p.id = d.product_id
+       LEFT JOIN inventory_units u ON u.id = d.unit_id
+       ORDER BY d.id DESC`
+    )
+    .all();
 });
