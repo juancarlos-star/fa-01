@@ -13,6 +13,11 @@ export default function Inventario() {
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
 
+  const [categorias, setCategorias] = useState([]);
+  const [nombresSugeridos, setNombresSugeridos] = useState([]);
+  const [mostrarNuevaCategoria, setMostrarNuevaCategoria] = useState(false);
+  const [nuevaCategoria, setNuevaCategoria] = useState('');
+
   const [form, setForm] = useState({
     nombre: '',
     categoria: '',
@@ -29,10 +34,25 @@ export default function Inventario() {
     setLoading(false);
   }, [tab]);
 
+  const cargarCategorias = useCallback(async () => {
+    const data = await window.api.listCategories();
+    setCategorias(data);
+  }, []);
+
+  const cargarNombresSugeridos = useCallback(async () => {
+    const data = await window.api.listProductNames(tab);
+    setNombresSugeridos(data);
+  }, [tab]);
+
   useEffect(() => {
     cargarProductos();
+    cargarNombresSugeridos();
     setExpandedId(null);
-  }, [tab, cargarProductos]);
+  }, [tab, cargarProductos, cargarNombresSugeridos]);
+
+  useEffect(() => {
+    cargarCategorias();
+  }, [cargarCategorias]);
 
   const handleCrearProducto = async (e) => {
     e.preventDefault();
@@ -56,6 +76,21 @@ export default function Inventario() {
     }
     setForm({ nombre: '', categoria: '', precio: '', stock_minimo: '', codigo_barras: '', stock_cantidad: '' });
     cargarProductos();
+    cargarNombresSugeridos();
+  };
+
+  const handleCrearCategoria = async (e) => {
+    e.preventDefault();
+    if (!nuevaCategoria.trim()) return;
+    const res = await window.api.createCategory(nuevaCategoria.trim());
+    if (!res.ok) {
+      alert(res.message);
+      return;
+    }
+    setForm({ ...form, categoria: nuevaCategoria.trim() });
+    setNuevaCategoria('');
+    setMostrarNuevaCategoria(false);
+    cargarCategorias();
   };
 
   const handleEliminar = async (id) => {
@@ -113,18 +148,47 @@ export default function Inventario() {
         <div>
           <label>Nombre</label><br />
           <input
+            list="nombres-sugeridos"
             value={form.nombre}
             onChange={(e) => setForm({ ...form, nombre: e.target.value })}
             placeholder="Ej: iPhone 13 128GB"
           />
+          <datalist id="nombres-sugeridos">
+            {nombresSugeridos.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
         </div>
         <div>
           <label>Categoria</label><br />
-          <input
-            value={form.categoria}
-            onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-            placeholder="Ej: Smartphones"
-          />
+          <div style={{ display: 'flex', gap: '0.3rem' }}>
+            <input
+              list="categorias-sugeridas"
+              value={form.categoria}
+              onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+              placeholder="Ej: Telefono"
+            />
+            <button type="button" onClick={() => setMostrarNuevaCategoria(!mostrarNuevaCategoria)}>
+              + Nueva
+            </button>
+          </div>
+          <datalist id="categorias-sugeridas">
+            {categorias.map((c) => (
+              <option key={c.id} value={c.nombre} />
+            ))}
+          </datalist>
+          {mostrarNuevaCategoria && (
+            <div style={{ display: 'flex', gap: '0.3rem', marginTop: '0.3rem' }}>
+              <input
+                value={nuevaCategoria}
+                onChange={(e) => setNuevaCategoria(e.target.value)}
+                placeholder="Nombre de la nueva categoria"
+              />
+              <button type="button" onClick={handleCrearCategoria}>
+                Guardar
+              </button>
+            </div>
+          )}
         </div>
         <div>
           <label>Precio (USD)</label><br />
@@ -234,6 +298,10 @@ function UnidadesProducto({ productId, tipo, onChange }) {
   const [nuevoCodigo, setNuevoCodigo] = useState('');
   const [error, setError] = useState('');
 
+  const [codigoInicio, setCodigoInicio] = useState('');
+  const [codigoFin, setCodigoFin] = useState('');
+  const [rangoInfo, setRangoInfo] = useState('');
+
   const cargar = useCallback(async () => {
     const data = await window.api.listUnits(productId);
     setUnits(data);
@@ -257,6 +325,28 @@ function UnidadesProducto({ productId, tipo, onChange }) {
     onChange();
   };
 
+  const handleGenerarRango = async (e) => {
+    e.preventDefault();
+    setError('');
+    setRangoInfo('');
+    if (!codigoInicio.trim() || !codigoFin.trim()) {
+      setError('Escanea o escribe el primer y el ultimo codigo de la caja');
+      return;
+    }
+    const res = await window.api.addUnitsRange(productId, codigoInicio.trim(), codigoFin.trim());
+    if (!res.ok) {
+      setError(res.message);
+      return;
+    }
+    setRangoInfo(
+      `Rango procesado: ${res.total} codigos. Agregados: ${res.agregados}. Ya existian (saltados): ${res.saltados}.`
+    );
+    setCodigoInicio('');
+    setCodigoFin('');
+    cargar();
+    onChange();
+  };
+
   const handleEliminarUnidad = async (id) => {
     const res = await window.api.deleteUnit(id);
     if (!res.ok) {
@@ -273,13 +363,50 @@ function UnidadesProducto({ productId, tipo, onChange }) {
     <div>
       <form onSubmit={handleAgregar} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
         <input
-          placeholder={`Nuevo ${label}`}
+          placeholder={`Nuevo ${label} (manual o pistola)`}
           value={nuevoCodigo}
           onChange={(e) => setNuevoCodigo(e.target.value)}
+          autoFocus
         />
         <button type="submit">+ Agregar {label}</button>
       </form>
+
+      {tipo === 'simcard' && (
+        <form
+          onSubmit={handleGenerarRango}
+          style={{
+            display: 'flex',
+            gap: '0.5rem',
+            alignItems: 'flex-end',
+            marginBottom: '0.75rem',
+            background: '#eef4ff',
+            padding: '0.6rem',
+            borderRadius: '4px'
+          }}
+        >
+          <div>
+            <label style={{ fontSize: '0.8rem' }}>Primer codigo de la caja</label><br />
+            <input
+              placeholder="Ej: 190000"
+              value={codigoInicio}
+              onChange={(e) => setCodigoInicio(e.target.value)}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: '0.8rem' }}>Ultimo codigo de la caja</label><br />
+            <input
+              placeholder="Ej: 190050"
+              value={codigoFin}
+              onChange={(e) => setCodigoFin(e.target.value)}
+            />
+          </div>
+          <button type="submit">Generar rango completo</button>
+        </form>
+      )}
+
       {error && <p style={{ color: 'red' }}>{error}</p>}
+      {rangoInfo && <p style={{ color: 'green' }}>{rangoInfo}</p>}
+
       {units.length === 0 ? (
         <p>Sin unidades registradas todavia.</p>
       ) : (
