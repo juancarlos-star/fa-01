@@ -46,6 +46,18 @@ function migrarProductsSiHaceFalta(database) {
   }
 }
 
+function migrarFacturasSiHaceFalta(database) {
+  const existeTabla = database
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facturas'")
+    .get();
+  if (!existeTabla) return;
+  const cols = database.prepare('PRAGMA table_info(facturas)').all();
+  const tieneNumero = cols.some((c) => c.name === 'numero_factura');
+  if (!tieneNumero) {
+    database.exec('ALTER TABLE facturas ADD COLUMN numero_factura TEXT');
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -110,6 +122,7 @@ function initDb() {
       cliente_id INTEGER,
       cliente_nombre TEXT,
       cliente_rif TEXT,
+      cliente_direccion TEXT,
       subtotal_usd REAL NOT NULL,
       iva_usd REAL NOT NULL,
       total_usd REAL NOT NULL,
@@ -138,6 +151,7 @@ function initDb() {
   `);
 
   migrarProductsSiHaceFalta(database);
+  migrarFacturasSiHaceFalta(database);
 
   const insertSetting = database.prepare(
     'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
@@ -147,6 +161,7 @@ function initDb() {
   insertSetting.run('nombre_tienda', 'Tienda Movistar');
   insertSetting.run('rif_tienda', '');
   insertSetting.run('iva_porcentaje', '16');
+  insertSetting.run('numero_factura_siguiente', '1');
 
   const insertCategoria = database.prepare(
     'INSERT OR IGNORE INTO categorias (nombre, created_at) VALUES (?, datetime(\'now\'))'
