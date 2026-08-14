@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 
-export default function Facturas() {
+export default function Facturas({ currentUser }) {
   const [facturas, setFacturas] = useState([]);
   const [detalle, setDetalle] = useState(null);
+  const esAdmin = currentUser?.role === 'administrador';
 
   const cargar = useCallback(async () => {
     const data = await window.api.listFacturas();
@@ -17,6 +18,17 @@ export default function Facturas() {
     if (res.ok) setDetalle(res);
   };
 
+  const handleEliminar = async (id) => {
+    if (!window.confirm('¿Eliminar esta factura? Esto devuelve el IMEI/stock al inventario disponible. Esta accion no se puede deshacer.')) return;
+    const res = await window.api.eliminarFactura(id);
+    if (!res.ok) {
+      alert(res.message);
+      return;
+    }
+    setDetalle(null);
+    cargar();
+  };
+
   if (detalle) {
     const { factura, items } = detalle;
     return (
@@ -27,6 +39,11 @@ export default function Facturas() {
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
         <button onClick={() => generarFacturaPDF(factura, items)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        {esAdmin && (
+          <button onClick={() => handleEliminar(factura.id)} style={{ marginBottom: '1rem', marginLeft: '8px', color: '#b42318' }}>
+            Eliminar factura
+          </button>
+        )}
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
@@ -85,7 +102,12 @@ export default function Facturas() {
                 <td>{f.cliente_nombre}</td>
                 <td>${f.total_usd.toFixed(2)}</td>
                 <td>Bs {f.total_bs.toFixed(2)}</td>
-                <td><button onClick={() => verDetalle(f.id)}>Ver</button></td>
+                <td style={{ display: 'flex', gap: '0.4rem' }}>
+                  <button onClick={() => verDetalle(f.id)}>Ver</button>
+                  {esAdmin && (
+                    <button onClick={() => handleEliminar(f.id)} style={{ color: '#b42318' }}>Eliminar</button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
