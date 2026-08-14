@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 
 export default function Facturas() {
   const [facturas, setFacturas] = useState([]);
@@ -9,9 +10,7 @@ export default function Facturas() {
     setFacturas(data);
   }, []);
 
-  useEffect(() => {
-    cargar();
-  }, [cargar]);
+  useEffect(() => { cargar(); }, [cargar]);
 
   const verDetalle = async (id) => {
     const res = await window.api.detalleFactura(id);
@@ -23,10 +22,11 @@ export default function Facturas() {
     return (
       <div>
         <button onClick={() => setDetalle(null)}>&larr; Volver</button>
-        <h1>Factura N° {String(factura.id).padStart(6, '0')}</h1>
+        <h1>Factura N° {factura.numero_factura || String(factura.id).padStart(6, '0')}</h1>
         <p><strong>Cliente:</strong> {factura.cliente_nombre} {factura.cliente_rif ? `(${factura.cliente_rif})` : ''}</p>
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
+        <button onClick={() => generarFacturaPDF(factura, items)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
@@ -80,7 +80,7 @@ export default function Facturas() {
           <tbody>
             {facturas.map((f) => (
               <tr key={f.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>#{String(f.id).padStart(6, '0')}</td>
+                <td style={{ padding: '0.5rem' }}>#{f.numero_factura || String(f.id).padStart(6, '0')}</td>
                 <td>{f.created_at}</td>
                 <td>{f.cliente_nombre}</td>
                 <td>${f.total_usd.toFixed(2)}</td>
