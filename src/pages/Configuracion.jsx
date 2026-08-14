@@ -6,7 +6,7 @@ export default function Configuracion() {
     iva_porcentaje: '',
     nombre_tienda: '',
     rif_tienda: '',
-    moneda_principal: 'USD'
+    numero_factura_siguiente: ''
   });
   const [guardado, setGuardado] = useState(false);
 
@@ -17,13 +17,11 @@ export default function Configuracion() {
       iva_porcentaje: data.iva_porcentaje || '16',
       nombre_tienda: data.nombre_tienda || '',
       rif_tienda: data.rif_tienda || '',
-      moneda_principal: data.moneda_principal || 'USD'
+      numero_factura_siguiente: data.numero_factura_siguiente || '1'
     });
   }, []);
 
-  useEffect(() => {
-    cargar();
-  }, [cargar]);
+  useEffect(() => { cargar(); }, [cargar]);
 
   const handleChange = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -50,12 +48,15 @@ export default function Configuracion() {
         <label>IVA (%)</label>
         <input type="number" step="0.01" value={form.iva_porcentaje} onChange={handleChange('iva_porcentaje')} />
 
+        <label>Proximo numero de factura</label>
+        <input type="number" min="1" value={form.numero_factura_siguiente} onChange={handleChange('numero_factura_siguiente')} />
+
         <button type="submit">Guardar configuracion</button>
         {guardado && <p style={{ color: 'green', marginTop: '8px' }}>Guardado correctamente</p>}
       </form>
       <p style={{ color: '#666', fontSize: '0.85rem', maxWidth: '420px' }}>
-        La tasa de cambio se usa para calcular el equivalente en bolivares de cada factura nueva.
-        Actualizala cada vez que cambie el paralelo.
+        El "Proximo numero de factura" debe coincidir con el numero que ya viene impreso en tu papeleria.
+        Cambialo solo si necesitas sincronizarlo (ej: al cambiar de talonario). El sistema lo va a subir solo despues de cada factura.
       </p>
     </div>
   );
