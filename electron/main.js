@@ -737,3 +737,110 @@ ipcMain.handle('backup:restaurar', async () => {
   fs.copyFileSync(filePaths[0], getDbPath());
   return { ok: true, mensaje: 'Respaldo restaurado. Cierra y vuelve a abrir el programa para ver los cambios.' };
 });
+
+// ---------- IPC: Compras por lote (factura de proveedor con varios items) ----------
+ipcMain.handle('compras:crearLote', (event, payload) => {
+  const db = getDb();
+  try {
+    const { proveedor, numeroFacturaCompra, items, usuario } = payload;
+
+    if (!proveedor || !proveedor.trim()) return { ok: false, message: 'El nombre del proveedor es obligatorio' };
+    if (!numeroFacturaCompra || !numeroFacturaCompra.trim()) return { ok: false, message: 'El numero de factura de compra es obligatorio' };
+    if (!items || items.length === 0) return { ok: false, message: 'Agrega al menos un producto a la compra' };
+
+    for (const item of items) {
+      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
+      if (!product) return { ok: false, message: `Producto no encontrado (id ${item.product_id})` };
+      const costo = parseFloat(item.costoUnitario);
+      if (isNaN(costo) || costo < 0) return { ok: false, message: `Costo invalido para "${product.nombre}"` };
+
+      if (product.tipo === 'accesorio') {
+        const cantidad = parseInt(item.cantidad, 10);
+        if (!cantidad || cantidad <= 0) return { ok: false, message: `Cantidad invalida para "${product.nombre}"` };
+      } else if (item.rango) {
+        if (!item.codigoInicio || !item.codigoFin) return { ok: false, message: `Faltan los codigos del rango para "${product.nombre}"` };
+        const r = calcularRango(item.codigoInicio, item.codigoFin);
+        if (!r.ok) return { ok: false, message: `${product.nombre}: ${r.message}` };
+      } else {
+        if (!item.codigo || !item.codigo.trim()) return { ok: false, message: `Falta el codigo para "${product.nombre}"` };
+        const exists = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get(item.codigo.trim());
+        if (exists) return { ok: false, message: `El codigo "${item.codigo}" ya esta registrado` };
+      }
+    }
+
+    let totalUsd = 0;
+
+    const transaccion = db.transaction(() => {
+      const encabezadoInfo = db.prepare(
+        `INSERT INTO compras_encabezado (proveedor, numero_factura_compra, total_usd, usuario, created_at)
+         VALUES (?, ?, 0, ?, datetime('now'))`
+      ).run(proveedor.trim(), numeroFacturaCompra.trim(), usuario || '');
+      const encabezadoId = encabezadoInfo.lastInsertRowid;
+
+      const insertCompra = db.prepare(
+        `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, compra_encabezado_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`
+      );
+
+      for (const item of items) {
+        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
+        const costo = parseFloat(item.costoUnitario);
+
+        if (product.tipo === 'accesorio') {
+          const cantidad = parseInt(item.cantidad, 10);
+          const stockActual = product.stock_cantidad;
+          const costoActual = product.costo_promedio_usd || 0;
+          const nuevoStock = stockActual + cantidad;
+          const nuevoPromedio = nuevoStock > 0 ? ((stockActual * costoActual) + (cantidad * costo)) / nuevoStock : costo;
+          db.prepare('UPDATE products SET stock_cantidad = ?, costo_promedio_usd = ? WHERE id = ?').run(nuevoStock, nuevoPromedio, product.id);
+          insertCompra.run(product.id, product.tipo, product.nombre, costo, cantidad, costo * cantidad, usuario || '', encabezadoId);
+          totalUsd += costo * cantidad;
+        } else if (item.rango) {
+          const r = calcularRango(item.codigoInicio, item.codigoFin);
+          const existsStmt = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?');
+          const insertUnit = db.prepare(
+            `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now'))`
+          );
+          let agregados = 0;
+          r.codigos.forEach((codigo) => {
+            if (existsStmt.get(codigo)) return;
+            insertUnit.run(product.id, codigo, costo);
+            agregados++;
+          });
+          if (agregados > 0) {
+            insertCompra.run(product.id, product.tipo, product.nombre, costo, agregados, costo * agregados, usuario || '', encabezadoId);
+            totalUsd += costo * agregados;
+          }
+        } else {
+          db.prepare(
+            `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now'))`
+          ).run(product.id, item.codigo.trim(), costo);
+          insertCompra.run(product.id, product.tipo, product.nombre, costo, 1, costo, usuario || '', encabezadoId);
+          totalUsd += costo;
+        }
+      }
+
+      db.prepare('UPDATE compras_encabezado SET total_usd = ? WHERE id = ?').run(totalUsd, encabezadoId);
+      return encabezadoId;
+    });
+
+    const encabezadoId = transaccion();
+    return { ok: true, encabezadoId, totalUsd };
+  } catch (err) {
+    console.error('Error en compras:crearLote', err);
+    return { ok: false, message: 'Error inesperado: ' + (err?.message || String(err)) };
+  }
+});
+
+ipcMain.handle('compras:listEncabezados', () => {
+  const db = getDb();
+  return db.prepare('SELECT * FROM compras_encabezado ORDER BY id DESC').all();
+});
+
+ipcMain.handle('compras:detalleEncabezado', (event, { id }) => {
+  const db = getDb();
+  const encabezado = db.prepare('SELECT * FROM compras_encabezado WHERE id = ?').get(id);
+  if (!encabezado) return { ok: false, message: 'Compra no encontrada' };
+  const items = db.prepare('SELECT * FROM compras WHERE compra_encabezado_id = ?').all(id);
+  return { ok: true, encabezado, items };
+});
