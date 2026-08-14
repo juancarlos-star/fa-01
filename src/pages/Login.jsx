@@ -10,13 +10,19 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const result = await window.api.login(username, password);
-    setLoading(false);
-    if (!result.ok) {
-      setError(result.message);
-      return;
+    try {
+      const result = await window.api.login(username, password);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      onLogin(result.user);
+    } catch (err) {
+      console.error('Error al iniciar sesion:', err);
+      setError('Ocurrio un error inesperado al iniciar sesion: ' + (err?.message || String(err)));
+    } finally {
+      setLoading(false);
     }
-    onLogin(result.user);
   };
 
   return (
