@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('api', {
   // Categorias
   listCategories: () => ipcRenderer.invoke('categories:list'),
   createCategory: (nombre, tipo) => ipcRenderer.invoke('categories:create', { nombre, tipo }),
+  getCategoryImpact: (id) => ipcRenderer.invoke('categories:impacto', { id }),
+  updateCategory: (id, nombre) => ipcRenderer.invoke('categories:update', { id, nombre }),
+  deleteCategory: (id) => ipcRenderer.invoke('categories:delete', { id }),
   // Inventario - productos
   listProducts: (tipo) => ipcRenderer.invoke('products:list', { tipo }),
   listProductNames: (tipo) => ipcRenderer.invoke('products:names', { tipo }),
@@ -53,6 +56,3 @@ contextBridge.exposeInMainWorld('api', {
   crearBackup: () => ipcRenderer.invoke('backup:crear'),
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar')
 });
-getCategoryImpact: (id) => ipcRenderer.invoke('categories:impacto', { id }),
-  updateCategory: (id, nombre) => ipcRenderer.invoke('categories:update', { id, nombre }),
-  deleteCategory: (id) => ipcRenderer.invoke('categories:delete', { id }),
