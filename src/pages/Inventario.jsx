@@ -58,6 +58,17 @@ export default function Inventario({ currentUser }) {
     setEditandoCostoId(null);
   }, [tab, cargarProductos, cargarNombresSugeridos]);
 
+  const categoriasDelTipo = categorias.filter((c) => c.tipo === tab);
+
+  useEffect(() => {
+    if (categoriasDelTipo.length === 1) {
+      setForm((f) => ({ ...f, categoria: categoriasDelTipo[0].nombre }));
+    } else {
+      setForm((f) => ({ ...f, categoria: '' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, categorias]);
+
   useEffect(() => {
     cargarCategorias();
   }, [cargarCategorias]);
@@ -240,9 +251,10 @@ export default function Inventario({ currentUser }) {
           <select
             value={form.categoria}
             onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+            disabled={categoriasDelTipo.length <= 1}
           >
-            <option value="">-- Selecciona --</option>
-            {categorias.map((c) => (
+            {categoriasDelTipo.length === 0 && <option value="">-- Sin categorias para este tipo --</option>}
+            {categoriasDelTipo.map((c) => (
               <option key={c.id} value={c.nombre}>{c.nombre}</option>
             ))}
           </select>
