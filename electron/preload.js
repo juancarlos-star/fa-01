@@ -53,3 +53,6 @@ contextBridge.exposeInMainWorld('api', {
   crearBackup: () => ipcRenderer.invoke('backup:crear'),
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar')
 });
+getCategoryImpact: (id) => ipcRenderer.invoke('categories:impacto', { id }),
+  updateCategory: (id, nombre) => ipcRenderer.invoke('categories:update', { id, nombre }),
+  deleteCategory: (id) => ipcRenderer.invoke('categories:delete', { id }),
