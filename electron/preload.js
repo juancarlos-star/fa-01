@@ -9,9 +9,6 @@ contextBridge.exposeInMainWorld('api', {
   // Categorias
   listCategories: () => ipcRenderer.invoke('categories:list'),
   createCategory: (nombre, tipo) => ipcRenderer.invoke('categories:create', { nombre, tipo }),
-  getCategoryImpact: (id) => ipcRenderer.invoke('categories:impacto', { id }),
-  updateCategory: (id, nombre) => ipcRenderer.invoke('categories:update', { id, nombre }),
-  deleteCategory: (id) => ipcRenderer.invoke('categories:delete', { id }),
   // Inventario - productos
   listProducts: (tipo) => ipcRenderer.invoke('products:list', { tipo }),
   listProductNames: (tipo) => ipcRenderer.invoke('products:names', { tipo }),
@@ -42,6 +39,7 @@ contextBridge.exposeInMainWorld('api', {
   crearFactura: (payload) => ipcRenderer.invoke('facturas:crear', payload),
   listFacturas: () => ipcRenderer.invoke('facturas:list'),
   detalleFactura: (id) => ipcRenderer.invoke('facturas:detalle', { id }),
+  eliminarFactura: (id) => ipcRenderer.invoke('facturas:eliminar', { id }),
   // Compras y costos
   listCompras: (desde, hasta) => ipcRenderer.invoke('compras:list', { desde, hasta }),
   updateProductCosto: (id, costoPromedio) => ipcRenderer.invoke('products:updateCosto', { id, costoPromedio }),
