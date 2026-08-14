@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('api', {
   // Categorias
   listCategories: () => ipcRenderer.invoke('categories:list'),
   createCategory: (nombre, tipo) => ipcRenderer.invoke('categories:create', { nombre, tipo }),
+  updateCategory: (id, nombre) => ipcRenderer.invoke('categories:update', { id, nombre }),
+  deleteCategory: (id) => ipcRenderer.invoke('categories:delete', { id }),
+  getCategoryImpact: (id) => ipcRenderer.invoke('categories:impacto', { id }),
   // Inventario - productos
   listProducts: (tipo) => ipcRenderer.invoke('products:list', { tipo }),
   listProductNames: (tipo) => ipcRenderer.invoke('products:names', { tipo }),
