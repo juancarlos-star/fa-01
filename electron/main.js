@@ -125,19 +125,32 @@ ipcMain.handle('products:names', (event, { tipo } = {}) => {
 
 ipcMain.handle('products:create', (event, data) => {
   const db = getDb();
-  const { tipo, nombre, categoria, precio, stock_minimo, codigo_barras, stock_cantidad } = data;
+  const { tipo, nombre, categoria, precio, stock_minimo, codigo_barras, stock_cantidad, costo_inicial, usuario } = data;
   if (!tipo || !nombre) return { ok: false, message: 'Tipo y nombre son obligatorios' };
+  const stockInicial = tipo === 'accesorio' ? (parseInt(stock_cantidad, 10) || 0) : 0;
+  const costo = parseFloat(costo_inicial) || 0;
+
   const info = db
     .prepare(
-      `INSERT INTO products (tipo, nombre, categoria, precio, stock_minimo, stock_cantidad, codigo_barras, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+      `INSERT INTO products (tipo, nombre, categoria, precio, stock_minimo, stock_cantidad, costo_promedio_usd, codigo_barras, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
     )
     .run(
       tipo, nombre, categoria || '', precio || 0, stock_minimo || 0,
-      tipo === 'accesorio' ? (stock_cantidad || 0) : 0,
+      stockInicial, costo,
       tipo === 'accesorio' ? (codigo_barras || '') : null
     );
-  return { ok: true, id: info.lastInsertRowid };
+
+  const productId = info.lastInsertRowid;
+
+  if (tipo === 'accesorio' && stockInicial > 0) {
+    db.prepare(
+      `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+    ).run(productId, tipo, nombre, costo, stockInicial, costo * stockInicial, usuario || '');
+  }
+
+  return { ok: true, id: productId };
 });
 
 ipcMain.handle('products:delete', (event, { id }) => {
