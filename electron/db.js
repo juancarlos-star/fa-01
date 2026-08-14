@@ -87,6 +87,13 @@ function migrarCategoriasSiHaceFalta(database) {
   }
 }
 
+function migrarComprasSiHaceFalta(database) {
+  const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras'").get();
+  if (existe && !tieneColumna(database, 'compras', 'compra_encabezado_id')) {
+    database.exec('ALTER TABLE compras ADD COLUMN compra_encabezado_id INTEGER');
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -177,7 +184,16 @@ function initDb() {
       cantidad INTEGER NOT NULL DEFAULT 1,
       precio_unitario_usd REAL NOT NULL,
       subtotal_usd REAL NOT NULL,
+      costo_unitario_usd REAL NOT NULL DEFAULT 0,
       FOREIGN KEY (factura_id) REFERENCES facturas(id)
+    );
+    CREATE TABLE IF NOT EXISTS compras_encabezado (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      proveedor TEXT NOT NULL,
+      numero_factura_compra TEXT NOT NULL,
+      total_usd REAL NOT NULL DEFAULT 0,
+      usuario TEXT,
+      created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS compras (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,7 +205,9 @@ function initDb() {
       total_usd REAL NOT NULL,
       usuario TEXT,
       created_at TEXT NOT NULL,
-      FOREIGN KEY (product_id) REFERENCES products(id)
+      compra_encabezado_id INTEGER,
+      FOREIGN KEY (product_id) REFERENCES products(id),
+      FOREIGN KEY (compra_encabezado_id) REFERENCES compras_encabezado(id)
     );
     CREATE TABLE IF NOT EXISTS gastos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,6 +223,7 @@ function initDb() {
   migrarFacturasSiHaceFalta(database);
   migrarCostosSiHaceFalta(database);
   migrarCategoriasSiHaceFalta(database);
+  migrarComprasSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');
