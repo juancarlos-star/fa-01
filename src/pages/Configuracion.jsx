@@ -9,6 +9,7 @@ export default function Configuracion() {
     numero_factura_siguiente: ''
   });
   const [guardado, setGuardado] = useState(false);
+  const [mensajeBackup, setMensajeBackup] = useState('');
 
   const cargar = useCallback(async () => {
     const data = await window.api.getSettings();
@@ -30,6 +31,26 @@ export default function Configuracion() {
     await window.api.updateSettings(form);
     setGuardado(true);
     setTimeout(() => setGuardado(false), 2000);
+  };
+
+  const handleBackup = async () => {
+    setMensajeBackup('');
+    const res = await window.api.crearBackup();
+    if (!res.ok) {
+      if (res.message !== 'Cancelado') setMensajeBackup('Error al crear el respaldo: ' + res.message);
+      return;
+    }
+    setMensajeBackup('Respaldo guardado en: ' + res.path);
+  };
+
+  const handleRestaurar = async () => {
+    if (!confirm('Esto reemplaza toda la base de datos actual por la del respaldo. ¿Continuar?')) return;
+    const res = await window.api.restaurarBackup();
+    if (!res.ok) {
+      if (res.message !== 'Cancelado') setMensajeBackup('Error al restaurar: ' + res.message);
+      return;
+    }
+    setMensajeBackup(res.mensaje);
   };
 
   return (
@@ -54,10 +75,17 @@ export default function Configuracion() {
         <button type="submit">Guardar configuracion</button>
         {guardado && <p style={{ color: 'green', marginTop: '8px' }}>Guardado correctamente</p>}
       </form>
-      <p style={{ color: '#666', fontSize: '0.85rem', maxWidth: '420px' }}>
-        El "Proximo numero de factura" debe coincidir con el numero que ya viene impreso en tu papeleria.
-        Cambialo solo si necesitas sincronizarlo (ej: al cambiar de talonario). El sistema lo va a subir solo despues de cada factura.
-      </p>
+
+      <div className="form-box" style={{ maxWidth: '420px', marginTop: '1.5rem' }}>
+        <h3>Respaldo de base de datos</h3>
+        <p style={{ fontSize: '0.85rem', color: '#666' }}>
+          Guarda una copia de toda la informacion (inventario, clientes, facturas, gastos) en un archivo que puedes
+          guardar en un USB o en la nube. Hazlo periodicamente.
+        </p>
+        <button type="button" onClick={handleBackup}>Crear respaldo</button>
+        <button type="button" onClick={handleRestaurar} style={{ marginLeft: '8px' }}>Restaurar respaldo</button>
+        {mensajeBackup && <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>{mensajeBackup}</p>}
+      </div>
     </div>
   );
 }
