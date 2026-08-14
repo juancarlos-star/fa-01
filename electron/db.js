@@ -73,6 +73,17 @@ function migrarCostosSiHaceFalta(database) {
   }
 }
 
+function migrarCategoriasSiHaceFalta(database) {
+  const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categorias'").get();
+  if (!existe) return;
+  if (!tieneColumna(database, 'categorias', 'tipo')) {
+    database.exec("ALTER TABLE categorias ADD COLUMN tipo TEXT NOT NULL DEFAULT 'accesorio'");
+    const mapa = { 'Telefono': 'equipo', 'SimCard': 'simcard', 'Usim': 'usim', 'Accesorios': 'accesorio' };
+    const update = database.prepare('UPDATE categorias SET tipo = ? WHERE nombre = ?');
+    Object.keys(mapa).forEach((nombre) => update.run(mapa[nombre], nombre));
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -92,6 +103,7 @@ function initDb() {
     CREATE TABLE IF NOT EXISTS categorias (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nombre TEXT UNIQUE NOT NULL,
+      tipo TEXT NOT NULL DEFAULT 'accesorio' CHECK(tipo IN ('equipo','simcard','usim','accesorio')),
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS products (
@@ -189,6 +201,7 @@ function initDb() {
   migrarProductsSiHaceFalta(database);
   migrarFacturasSiHaceFalta(database);
   migrarCostosSiHaceFalta(database);
+  migrarCategoriasSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');
@@ -198,11 +211,11 @@ function initDb() {
   insertSetting.run('iva_porcentaje', '16');
   insertSetting.run('numero_factura_siguiente', '1');
 
-  const insertCategoria = database.prepare("INSERT OR IGNORE INTO categorias (nombre, created_at) VALUES (?, datetime('now'))");
-  insertCategoria.run('Telefono');
-  insertCategoria.run('SimCard');
-  insertCategoria.run('Usim');
-  insertCategoria.run('Accesorios');
+  const insertCategoria = database.prepare("INSERT OR IGNORE INTO categorias (nombre, tipo, created_at) VALUES (?, ?, datetime('now'))");
+  insertCategoria.run('Telefono', 'equipo');
+  insertCategoria.run('SimCard', 'simcard');
+  insertCategoria.run('Usim', 'usim');
+  insertCategoria.run('Accesorios', 'accesorio');
 
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {
