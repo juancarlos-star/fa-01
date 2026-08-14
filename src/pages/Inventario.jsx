@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import PromptModal from '../components/PromptModal.jsx';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
@@ -14,7 +13,6 @@ export default function Inventario({ currentUser }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
-  const [modal, setModal] = useState(null);
 
   const [categorias, setCategorias] = useState([]);
   const [nombresSugeridos, setNombresSugeridos] = useState([]);
@@ -111,59 +109,6 @@ export default function Inventario({ currentUser }) {
       alert(res.message);
       return;
     }
-    cargarProductos();
-  };
-
-  // ---- Modales para Compra y Descargo de accesorios ----
-
-  const abrirModalCompra = (productId) => {
-    setModal({ tipo: 'compra', productId });
-  };
-
-  const abrirModalDescargoAccesorio = (productId) => {
-    setModal({ tipo: 'descargoAccesorio', productId });
-  };
-
-  const cerrarModal = () => setModal(null);
-
-  const confirmarModal = async (values) => {
-    if (modal.tipo === 'compra') {
-      const cantidad = parseInt(values.cantidad, 10);
-      if (!cantidad || cantidad <= 0) {
-        alert('Cantidad invalida');
-        return;
-      }
-      const costoUnitario = parseFloat(values.costoUnitario);
-      if (isNaN(costoUnitario) || costoUnitario < 0) {
-        alert('Indica el costo unitario de esta compra');
-        return;
-      }
-      const res = await window.api.addProductStock(modal.productId, cantidad, costoUnitario, currentUser?.username);
-      if (!res.ok) {
-        alert(res.message);
-        return;
-      }
-    }
-
-    if (modal.tipo === 'descargoAccesorio') {
-      const cantidad = parseInt(values.cantidad, 10);
-      if (!cantidad || cantidad <= 0) {
-        alert('Cantidad invalida');
-        return;
-      }
-      const res = await window.api.writeOffProductStock(
-        modal.productId,
-        cantidad,
-        values.motivo,
-        currentUser?.username
-      );
-      if (!res.ok) {
-        alert(res.message);
-        return;
-      }
-    }
-
-    setModal(null);
     cargarProductos();
   };
 
@@ -366,14 +311,9 @@ export default function Inventario({ currentUser }) {
                     </td>
                     <td style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                       {tab === 'accesorio' ? (
-                        esAdmin ? (
-                          <>
-                            <button onClick={() => abrirModalCompra(p.id)}>+ Compra</button>
-                            <button onClick={() => abrirModalDescargoAccesorio(p.id)}>Descargo</button>
-                          </>
-                        ) : (
-                          <span style={{ fontSize: '0.8rem', color: '#666' }}>Solo admin ajusta stock</span>
-                        )
+                        <span style={{ fontSize: '0.8rem', color: '#666' }}>
+                          Ajusta el stock desde Cargos y Descargos
+                        </span>
                       ) : (
                         <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}>
                           {expandedId === p.id ? 'Ocultar' : 'Ver unidades'}
@@ -388,7 +328,6 @@ export default function Inventario({ currentUser }) {
                         <UnidadesProducto
                           productId={p.id}
                           tipo={tab}
-                          onChange={cargarProductos}
                           currentUser={currentUser}
                         />
                       </td>
@@ -400,45 +339,13 @@ export default function Inventario({ currentUser }) {
           </tbody>
         </table>
       )}
-
-      {modal?.tipo === 'compra' && (
-        <PromptModal
-          title="Registrar compra (agregar stock)"
-          fields={[
-            { name: 'cantidad', label: 'Cantidad a ingresar', type: 'number', required: true, autoFocus: true },
-            { name: 'costoUnitario', label: 'Costo unitario de esta compra (USD)', type: 'number', required: true }
-          ]}
-          onConfirm={confirmarModal}
-          onCancel={cerrarModal}
-        />
-      )}
-
-      {modal?.tipo === 'descargoAccesorio' && (
-        <PromptModal
-          title="Registrar descargo"
-          fields={[
-            { name: 'cantidad', label: 'Cantidad a descargar', type: 'number', required: true, autoFocus: true },
-            { name: 'motivo', label: 'Motivo (ej: dañado, perdido, robado)', type: 'textarea', required: true }
-          ]}
-          onConfirm={confirmarModal}
-          onCancel={cerrarModal}
-        />
-      )}
     </div>
   );
 }
 
-function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
+function UnidadesProducto({ productId, tipo, currentUser }) {
   const [units, setUnits] = useState([]);
-  const [nuevoCodigo, setNuevoCodigo] = useState('');
-  const [nuevoCosto, setNuevoCosto] = useState('');
-  const [error, setError] = useState('');
-  const [modalBaja, setModalBaja] = useState(null);
-
-  const [codigoInicio, setCodigoInicio] = useState('');
-  const [codigoFin, setCodigoFin] = useState('');
-  const [costoRango, setCostoRango] = useState('');
-  const [rangoInfo, setRangoInfo] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const [editandoCostoUnitId, setEditandoCostoUnitId] = useState(null);
   const [nuevoCostoUnitValor, setNuevoCostoUnitValor] = useState('');
@@ -446,85 +353,15 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
   const esAdmin = currentUser?.role === 'administrador';
 
   const cargar = useCallback(async () => {
+    setLoading(true);
     const data = await window.api.listUnits(productId);
     setUnits(data);
+    setLoading(false);
   }, [productId]);
 
   useEffect(() => {
     cargar();
   }, [cargar]);
-
-  const handleAgregar = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!nuevoCodigo.trim()) return;
-    const costo = parseFloat(nuevoCosto);
-    if (isNaN(costo) || costo < 0) {
-      setError('Indica el costo de compra de esta unidad');
-      return;
-    }
-    const res = await window.api.addUnit(productId, nuevoCodigo.trim(), costo, currentUser?.username);
-    if (!res.ok) {
-      setError(res.message);
-      return;
-    }
-    setNuevoCodigo('');
-    cargar();
-    onChange();
-  };
-
-  const handleGenerarRango = async (e) => {
-    e.preventDefault();
-    setError('');
-    setRangoInfo('');
-    if (!codigoInicio.trim() || !codigoFin.trim()) {
-      setError('Escanea o escribe el primer y el ultimo codigo de la caja');
-      return;
-    }
-    const costo = parseFloat(costoRango);
-    if (isNaN(costo) || costo < 0) {
-      setError('Indica el costo unitario de este lote');
-      return;
-    }
-    const res = await window.api.addUnitsRange(productId, codigoInicio.trim(), codigoFin.trim(), costo, currentUser?.username);
-    if (!res.ok) {
-      setError(res.message);
-      return;
-    }
-    setRangoInfo(
-      `Rango procesado: ${res.total} codigos. Agregados: ${res.agregados}. Ya existian (saltados): ${res.saltados}.`
-    );
-    setCodigoInicio('');
-    setCodigoFin('');
-    setCostoRango('');
-    cargar();
-    onChange();
-  };
-
-  const handleEliminarUnidad = async (id) => {
-    if (!window.confirm('Eliminar este codigo? Esta accion no deja registro.')) return;
-    const res = await window.api.deleteUnit(id);
-    if (!res.ok) {
-      alert(res.message);
-      return;
-    }
-    cargar();
-    onChange();
-  };
-
-  const abrirModalBaja = (unitId) => setModalBaja({ unitId });
-  const cerrarModalBaja = () => setModalBaja(null);
-
-  const confirmarBaja = async (values) => {
-    const res = await window.api.writeOffUnit(modalBaja.unitId, values.motivo, currentUser?.username);
-    if (!res.ok) {
-      alert(res.message);
-      return;
-    }
-    setModalBaja(null);
-    cargar();
-    onChange();
-  };
 
   const abrirEdicionCostoUnit = (u) => {
     setEditandoCostoUnitId(u.id);
@@ -556,75 +393,14 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
 
   return (
     <div>
-      <form onSubmit={handleAgregar} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'flex-end' }}>
-        <div>
-          <label style={{ fontSize: '0.8rem' }}>Nuevo {label} (manual o pistola)</label><br />
-          <input
-            value={nuevoCodigo}
-            onChange={(e) => setNuevoCodigo(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <div>
-          <label style={{ fontSize: '0.8rem' }}>Costo de compra (USD)</label><br />
-          <input
-            type="number"
-            step="0.01"
-            value={nuevoCosto}
-            onChange={(e) => setNuevoCosto(e.target.value)}
-            style={{ width: '100px' }}
-          />
-        </div>
-        <button type="submit">+ Agregar {label}</button>
-      </form>
+      <p style={{ color: '#666', fontSize: '0.85rem', marginTop: 0 }}>
+        Vista de solo lectura de {label}s. Para agregar o dar de baja unidades, usa el modulo{' '}
+        <strong>Cargos y Descargos</strong>.
+      </p>
 
-      {(tipo === 'simcard' || tipo === 'usim') && (
-        <form
-          onSubmit={handleGenerarRango}
-          style={{
-            display: 'flex',
-            gap: '0.5rem',
-            alignItems: 'flex-end',
-            marginBottom: '0.75rem',
-            background: '#eef4ff',
-            padding: '0.6rem',
-            borderRadius: '4px'
-          }}
-        >
-          <div>
-            <label style={{ fontSize: '0.8rem' }}>Primer codigo de la caja</label><br />
-            <input
-              placeholder="Ej: 190000"
-              value={codigoInicio}
-              onChange={(e) => setCodigoInicio(e.target.value)}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: '0.8rem' }}>Ultimo codigo de la caja</label><br />
-            <input
-              placeholder="Ej: 190050"
-              value={codigoFin}
-              onChange={(e) => setCodigoFin(e.target.value)}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: '0.8rem' }}>Costo unitario del lote (USD)</label><br />
-            <input
-              type="number"
-              step="0.01"
-              value={costoRango}
-              onChange={(e) => setCostoRango(e.target.value)}
-              style={{ width: '100px' }}
-            />
-          </div>
-          <button type="submit">Generar rango completo</button>
-        </form>
-      )}
-
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      {rangoInfo && <p style={{ color: 'green' }}>{rangoInfo}</p>}
-
-      {units.length === 0 ? (
+      {loading ? (
+        <p>Cargando...</p>
+      ) : units.length === 0 ? (
         <p>Sin unidades registradas todavia.</p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0 }}>
@@ -662,26 +438,9 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
                   )
                 )}
               </span>
-              {u.estado === 'disponible' && (
-                <span style={{ display: 'flex', gap: '0.4rem' }}>
-                  {esAdmin && <button onClick={() => abrirModalBaja(u.id)}>Dar de baja</button>}
-                  <button onClick={() => handleEliminarUnidad(u.id)}>Eliminar</button>
-                </span>
-              )}
             </li>
           ))}
         </ul>
-      )}
-
-      {modalBaja && (
-        <PromptModal
-          title="Dar de baja (descargo)"
-          fields={[
-            { name: 'motivo', label: 'Motivo (ej: dañado, perdido, robado)', type: 'textarea', required: true, autoFocus: true }
-          ]}
-          onConfirm={confirmarBaja}
-          onCancel={cerrarModalBaja}
-        />
       )}
     </div>
   );

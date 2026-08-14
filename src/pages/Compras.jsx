@@ -17,23 +17,30 @@ export default function Compras({ currentUser }) {
   const [costoUnitario, setCostoUnitario] = useState('');
   const [cantidadDeseada, setCantidadDeseada] = useState('');
 
+  const [modoEscaneo, setModoEscaneo] = useState('manual'); // 'manual' | 'rango'
+
   const [codigosEscaneados, setCodigosEscaneados] = useState([]);
   const [valorEscaneo, setValorEscaneo] = useState('');
   const [verificando, setVerificando] = useState(false);
   const [errorEscaneo, setErrorEscaneo] = useState('');
   const scanInputRef = useRef(null);
 
+  const [codigoInicioRango, setCodigoInicioRango] = useState('');
+  const [codigoFinRango, setCodigoFinRango] = useState('');
+  const [generandoRango, setGenerandoRango] = useState(false);
+
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
 
-  const [historial, setHistorial] = useState([]);
-  const [detalleVer, setDetalleVer] = useState(null);
+
 
   const esAccesorio = tipoSeleccionado === 'accesorio';
   const cantidadNum = parseInt(cantidadDeseada, 10) || 0;
   const listoParaEscanear = !esAccesorio && productoId && costoUnitario !== '' && cantidadNum > 0;
   const escaneoCompleto = listoParaEscanear && codigosEscaneados.length === cantidadNum;
+
+  const permiteRango = tipoSeleccionado === 'simcard' || tipoSeleccionado === 'usim';
 
   const resetearFormularioProducto = () => {
     setProductoId('');
@@ -42,6 +49,9 @@ export default function Compras({ currentUser }) {
     setCodigosEscaneados([]);
     setValorEscaneo('');
     setErrorEscaneo('');
+    setCodigoInicioRango('');
+    setCodigoFinRango('');
+    setModoEscaneo('manual');
   };
 
   useEffect(() => {
@@ -52,17 +62,10 @@ export default function Compras({ currentUser }) {
   }, [tipoSeleccionado]);
 
   useEffect(() => {
-    if (listoParaEscanear && !escaneoCompleto && scanInputRef.current) {
+    if (listoParaEscanear && modoEscaneo === 'manual' && !escaneoCompleto && scanInputRef.current) {
       scanInputRef.current.focus();
     }
-  }, [listoParaEscanear, escaneoCompleto, codigosEscaneados.length]);
-
-  const cargarHistorial = useCallback(async () => {
-    const data = await window.api.listComprasEncabezados();
-    setHistorial(data);
-  }, []);
-
-  useEffect(() => { cargarHistorial(); }, [cargarHistorial]);
+  }, [listoParaEscanear, escaneoCompleto, codigosEscaneados.length, modoEscaneo]);
 
   const handleScanKeyDown = async (e) => {
     if (e.key !== 'Enter') return;
@@ -99,6 +102,41 @@ export default function Compras({ currentUser }) {
 
   const quitarCodigoEscaneado = (index) => {
     setCodigosEscaneados((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleGenerarRango = async () => {
+    setErrorEscaneo('');
+    if (!codigoInicioRango.trim() || !codigoFinRango.trim()) {
+      setErrorEscaneo('Escanea o escribe el primer y el ultimo codigo de la caja');
+      return;
+    }
+    if (cantidadNum <= 0) {
+      setErrorEscaneo('Indica primero la cantidad declarada en la factura del proveedor');
+      return;
+    }
+    setGenerandoRango(true);
+    try {
+      const res = await window.api.calcularRangoCompra(codigoInicioRango.trim(), codigoFinRango.trim());
+      if (!res.ok) {
+        setErrorEscaneo(res.message);
+        return;
+      }
+      if (res.yaExisten.length > 0) {
+        setErrorEscaneo(
+          `${res.yaExisten.length} codigo(s) del rango ya estan registrados en el inventario (ej: ${res.yaExisten[0]}). Corrige el rango o usa escaneo manual para los que faltan.`
+        );
+        return;
+      }
+      if (res.total !== cantidadNum) {
+        setErrorEscaneo(`El rango genero ${res.total} codigo(s) pero declaraste ${cantidadNum}. Verifica los codigos de la caja.`);
+        return;
+      }
+      setCodigosEscaneados(res.disponibles);
+    } catch (err) {
+      setErrorEscaneo('Error calculando el rango: ' + (err?.message || String(err)));
+    } finally {
+      setGenerandoRango(false);
+    }
   };
 
   const agregarProductoAlCarrito = () => {
@@ -158,15 +196,9 @@ export default function Compras({ currentUser }) {
       setCarrito([]);
       setProveedor('');
       setNumeroFacturaCompra('');
-      cargarHistorial();
     } catch (err) {
       setError('Error inesperado: ' + (err?.message || String(err)));
     }
-  };
-
-  const verDetalle = async (id) => {
-    const res = await window.api.detalleCompraEncabezado(id);
-    if (res.ok) setDetalleVer(res);
   };
 
   if (confirmacion) {
@@ -175,42 +207,11 @@ export default function Compras({ currentUser }) {
         <h1>Compra registrada</h1>
         <div className="form-box" style={{ maxWidth: '400px' }}>
           <p><strong>Total de la compra:</strong> ${confirmacion.totalUsd.toFixed(2)}</p>
+          <p style={{ color: '#666', fontSize: '0.85rem' }}>
+            Consulta el historial completo de compras en Reportes.
+          </p>
           <button onClick={() => setConfirmacion(null)}>Registrar otra compra</button>
         </div>
-      </div>
-    );
-  }
-
-  if (detalleVer) {
-    const { encabezado, items } = detalleVer;
-    return (
-      <div>
-        <button onClick={() => setDetalleVer(null)}>&larr; Volver</button>
-        <h1>Compra #{encabezado.id}</h1>
-        <p><strong>Proveedor:</strong> {encabezado.proveedor}</p>
-        <p><strong>N° factura de compra:</strong> {encabezado.numero_factura_compra}</p>
-        <p><strong>Fecha:</strong> {encabezado.created_at}</p>
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Producto</th>
-              <th>Cantidad</th>
-              <th>Costo unit.</th>
-              <th>Subtotal</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((i) => (
-              <tr key={i.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{i.descripcion}</td>
-                <td>{i.cantidad}</td>
-                <td>${i.costo_unitario_usd.toFixed(2)}</td>
-                <td>${i.total_usd.toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p><strong>Total: ${encabezado.total_usd.toFixed(2)}</strong></p>
       </div>
     );
   }
@@ -263,10 +264,36 @@ export default function Compras({ currentUser }) {
 
         {listoParaEscanear && (
           <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#f4f7fb', borderRadius: '6px' }}>
+            {permiteRango && codigosEscaneados.length === 0 && (
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setModoEscaneo('manual')}
+                  style={{
+                    padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                    backgroundColor: modoEscaneo === 'manual' ? '#0b4f9e' : '#e2e8f0', color: modoEscaneo === 'manual' ? '#fff' : '#111'
+                  }}
+                >
+                  Manual (pistola, uno por uno)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoEscaneo('rango')}
+                  style={{
+                    padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                    backgroundColor: modoEscaneo === 'rango' ? '#0b4f9e' : '#e2e8f0', color: modoEscaneo === 'rango' ? '#fff' : '#111'
+                  }}
+                >
+                  Por rango (primer y ultimo codigo de la caja)
+                </button>
+              </div>
+            )}
+
             <p style={{ margin: '0 0 0.4rem 0', fontWeight: 'bold' }}>
               Escaneados: {codigosEscaneados.length} de {cantidadNum}
             </p>
-            {!escaneoCompleto && (
+
+            {modoEscaneo === 'manual' && !escaneoCompleto && (
               <input
                 ref={scanInputRef}
                 value={valorEscaneo}
@@ -277,6 +304,23 @@ export default function Compras({ currentUser }) {
                 autoFocus
               />
             )}
+
+            {modoEscaneo === 'rango' && codigosEscaneados.length === 0 && (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div>
+                  <label style={{ fontSize: '0.75rem' }}>Primer codigo de la caja</label><br />
+                  <input placeholder="Ej: 190000" value={codigoInicioRango} onChange={(e) => setCodigoInicioRango(e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.75rem' }}>Ultimo codigo de la caja</label><br />
+                  <input placeholder="Ej: 190050" value={codigoFinRango} onChange={(e) => setCodigoFinRango(e.target.value)} />
+                </div>
+                <button type="button" onClick={handleGenerarRango} disabled={generandoRango}>
+                  {generandoRango ? 'Generando...' : 'Generar rango completo'}
+                </button>
+              </div>
+            )}
+
             {errorEscaneo && <p style={{ color: 'red', fontSize: '0.85rem' }}>{errorEscaneo}</p>}
             {codigosEscaneados.length > 0 && (
               <ul style={{ maxHeight: '150px', overflowY: 'auto', margin: '0.5rem 0 0 0', paddingLeft: '1.2rem' }}>
@@ -335,33 +379,10 @@ export default function Compras({ currentUser }) {
         <button onClick={handleRegistrarCompra} style={{ marginTop: '8px' }}>Registrar compra</button>
       </div>
 
-      <h3 style={{ marginTop: '2rem' }}>Historial de compras</h3>
-      {historial.length === 0 ? (
-        <p>Aun no se ha registrado ninguna compra.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Fecha</th>
-              <th>Proveedor</th>
-              <th>N° factura</th>
-              <th>Total</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {historial.map((c) => (
-              <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{c.created_at}</td>
-                <td>{c.proveedor}</td>
-                <td>{c.numero_factura_compra}</td>
-                <td>${c.total_usd.toFixed(2)}</td>
-                <td><button onClick={() => verDetalle(c.id)}>Ver</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <p style={{ color: '#666', fontSize: '0.85rem', marginTop: '2rem' }}>
+        El historial de compras ahora se consulta desde <strong>Reportes → Reporte de compras</strong>,
+        con filtros por dia, semana, mes, año o rango de fechas.
+      </p>
     </div>
   );
 }
