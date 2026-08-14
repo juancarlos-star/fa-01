@@ -175,22 +175,27 @@ export default function Facturacion({ currentUser }) {
       return;
     }
 
-    const res = await window.api.crearFactura({
-      cliente,
-      items: carrito,
-      usuario: currentUser?.username,
-      sinCliente
-    });
+    try {
+      const res = await window.api.crearFactura({
+        cliente,
+        items: carrito,
+        usuario: currentUser?.username,
+        sinCliente
+      });
 
-    if (!res.ok) {
-      setError(res.message);
-      return;
+      if (!res.ok) {
+        setError(res.message);
+        return;
+      }
+
+      const detalle = await window.api.detalleFactura(res.facturaId);
+      setConfirmacion({ ...res, detalle: detalle.ok ? detalle : null });
+      setCarrito([]);
+      quitarCliente();
+    } catch (err) {
+      console.error('Error al emitir factura:', err);
+      setError('Ocurrio un error inesperado al emitir la factura: ' + (err?.message || String(err)));
     }
-
-    const detalle = await window.api.detalleFactura(res.facturaId);
-    setConfirmacion({ ...res, detalle: detalle.ok ? detalle : null });
-    setCarrito([]);
-    quitarCliente();
   };
 
   const handleImprimir = () => {
