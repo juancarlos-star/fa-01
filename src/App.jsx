@@ -7,6 +7,7 @@ import HistorialDescargos from './pages/HistorialDescargos.jsx';
 import Configuracion from './pages/Configuracion.jsx';
 import Facturacion from './pages/Facturacion.jsx';
 import Facturas from './pages/Facturas.jsx';
+import Compras from './pages/Compras.jsx';
 import Gastos from './pages/Gastos.jsx';
 import Reportes from './pages/Reportes.jsx';
 export default function App() {
@@ -31,6 +32,9 @@ export default function App() {
           <button onClick={() => setView('facturacion')}>Facturar</button>
           <button onClick={() => setView('facturas')}>Historial de facturas</button>
           <button onClick={() => setView('inventario')}>Inventario</button>
+          {user.role === 'administrador' && (
+            <button onClick={() => setView('compras')}>Compras</button>
+          )}
           {user.role === 'administrador' && (
             <button onClick={() => setView('categorias')}>Categorias</button>
           )}
@@ -62,6 +66,7 @@ export default function App() {
         {view === 'facturacion' && <Facturacion currentUser={user} />}
         {view === 'facturas' && <Facturas currentUser={user} />}
         {view === 'inventario' && <Inventario currentUser={user} />}
+        {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'descargos' && user.role === 'administrador' && <HistorialDescargos />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
