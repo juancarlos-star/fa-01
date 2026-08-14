@@ -330,10 +330,13 @@ ipcMain.handle('clientes:create', (event, data) => {
 // ---------- IPC: Facturacion ----------
 ipcMain.handle('facturas:crear', (event, payload) => {
   const db = getDb();
-  const { cliente, items, usuario } = payload;
+  const { cliente, items, usuario, sinCliente } = payload;
 
   if (!items || items.length === 0) {
     return { ok: false, message: 'La factura debe tener al menos un producto' };
+  }
+  if (!sinCliente && !(cliente && (cliente.id || (cliente.nombre && cliente.nombre.trim())))) {
+    return { ok: false, message: 'Selecciona un cliente registrado, crea uno nuevo, o marca "Consumidor final"' };
   }
 
   const settingsRows = db.prepare('SELECT key, value FROM settings').all();
@@ -341,12 +344,13 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   settingsRows.forEach((r) => { settings[r.key] = r.value; });
   const tasaCambio = parseFloat(settings.tasa_cambio) || 1;
   const ivaPorcentaje = parseFloat(settings.iva_porcentaje) || 0;
+  let siguienteNumero = parseInt(settings.numero_factura_siguiente, 10);
+  if (!siguienteNumero || siguienteNumero < 1) siguienteNumero = 1;
+  const numeroFacturaStr = String(siguienteNumero).padStart(6, '0');
 
-  // Validar disponibilidad antes de tocar nada
   for (const item of items) {
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
     if (!product) return { ok: false, message: `Producto no encontrado (id ${item.product_id})` };
-
     if (product.tipo === 'accesorio') {
       if (item.cantidad > product.stock_cantidad) {
         return { ok: false, message: `Stock insuficiente de "${product.nombre}"` };
@@ -373,34 +377,39 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   let clienteId = null;
   let clienteNombre = 'Consumidor final';
   let clienteRif = '';
+  let clienteDireccion = '';
 
   const transaccion = db.transaction(() => {
-    if (cliente && cliente.id) {
-      const c = db.prepare('SELECT * FROM clientes WHERE id = ?').get(cliente.id);
-      if (c) {
-        clienteId = c.id;
-        clienteNombre = c.nombre;
-        clienteRif = c.rif_cedula || '';
+    if (!sinCliente) {
+      if (cliente.id) {
+        const c = db.prepare('SELECT * FROM clientes WHERE id = ?').get(cliente.id);
+        if (c) {
+          clienteId = c.id;
+          clienteNombre = c.nombre;
+          clienteRif = c.rif_cedula || '';
+          clienteDireccion = c.direccion || '';
+        }
+      } else if (cliente.nombre && cliente.nombre.trim()) {
+        const info = db
+          .prepare(
+            `INSERT INTO clientes (nombre, rif_cedula, telefono, direccion, email, created_at)
+             VALUES (?, ?, ?, ?, ?, datetime('now'))`
+          )
+          .run(cliente.nombre.trim(), cliente.rif_cedula || '', cliente.telefono || '', cliente.direccion || '', cliente.email || '');
+        clienteId = info.lastInsertRowid;
+        clienteNombre = cliente.nombre.trim();
+        clienteRif = cliente.rif_cedula || '';
+        clienteDireccion = cliente.direccion || '';
       }
-    } else if (cliente && cliente.nombre && cliente.nombre.trim()) {
-      const info = db
-        .prepare(
-          `INSERT INTO clientes (nombre, rif_cedula, telefono, direccion, email, created_at)
-           VALUES (?, ?, ?, ?, ?, datetime('now'))`
-        )
-        .run(cliente.nombre.trim(), cliente.rif_cedula || '', cliente.telefono || '', cliente.direccion || '', cliente.email || '');
-      clienteId = info.lastInsertRowid;
-      clienteNombre = cliente.nombre.trim();
-      clienteRif = cliente.rif_cedula || '';
     }
 
     const facturaInfo = db
       .prepare(
         `INSERT INTO facturas
-         (cliente_id, cliente_nombre, cliente_rif, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+         (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
       )
-      .run(clienteId, clienteNombre, clienteRif, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '');
+      .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '');
 
     const facturaId = facturaInfo.lastInsertRowid;
 
@@ -427,6 +436,10 @@ ipcMain.handle('facturas:crear', (event, payload) => {
       insertItem.run(facturaId, product.id, item.unit_id || null, product.tipo, product.nombre, codigo, cantidad, precioUnit, subtotalItem);
     }
 
+    db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('numero_factura_siguiente', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).run(String(siguienteNumero + 1));
+
     return facturaId;
   });
 
@@ -435,7 +448,7 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   return {
     ok: true,
     facturaId,
-    numero: String(facturaId).padStart(6, '0'),
+    numero: numeroFacturaStr,
     totalUsd,
     totalBs
   };
