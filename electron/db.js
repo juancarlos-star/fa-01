@@ -56,6 +56,9 @@ function migrarFacturasSiHaceFalta(database) {
   if (!tieneColumna(database, 'facturas', 'numero_factura')) {
     database.exec('ALTER TABLE facturas ADD COLUMN numero_factura TEXT');
   }
+  if (!tieneColumna(database, 'facturas', 'cliente_direccion')) {
+    database.exec('ALTER TABLE facturas ADD COLUMN cliente_direccion TEXT');
+  }
 }
 
 function migrarCostosSiHaceFalta(database) {
