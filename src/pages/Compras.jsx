@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
@@ -7,25 +7,6 @@ const TIPOS = [
   { key: 'accesorio', label: 'Accesorios' }
 ];
 
-function estimarCantidadRango(codigoInicio, codigoFin) {
-  try {
-    const a = codigoInicio.trim();
-    const b = codigoFin.trim();
-    if (a.length !== b.length) return null;
-    let i = 0;
-    while (i < a.length && a[i] === b[i]) i++;
-    const restoA = a.slice(i);
-    const restoB = b.slice(i);
-    if (!/^\d+$/.test(restoA) || !/^\d+$/.test(restoB)) return null;
-    const numA = parseInt(restoA, 10);
-    const numB = parseInt(restoB, 10);
-    if (numA > numB) return null;
-    return numB - numA + 1;
-  } catch {
-    return null;
-  }
-}
-
 export default function Compras({ currentUser }) {
   const [proveedor, setProveedor] = useState('');
   const [numeroFacturaCompra, setNumeroFacturaCompra] = useState('');
@@ -33,12 +14,14 @@ export default function Compras({ currentUser }) {
   const [tipoSeleccionado, setTipoSeleccionado] = useState('equipo');
   const [productos, setProductos] = useState([]);
   const [productoId, setProductoId] = useState('');
-  const [modoRango, setModoRango] = useState(false);
-  const [codigo, setCodigo] = useState('');
-  const [codigoInicio, setCodigoInicio] = useState('');
-  const [codigoFin, setCodigoFin] = useState('');
-  const [cantidad, setCantidad] = useState(1);
   const [costoUnitario, setCostoUnitario] = useState('');
+  const [cantidadDeseada, setCantidadDeseada] = useState('');
+
+  const [codigosEscaneados, setCodigosEscaneados] = useState([]);
+  const [valorEscaneo, setValorEscaneo] = useState('');
+  const [verificando, setVerificando] = useState(false);
+  const [errorEscaneo, setErrorEscaneo] = useState('');
+  const scanInputRef = useRef(null);
 
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
@@ -47,18 +30,32 @@ export default function Compras({ currentUser }) {
   const [historial, setHistorial] = useState([]);
   const [detalleVer, setDetalleVer] = useState(null);
 
+  const esAccesorio = tipoSeleccionado === 'accesorio';
+  const cantidadNum = parseInt(cantidadDeseada, 10) || 0;
+  const listoParaEscanear = !esAccesorio && productoId && costoUnitario !== '' && cantidadNum > 0;
+  const escaneoCompleto = listoParaEscanear && codigosEscaneados.length === cantidadNum;
+
+  const resetearFormularioProducto = () => {
+    setProductoId('');
+    setCostoUnitario('');
+    setCantidadDeseada('');
+    setCodigosEscaneados([]);
+    setValorEscaneo('');
+    setErrorEscaneo('');
+  };
+
   useEffect(() => {
     window.api.listProducts(tipoSeleccionado).then((data) => {
       setProductos(data);
-      setProductoId('');
-      setCodigo('');
-      setCodigoInicio('');
-      setCodigoFin('');
-      setCantidad(1);
-      setCostoUnitario('');
-      setModoRango(false);
+      resetearFormularioProducto();
     });
   }, [tipoSeleccionado]);
+
+  useEffect(() => {
+    if (listoParaEscanear && !escaneoCompleto && scanInputRef.current) {
+      scanInputRef.current.focus();
+    }
+  }, [listoParaEscanear, escaneoCompleto, codigosEscaneados.length]);
 
   const cargarHistorial = useCallback(async () => {
     const data = await window.api.listComprasEncabezados();
@@ -67,44 +64,73 @@ export default function Compras({ currentUser }) {
 
   useEffect(() => { cargarHistorial(); }, [cargarHistorial]);
 
-  const agregarAlCarrito = () => {
+  const handleScanKeyDown = async (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const codigo = valorEscaneo.trim();
+    setValorEscaneo('');
+    if (!codigo) return;
+    setErrorEscaneo('');
+
+    if (codigosEscaneados.length >= cantidadNum) {
+      setErrorEscaneo(`Ya escaneaste los ${cantidadNum} codigos declarados. Quita alguno si necesitas corregir.`);
+      return;
+    }
+    if (codigosEscaneados.includes(codigo)) {
+      setErrorEscaneo(`El codigo "${codigo}" ya fue escaneado en esta misma compra`);
+      return;
+    }
+
+    setVerificando(true);
+    try {
+      const res = await window.api.codigoExiste({ codigo });
+      if (res.existe) {
+        setErrorEscaneo(`El codigo "${codigo}" ya esta registrado en el inventario`);
+      } else {
+        setCodigosEscaneados((prev) => [...prev, codigo]);
+      }
+    } catch (err) {
+      setErrorEscaneo('Error verificando el codigo: ' + (err?.message || String(err)));
+    } finally {
+      setVerificando(false);
+      if (scanInputRef.current) scanInputRef.current.focus();
+    }
+  };
+
+  const quitarCodigoEscaneado = (index) => {
+    setCodigosEscaneados((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const agregarProductoAlCarrito = () => {
     setError('');
-    if (!productoId) { setError('Selecciona un producto'); return; }
     const producto = productos.find((p) => p.id === Number(productoId));
+    if (!producto) { setError('Selecciona un producto'); return; }
     const costo = parseFloat(costoUnitario);
     if (isNaN(costo) || costo < 0) { setError('Indica el costo unitario'); return; }
 
-    if (tipoSeleccionado === 'accesorio') {
-      const c = parseInt(cantidad, 10);
-      if (!c || c <= 0) { setError('Cantidad invalida'); return; }
-      setCarrito([...carrito, {
+    if (esAccesorio) {
+      const cantidad = parseInt(cantidadDeseada, 10);
+      if (!cantidad || cantidad <= 0) { setError('Cantidad invalida'); return; }
+      setCarrito((prev) => [...prev, {
         key: `${producto.id}-${Date.now()}`,
         product_id: producto.id, tipo: producto.tipo, descripcion: producto.nombre,
-        cantidad: c, costoUnitario: costo, subtotalEstimado: costo * c
-      }]);
-    } else if (modoRango) {
-      if (!codigoInicio.trim() || !codigoFin.trim()) { setError('Escribe el primer y el ultimo codigo del rango'); return; }
-      const est = estimarCantidadRango(codigoInicio, codigoFin);
-      setCarrito([...carrito, {
-        key: `${producto.id}-${Date.now()}`,
-        product_id: producto.id, tipo: producto.tipo, descripcion: producto.nombre,
-        rango: true, codigoInicio: codigoInicio.trim(), codigoFin: codigoFin.trim(),
-        costoUnitario: costo, cantidadEstimada: est, subtotalEstimado: est ? costo * est : null
+        costoUnitario: costo, cantidad, subtotal: costo * cantidad
       }]);
     } else {
-      if (!codigo.trim()) { setError('Escribe o escanea el codigo'); return; }
-      setCarrito([...carrito, {
+      if (!escaneoCompleto) { setError(`Faltan codigos por escanear (${codigosEscaneados.length} de ${cantidadNum})`); return; }
+      setCarrito((prev) => [...prev, {
         key: `${producto.id}-${Date.now()}`,
         product_id: producto.id, tipo: producto.tipo, descripcion: producto.nombre,
-        codigo: codigo.trim(), costoUnitario: costo, subtotalEstimado: costo
+        costoUnitario: costo, codigos: [...codigosEscaneados], cantidadDeclarada: cantidadNum,
+        subtotal: costo * codigosEscaneados.length
       }]);
     }
-    setCodigo(''); setCodigoInicio(''); setCodigoFin(''); setCantidad(1); setCostoUnitario('');
+    resetearFormularioProducto();
   };
 
-  const quitarDelCarrito = (key) => setCarrito(carrito.filter((i) => i.key !== key));
+  const quitarDelCarrito = (key) => setCarrito((prev) => prev.filter((i) => i.key !== key));
 
-  const totalEstimado = carrito.reduce((acc, i) => acc + (i.subtotalEstimado || 0), 0);
+  const totalEstimado = carrito.reduce((acc, i) => acc + i.subtotal, 0);
 
   const handleRegistrarCompra = async () => {
     setError('');
@@ -116,10 +142,8 @@ export default function Compras({ currentUser }) {
       product_id: i.product_id,
       costoUnitario: i.costoUnitario,
       cantidad: i.cantidad,
-      codigo: i.codigo,
-      rango: i.rango || false,
-      codigoInicio: i.codigoInicio,
-      codigoFin: i.codigoFin
+      codigos: i.codigos,
+      cantidadDeclarada: i.cantidadDeclarada
     }));
 
     try {
@@ -195,9 +219,8 @@ export default function Compras({ currentUser }) {
     <div>
       <h1>Compras</h1>
       <p style={{ color: '#666', fontSize: '0.85rem', maxWidth: '600px' }}>
-        Registra aqui todos los productos de una misma factura de proveedor (telefonos, simcards, usim y accesorios
-        que llegaron juntos). Para agregar una sola unidad suelta sin factura de proveedor, usa los botones dentro
-        de Inventario.
+        Registra aqui todos los productos de una misma factura de proveedor. Para agregar una sola unidad
+        suelta sin factura de proveedor, usa los botones dentro de Inventario.
       </p>
 
       <div className="form-box" style={{ maxWidth: '500px' }}>
@@ -225,46 +248,56 @@ export default function Compras({ currentUser }) {
         </div>
 
         <label>Producto</label>
-        <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
+        <select value={productoId} onChange={(e) => { setProductoId(e.target.value); setCodigosEscaneados([]); }}>
           <option value="">-- Selecciona --</option>
           {productos.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
 
-        {tipoSeleccionado === 'accesorio' && (
-          <>
-            <label>Cantidad</label>
-            <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-          </>
+        <label>Costo unitario sin IVA (USD)</label>
+        <input type="number" step="0.01" value={costoUnitario}
+          onChange={(e) => { setCostoUnitario(e.target.value); setCodigosEscaneados([]); }} />
+
+        <label>Cantidad {esAccesorio ? '' : 'que llego segun la factura'}</label>
+        <input type="number" min="1" value={cantidadDeseada}
+          onChange={(e) => { setCantidadDeseada(e.target.value); setCodigosEscaneados([]); }} />
+
+        {listoParaEscanear && (
+          <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#f4f7fb', borderRadius: '6px' }}>
+            <p style={{ margin: '0 0 0.4rem 0', fontWeight: 'bold' }}>
+              Escaneados: {codigosEscaneados.length} de {cantidadNum}
+            </p>
+            {!escaneoCompleto && (
+              <input
+                ref={scanInputRef}
+                value={valorEscaneo}
+                onChange={(e) => setValorEscaneo(e.target.value)}
+                onKeyDown={handleScanKeyDown}
+                placeholder={verificando ? 'Verificando...' : 'Dispara la pistola aqui o escribe y presiona Enter'}
+                disabled={verificando}
+                autoFocus
+              />
+            )}
+            {errorEscaneo && <p style={{ color: 'red', fontSize: '0.85rem' }}>{errorEscaneo}</p>}
+            {codigosEscaneados.length > 0 && (
+              <ul style={{ maxHeight: '150px', overflowY: 'auto', margin: '0.5rem 0 0 0', paddingLeft: '1.2rem' }}>
+                {codigosEscaneados.map((c, i) => (
+                  <li key={`${c}-${i}`} style={{ fontSize: '0.85rem' }}>
+                    {c} <button type="button" onClick={() => quitarCodigoEscaneado(i)} style={{ fontSize: '0.75rem' }}>Quitar</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
 
-        {(tipoSeleccionado === 'simcard' || tipoSeleccionado === 'usim') && (
-          <p style={{ fontSize: '0.8rem' }}>
-            <label>
-              <input type="checkbox" checked={modoRango} onChange={(e) => setModoRango(e.target.checked)} /> Ingresar como rango (caja completa)
-            </label>
-          </p>
-        )}
-
-        {tipoSeleccionado !== 'accesorio' && !modoRango && (
-          <>
-            <label>Codigo (IMEI/SIM/USIM)</label>
-            <input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Manual o pistola" />
-          </>
-        )}
-
-        {tipoSeleccionado !== 'accesorio' && modoRango && (
-          <>
-            <label>Primer codigo</label>
-            <input value={codigoInicio} onChange={(e) => setCodigoInicio(e.target.value)} />
-            <label>Ultimo codigo</label>
-            <input value={codigoFin} onChange={(e) => setCodigoFin(e.target.value)} />
-          </>
-        )}
-
-        <label>Costo unitario (USD)</label>
-        <input type="number" step="0.01" value={costoUnitario} onChange={(e) => setCostoUnitario(e.target.value)} />
-
-        <button type="button" onClick={agregarAlCarrito}>+ Agregar a la compra</button>
+        <button
+          type="button"
+          onClick={agregarProductoAlCarrito}
+          disabled={!esAccesorio && !escaneoCompleto}
+          style={{ marginTop: '0.75rem' }}
+        >
+          + Agregar a la compra
+        </button>
       </div>
 
       {error && <p style={{ color: 'red' }}>{error}</p>}
@@ -277,9 +310,9 @@ export default function Compras({ currentUser }) {
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
               <th style={{ padding: '0.5rem' }}>Producto</th>
-              <th>Detalle</th>
+              <th>Cantidad</th>
               <th>Costo unit.</th>
-              <th>Subtotal est.</th>
+              <th>Subtotal</th>
               <th></th>
             </tr>
           </thead>
@@ -287,13 +320,9 @@ export default function Compras({ currentUser }) {
             {carrito.map((item) => (
               <tr key={item.key} style={{ borderBottom: '1px solid #eee' }}>
                 <td style={{ padding: '0.5rem' }}>{item.descripcion}</td>
-                <td>
-                  {item.rango
-                    ? `Rango ${item.codigoInicio} - ${item.codigoFin}${item.cantidadEstimada ? ` (~${item.cantidadEstimada})` : ''}`
-                    : item.codigo || `Cantidad: ${item.cantidad}`}
-                </td>
+                <td>{item.codigos ? item.codigos.length : item.cantidad}</td>
                 <td>${item.costoUnitario.toFixed(2)}</td>
-                <td>{item.subtotalEstimado != null ? `$${item.subtotalEstimado.toFixed(2)}` : '—'}</td>
+                <td>${item.subtotal.toFixed(2)}</td>
                 <td><button onClick={() => quitarDelCarrito(item.key)}>Quitar</button></td>
               </tr>
             ))}
