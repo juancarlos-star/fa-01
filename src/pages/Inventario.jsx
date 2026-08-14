@@ -19,13 +19,17 @@ export default function Inventario({ currentUser }) {
   const [categorias, setCategorias] = useState([]);
   const [nombresSugeridos, setNombresSugeridos] = useState([]);
 
+  const [editandoCostoId, setEditandoCostoId] = useState(null);
+  const [nuevoCostoValor, setNuevoCostoValor] = useState('');
+
   const [form, setForm] = useState({
     nombre: '',
     categoria: '',
     precio: '',
     stock_minimo: '',
     codigo_barras: '',
-    stock_cantidad: ''
+    stock_cantidad: '',
+    costo_inicial: ''
   });
 
   const esAdmin = currentUser?.role === 'administrador';
@@ -51,6 +55,7 @@ export default function Inventario({ currentUser }) {
     cargarProductos();
     cargarNombresSugeridos();
     setExpandedId(null);
+    setEditandoCostoId(null);
   }, [tab, cargarProductos, cargarNombresSugeridos]);
 
   useEffect(() => {
@@ -64,6 +69,10 @@ export default function Inventario({ currentUser }) {
       setError('El nombre es obligatorio');
       return;
     }
+    if (tab === 'accesorio' && parseInt(form.stock_cantidad, 10) > 0 && !form.costo_inicial) {
+      setError('Indica el costo unitario del stock inicial');
+      return;
+    }
     const res = await window.api.createProduct({
       tipo: tab,
       nombre: form.nombre.trim(),
@@ -71,13 +80,15 @@ export default function Inventario({ currentUser }) {
       precio: parseFloat(form.precio) || 0,
       stock_minimo: parseInt(form.stock_minimo, 10) || 0,
       codigo_barras: form.codigo_barras.trim(),
-      stock_cantidad: parseInt(form.stock_cantidad, 10) || 0
+      stock_cantidad: parseInt(form.stock_cantidad, 10) || 0,
+      costo_inicial: parseFloat(form.costo_inicial) || 0,
+      usuario: currentUser?.username
     });
     if (!res.ok) {
       setError(res.message);
       return;
     }
-    setForm({ nombre: '', categoria: '', precio: '', stock_minimo: '', codigo_barras: '', stock_cantidad: '' });
+    setForm({ nombre: '', categoria: '', precio: '', stock_minimo: '', codigo_barras: '', stock_cantidad: '', costo_inicial: '' });
     cargarProductos();
     cargarNombresSugeridos();
   };
@@ -111,7 +122,12 @@ export default function Inventario({ currentUser }) {
         alert('Cantidad invalida');
         return;
       }
-      const res = await window.api.addProductStock(modal.productId, cantidad, currentUser?.username);
+      const costoUnitario = parseFloat(values.costoUnitario);
+      if (isNaN(costoUnitario) || costoUnitario < 0) {
+        alert('Indica el costo unitario de esta compra');
+        return;
+      }
+      const res = await window.api.addProductStock(modal.productId, cantidad, costoUnitario, currentUser?.username);
       if (!res.ok) {
         alert(res.message);
         return;
@@ -137,6 +153,34 @@ export default function Inventario({ currentUser }) {
     }
 
     setModal(null);
+    cargarProductos();
+  };
+
+  // ---- Edicion inline de costo promedio (accesorios) ----
+
+  const abrirEdicionCosto = (p) => {
+    setEditandoCostoId(p.id);
+    setNuevoCostoValor(String(p.costo_promedio_usd ?? 0));
+  };
+
+  const cancelarEdicionCosto = () => {
+    setEditandoCostoId(null);
+    setNuevoCostoValor('');
+  };
+
+  const guardarEdicionCosto = async (id) => {
+    const costo = parseFloat(nuevoCostoValor);
+    if (isNaN(costo) || costo < 0) {
+      alert('Costo invalido');
+      return;
+    }
+    const res = await window.api.updateProductCosto(id, costo);
+    if (!res.ok) {
+      alert(res.message);
+      return;
+    }
+    setEditandoCostoId(null);
+    setNuevoCostoValor('');
     cargarProductos();
   };
 
@@ -204,7 +248,7 @@ export default function Inventario({ currentUser }) {
           </select>
         </div>
         <div>
-          <label>Precio (USD)</label><br />
+          <label>Precio de venta (USD)</label><br />
           <input
             type="number"
             step="0.01"
@@ -237,6 +281,15 @@ export default function Inventario({ currentUser }) {
                 onChange={(e) => setForm({ ...form, stock_cantidad: e.target.value })}
               />
             </div>
+            <div>
+              <label>Costo unitario de compra (USD)</label><br />
+              <input
+                type="number"
+                step="0.01"
+                value={form.costo_inicial}
+                onChange={(e) => setForm({ ...form, costo_inicial: e.target.value })}
+              />
+            </div>
           </>
         )}
         <button type="submit" style={{ padding: '0.5rem 1rem' }}>
@@ -256,8 +309,9 @@ export default function Inventario({ currentUser }) {
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
               <th style={{ padding: '0.5rem' }}>Nombre</th>
               <th>Categoria</th>
-              <th>Precio</th>
+              <th>Precio venta</th>
               {tab === 'accesorio' && <th>Cod. barras</th>}
+              {tab === 'accesorio' && esAdmin && <th>Costo prom.</th>}
               <th>Stock</th>
               <th>Acciones</th>
             </tr>
@@ -272,6 +326,29 @@ export default function Inventario({ currentUser }) {
                     <td>{p.categoria}</td>
                     <td>${Number(p.precio).toFixed(2)}</td>
                     {tab === 'accesorio' && <td>{p.codigo_barras}</td>}
+                    {tab === 'accesorio' && esAdmin && (
+                      <td>
+                        {editandoCostoId === p.id ? (
+                          <span style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={nuevoCostoValor}
+                              onChange={(e) => setNuevoCostoValor(e.target.value)}
+                              style={{ width: '80px' }}
+                              autoFocus
+                            />
+                            <button onClick={() => guardarEdicionCosto(p.id)}>Guardar</button>
+                            <button onClick={cancelarEdicionCosto}>Cancelar</button>
+                          </span>
+                        ) : (
+                          <span>
+                            ${Number(p.costo_promedio_usd || 0).toFixed(2)}{' '}
+                            <button onClick={() => abrirEdicionCosto(p)} style={{ fontSize: '0.75rem' }}>Editar</button>
+                          </span>
+                        )}
+                      </td>
+                    )}
                     <td style={{ color: bajoStock ? 'red' : 'inherit', fontWeight: bajoStock ? 'bold' : 'normal' }}>
                       {p.stock_disponible} {bajoStock && '⚠ stock bajo'}
                     </td>
@@ -295,7 +372,7 @@ export default function Inventario({ currentUser }) {
                   </tr>
                   {expandedId === p.id && tab !== 'accesorio' && (
                     <tr>
-                      <td colSpan={5} style={{ background: '#f8fafc', padding: '0.75rem' }}>
+                      <td colSpan={6} style={{ background: '#f8fafc', padding: '0.75rem' }}>
                         <UnidadesProducto
                           productId={p.id}
                           tipo={tab}
@@ -315,7 +392,10 @@ export default function Inventario({ currentUser }) {
       {modal?.tipo === 'compra' && (
         <PromptModal
           title="Registrar compra (agregar stock)"
-          fields={[{ name: 'cantidad', label: 'Cantidad a ingresar', type: 'number', required: true, autoFocus: true }]}
+          fields={[
+            { name: 'cantidad', label: 'Cantidad a ingresar', type: 'number', required: true, autoFocus: true },
+            { name: 'costoUnitario', label: 'Costo unitario de esta compra (USD)', type: 'number', required: true }
+          ]}
           onConfirm={confirmarModal}
           onCancel={cerrarModal}
         />
@@ -339,12 +419,17 @@ export default function Inventario({ currentUser }) {
 function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
   const [units, setUnits] = useState([]);
   const [nuevoCodigo, setNuevoCodigo] = useState('');
+  const [nuevoCosto, setNuevoCosto] = useState('');
   const [error, setError] = useState('');
   const [modalBaja, setModalBaja] = useState(null);
 
   const [codigoInicio, setCodigoInicio] = useState('');
   const [codigoFin, setCodigoFin] = useState('');
+  const [costoRango, setCostoRango] = useState('');
   const [rangoInfo, setRangoInfo] = useState('');
+
+  const [editandoCostoUnitId, setEditandoCostoUnitId] = useState(null);
+  const [nuevoCostoUnitValor, setNuevoCostoUnitValor] = useState('');
 
   const esAdmin = currentUser?.role === 'administrador';
 
@@ -361,7 +446,12 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
     e.preventDefault();
     setError('');
     if (!nuevoCodigo.trim()) return;
-    const res = await window.api.addUnit(productId, nuevoCodigo.trim());
+    const costo = parseFloat(nuevoCosto);
+    if (isNaN(costo) || costo < 0) {
+      setError('Indica el costo de compra de esta unidad');
+      return;
+    }
+    const res = await window.api.addUnit(productId, nuevoCodigo.trim(), costo, currentUser?.username);
     if (!res.ok) {
       setError(res.message);
       return;
@@ -379,7 +469,12 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
       setError('Escanea o escribe el primer y el ultimo codigo de la caja');
       return;
     }
-    const res = await window.api.addUnitsRange(productId, codigoInicio.trim(), codigoFin.trim());
+    const costo = parseFloat(costoRango);
+    if (isNaN(costo) || costo < 0) {
+      setError('Indica el costo unitario de este lote');
+      return;
+    }
+    const res = await window.api.addUnitsRange(productId, codigoInicio.trim(), codigoFin.trim(), costo, currentUser?.username);
     if (!res.ok) {
       setError(res.message);
       return;
@@ -389,6 +484,7 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
     );
     setCodigoInicio('');
     setCodigoFin('');
+    setCostoRango('');
     cargar();
     onChange();
   };
@@ -418,17 +514,55 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
     onChange();
   };
 
+  const abrirEdicionCostoUnit = (u) => {
+    setEditandoCostoUnitId(u.id);
+    setNuevoCostoUnitValor(String(u.costo_unitario_usd ?? 0));
+  };
+
+  const cancelarEdicionCostoUnit = () => {
+    setEditandoCostoUnitId(null);
+    setNuevoCostoUnitValor('');
+  };
+
+  const guardarEdicionCostoUnit = async (id) => {
+    const costo = parseFloat(nuevoCostoUnitValor);
+    if (isNaN(costo) || costo < 0) {
+      alert('Costo invalido');
+      return;
+    }
+    const res = await window.api.updateUnitCosto(id, costo);
+    if (!res.ok) {
+      alert(res.message);
+      return;
+    }
+    setEditandoCostoUnitId(null);
+    setNuevoCostoUnitValor('');
+    cargar();
+  };
+
   const label = tipo === 'equipo' ? 'IMEI' : tipo === 'usim' ? 'Codigo USIM' : 'Codigo SIM (ICCID)';
 
   return (
     <div>
-      <form onSubmit={handleAgregar} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-        <input
-          placeholder={`Nuevo ${label} (manual o pistola)`}
-          value={nuevoCodigo}
-          onChange={(e) => setNuevoCodigo(e.target.value)}
-          autoFocus
-        />
+      <form onSubmit={handleAgregar} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', alignItems: 'flex-end' }}>
+        <div>
+          <label style={{ fontSize: '0.8rem' }}>Nuevo {label} (manual o pistola)</label><br />
+          <input
+            value={nuevoCodigo}
+            onChange={(e) => setNuevoCodigo(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: '0.8rem' }}>Costo de compra (USD)</label><br />
+          <input
+            type="number"
+            step="0.01"
+            value={nuevoCosto}
+            onChange={(e) => setNuevoCosto(e.target.value)}
+            style={{ width: '100px' }}
+          />
+        </div>
         <button type="submit">+ Agregar {label}</button>
       </form>
 
@@ -461,6 +595,16 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
               onChange={(e) => setCodigoFin(e.target.value)}
             />
           </div>
+          <div>
+            <label style={{ fontSize: '0.8rem' }}>Costo unitario del lote (USD)</label><br />
+            <input
+              type="number"
+              step="0.01"
+              value={costoRango}
+              onChange={(e) => setCostoRango(e.target.value)}
+              style={{ width: '100px' }}
+            />
+          </div>
           <button type="submit">Generar rango completo</button>
         </form>
       )}
@@ -484,6 +628,27 @@ function UnidadesProducto({ productId, tipo, onChange, currentUser }) {
             >
               <span>
                 {u.codigo} — <em>{u.estado}</em>
+                {esAdmin && (
+                  editandoCostoUnitId === u.id ? (
+                    <span style={{ marginLeft: '0.5rem' }}>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={nuevoCostoUnitValor}
+                        onChange={(e) => setNuevoCostoUnitValor(e.target.value)}
+                        style={{ width: '80px' }}
+                        autoFocus
+                      />
+                      <button onClick={() => guardarEdicionCostoUnit(u.id)}>Guardar</button>
+                      <button onClick={cancelarEdicionCostoUnit}>Cancelar</button>
+                    </span>
+                  ) : (
+                    <span style={{ marginLeft: '0.5rem', color: '#666' }}>
+                      (costo: ${Number(u.costo_unitario_usd || 0).toFixed(2)}{' '}
+                      <button onClick={() => abrirEdicionCostoUnit(u)} style={{ fontSize: '0.75rem' }}>Editar</button>)
+                    </span>
+                  )
+                )}
               </span>
               {u.estado === 'disponible' && (
                 <span style={{ display: 'flex', gap: '0.4rem' }}>
