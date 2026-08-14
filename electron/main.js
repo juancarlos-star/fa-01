@@ -101,6 +101,56 @@ ipcMain.handle('categories:create', (event, { nombre, tipo }) => {
   return { ok: true };
 });
 
+ipcMain.handle('categories:impacto', (event, { id }) => {
+  const db = getDb();
+  const cat = db.prepare('SELECT * FROM categorias WHERE id = ?').get(id);
+  if (!cat) return { ok: false, message: 'Categoria no encontrada' };
+  const productos = db.prepare('SELECT * FROM products WHERE categoria = ? AND tipo = ?').all(cat.nombre, cat.tipo);
+  let unidades = 0;
+  productos.forEach((p) => {
+    if (p.tipo === 'accesorio') {
+      unidades += p.stock_cantidad;
+    } else {
+      unidades += db.prepare('SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ?').get(p.id).c;
+    }
+  });
+  return { ok: true, categoria: cat, productos: productos.length, unidades };
+});
+
+ipcMain.handle('categories:update', (event, { id, nombre }) => {
+  const db = getDb();
+  const limpio = (nombre || '').trim();
+  if (!limpio) return { ok: false, message: 'El nombre no puede estar vacio' };
+  const actual = db.prepare('SELECT * FROM categorias WHERE id = ?').get(id);
+  if (!actual) return { ok: false, message: 'Categoria no encontrada' };
+  const exists = db.prepare('SELECT id FROM categorias WHERE LOWER(nombre) = LOWER(?) AND id != ?').get(limpio, id);
+  if (exists) return { ok: false, message: 'Ya existe otra categoria con ese nombre' };
+
+  const transaccion = db.transaction(() => {
+    db.prepare('UPDATE products SET categoria = ? WHERE categoria = ? AND tipo = ?').run(limpio, actual.nombre, actual.tipo);
+    db.prepare('UPDATE categorias SET nombre = ? WHERE id = ?').run(limpio, id);
+  });
+  transaccion();
+  return { ok: true };
+});
+
+ipcMain.handle('categories:delete', (event, { id }) => {
+  const db = getDb();
+  const cat = db.prepare('SELECT * FROM categorias WHERE id = ?').get(id);
+  if (!cat) return { ok: false, message: 'Categoria no encontrada' };
+  const productos = db.prepare('SELECT * FROM products WHERE categoria = ? AND tipo = ?').all(cat.nombre, cat.tipo);
+
+  const transaccion = db.transaction(() => {
+    productos.forEach((p) => {
+      db.prepare('DELETE FROM inventory_units WHERE product_id = ?').run(p.id);
+      db.prepare('DELETE FROM products WHERE id = ?').run(p.id);
+    });
+    db.prepare('DELETE FROM categorias WHERE id = ?').run(id);
+  });
+  transaccion();
+  return { ok: true, productosEliminados: productos.length };
+});
+
 // ---------- IPC: Inventario - productos ----------
 ipcMain.handle('products:list', (event, { tipo } = {}) => {
   const db = getDb();
@@ -351,7 +401,7 @@ ipcMain.handle('descargos:list', () => {
             p.nombre AS producto_nombre, p.tipo AS producto_tipo,
             u.codigo AS unidad_codigo
      FROM descargos d
-     JOIN products p ON p.id = d.product_id
+     LEFT JOIN products p ON p.id = d.product_id
      LEFT JOIN inventory_units u ON u.id = d.unit_id
      ORDER BY d.id DESC`
   ).all();
