@@ -9,7 +9,6 @@ import Facturacion from './pages/Facturacion.jsx';
 import Facturas from './pages/Facturas.jsx';
 import Gastos from './pages/Gastos.jsx';
 import Reportes from './pages/Reportes.jsx';
-
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('inicio');
@@ -61,7 +60,7 @@ export default function App() {
           </div>
         )}
         {view === 'facturacion' && <Facturacion currentUser={user} />}
-        {view === 'facturas' && <Facturas />}
+        {view === 'facturas' && <Facturas currentUser={user} />}
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'descargos' && user.role === 'administrador' && <HistorialDescargos />}
