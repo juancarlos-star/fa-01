@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   changePassword: (id, newPassword) => ipcRenderer.invoke('users:changePassword', { id, newPassword }),
   // Categorias
   listCategories: () => ipcRenderer.invoke('categories:list'),
-  createCategory: (nombre) => ipcRenderer.invoke('categories:create', { nombre }),
+  createCategory: (nombre, tipo) => ipcRenderer.invoke('categories:create', { nombre, tipo }),
   // Inventario - productos
   listProducts: (tipo) => ipcRenderer.invoke('products:list', { tipo }),
   listProductNames: (tipo) => ipcRenderer.invoke('products:names', { tipo }),
