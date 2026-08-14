@@ -14,14 +14,16 @@ contextBridge.exposeInMainWorld('api', {
   listProductNames: (tipo) => ipcRenderer.invoke('products:names', { tipo }),
   createProduct: (data) => ipcRenderer.invoke('products:create', data),
   deleteProduct: (id) => ipcRenderer.invoke('products:delete', { id }),
-  addProductStock: (id, cantidad, usuario) => ipcRenderer.invoke('products:addStock', { id, cantidad, usuario }),
+  addProductStock: (id, cantidad, costoUnitario, usuario) =>
+    ipcRenderer.invoke('products:addStock', { id, cantidad, costoUnitario, usuario }),
   writeOffProductStock: (id, cantidad, motivo, usuario) =>
     ipcRenderer.invoke('products:writeOffStock', { id, cantidad, motivo, usuario }),
   // Inventario - unidades
   listUnits: (productId) => ipcRenderer.invoke('units:list', { product_id: productId }),
-  addUnit: (productId, codigo) => ipcRenderer.invoke('units:add', { product_id: productId, codigo }),
-  addUnitsRange: (productId, codigoInicio, codigoFin) =>
-    ipcRenderer.invoke('units:addRange', { product_id: productId, codigoInicio, codigoFin }),
+  addUnit: (productId, codigo, costoUnitario, usuario) =>
+    ipcRenderer.invoke('units:add', { product_id: productId, codigo, costoUnitario, usuario }),
+  addUnitsRange: (productId, codigoInicio, codigoFin, costoUnitario, usuario) =>
+    ipcRenderer.invoke('units:addRange', { product_id: productId, codigoInicio, codigoFin, costoUnitario, usuario }),
   deleteUnit: (id) => ipcRenderer.invoke('units:delete', { id }),
   writeOffUnit: (id, motivo, usuario) => ipcRenderer.invoke('units:writeOff', { id, motivo, usuario }),
   // Historial de descargos
@@ -36,5 +38,18 @@ contextBridge.exposeInMainWorld('api', {
   // Facturacion
   crearFactura: (payload) => ipcRenderer.invoke('facturas:crear', payload),
   listFacturas: () => ipcRenderer.invoke('facturas:list'),
-  detalleFactura: (id) => ipcRenderer.invoke('facturas:detalle', { id })
+  detalleFactura: (id) => ipcRenderer.invoke('facturas:detalle', { id }),
+  // Compras y costos
+  listCompras: (desde, hasta) => ipcRenderer.invoke('compras:list', { desde, hasta }),
+  updateProductCosto: (id, costoPromedio) => ipcRenderer.invoke('products:updateCosto', { id, costoPromedio }),
+  updateUnitCosto: (id, costoUnitario) => ipcRenderer.invoke('units:updateCosto', { id, costoUnitario }),
+  // Gastos
+  createGasto: (data) => ipcRenderer.invoke('gastos:create', data),
+  listGastos: (desde, hasta) => ipcRenderer.invoke('gastos:list', { desde, hasta }),
+  deleteGasto: (id) => ipcRenderer.invoke('gastos:delete', { id }),
+  // Reportes
+  getReporteGanancias: (desde, hasta) => ipcRenderer.invoke('reportes:ganancias', { desde, hasta }),
+  // Respaldo
+  crearBackup: () => ipcRenderer.invoke('backup:crear'),
+  restaurarBackup: () => ipcRenderer.invoke('backup:restaurar')
 });
