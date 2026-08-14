@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
-const { getDb, initDb } = require('./db');
+const { getDb, initDb, cerrarDb, getDbPath } = require('./db');
 
 let mainWindow;
 
@@ -147,16 +148,38 @@ ipcMain.handle('products:delete', (event, { id }) => {
   return { ok: true };
 });
 
-ipcMain.handle('products:addStock', (event, { id, cantidad, usuario }) => {
+ipcMain.handle('products:addStock', (event, { id, cantidad, costoUnitario, usuario }) => {
   const db = getDb();
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
   if (!product) return { ok: false, message: 'Producto no encontrado' };
   if (product.tipo !== 'accesorio') return { ok: false, message: 'Solo aplica a accesorios' };
   const n = parseInt(cantidad, 10);
   if (!n || n <= 0) return { ok: false, message: 'Cantidad invalida' };
-  const nuevoStock = product.stock_cantidad + n;
-  db.prepare('UPDATE products SET stock_cantidad = ? WHERE id = ?').run(nuevoStock, id);
-  return { ok: true, stock: nuevoStock };
+  const costo = parseFloat(costoUnitario);
+  if (isNaN(costo) || costo < 0) return { ok: false, message: 'Debes indicar el costo unitario de la compra' };
+
+  const stockActual = product.stock_cantidad;
+  const costoActual = product.costo_promedio_usd || 0;
+  const nuevoStock = stockActual + n;
+  const nuevoPromedio = nuevoStock > 0 ? ((stockActual * costoActual) + (n * costo)) / nuevoStock : costo;
+
+  const transaccion = db.transaction(() => {
+    db.prepare('UPDATE products SET stock_cantidad = ?, costo_promedio_usd = ? WHERE id = ?').run(nuevoStock, nuevoPromedio, id);
+    db.prepare(
+      `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+    ).run(id, product.tipo, product.nombre, costo, n, costo * n, usuario || '');
+  });
+  transaccion();
+  return { ok: true, stock: nuevoStock, costoPromedio: nuevoPromedio };
+});
+
+ipcMain.handle('products:updateCosto', (event, { id, costoPromedio }) => {
+  const db = getDb();
+  const costo = parseFloat(costoPromedio);
+  if (isNaN(costo) || costo < 0) return { ok: false, message: 'Costo invalido' };
+  db.prepare('UPDATE products SET costo_promedio_usd = ? WHERE id = ?').run(costo, id);
+  return { ok: true };
 });
 
 ipcMain.handle('products:writeOffStock', (event, { id, cantidad, motivo, usuario }) => {
@@ -186,14 +209,26 @@ ipcMain.handle('units:list', (event, { product_id }) => {
   return db.prepare('SELECT * FROM inventory_units WHERE product_id = ? ORDER BY created_at DESC').all(product_id);
 });
 
-ipcMain.handle('units:add', (event, { product_id, codigo }) => {
+ipcMain.handle('units:add', (event, { product_id, codigo, costoUnitario, usuario }) => {
   const db = getDb();
   if (!codigo || !codigo.trim()) return { ok: false, message: 'El codigo no puede estar vacio' };
+  const costo = parseFloat(costoUnitario);
+  if (isNaN(costo) || costo < 0) return { ok: false, message: 'Debes indicar el costo de compra' };
   const exists = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get(codigo.trim());
   if (exists) return { ok: false, message: 'Ese codigo ya esta registrado' };
-  db.prepare(
-    `INSERT INTO inventory_units (product_id, codigo, estado, created_at) VALUES (?, ?, 'disponible', datetime('now'))`
-  ).run(product_id, codigo.trim());
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
+
+  const transaccion = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at)
+       VALUES (?, ?, 'disponible', ?, datetime('now'))`
+    ).run(product_id, codigo.trim(), costo);
+    db.prepare(
+      `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now'))`
+    ).run(product_id, product.tipo, product.nombre, costo, costo, usuario || '');
+  });
+  transaccion();
   return { ok: true };
 });
 
@@ -219,13 +254,17 @@ function calcularRango(codigoInicio, codigoFin) {
   return { ok: true, codigos };
 }
 
-ipcMain.handle('units:addRange', (event, { product_id, codigoInicio, codigoFin }) => {
+ipcMain.handle('units:addRange', (event, { product_id, codigoInicio, codigoFin, costoUnitario, usuario }) => {
   const db = getDb();
   if (!codigoInicio || !codigoFin) return { ok: false, message: 'Debes escanear o escribir el primer y el ultimo codigo' };
+  const costo = parseFloat(costoUnitario);
+  if (isNaN(costo) || costo < 0) return { ok: false, message: 'Debes indicar el costo de compra' };
   const rango = calcularRango(codigoInicio, codigoFin);
   if (!rango.ok) return rango;
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
+
   const insertStmt = db.prepare(
-    `INSERT INTO inventory_units (product_id, codigo, estado, created_at) VALUES (?, ?, 'disponible', datetime('now'))`
+    `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now'))`
   );
   const existsStmt = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?');
   let agregados = 0;
@@ -233,12 +272,26 @@ ipcMain.handle('units:addRange', (event, { product_id, codigoInicio, codigoFin }
   const transaccion = db.transaction((codigos) => {
     for (const codigo of codigos) {
       if (existsStmt.get(codigo)) { saltados++; continue; }
-      insertStmt.run(product_id, codigo);
+      insertStmt.run(product_id, codigo, costo);
       agregados++;
+    }
+    if (agregados > 0) {
+      db.prepare(
+        `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+      ).run(product_id, product.tipo, product.nombre, costo, agregados, costo * agregados, usuario || '');
     }
   });
   transaccion(rango.codigos);
   return { ok: true, total: rango.codigos.length, agregados, saltados };
+});
+
+ipcMain.handle('units:updateCosto', (event, { id, costoUnitario }) => {
+  const db = getDb();
+  const costo = parseFloat(costoUnitario);
+  if (isNaN(costo) || costo < 0) return { ok: false, message: 'Costo invalido' };
+  db.prepare('UPDATE inventory_units SET costo_unitario_usd = ? WHERE id = ?').run(costo, id);
+  return { ok: true };
 });
 
 ipcMain.handle('units:delete', (event, { id }) => {
@@ -414,8 +467,8 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     const facturaId = facturaInfo.lastInsertRowid;
 
     const insertItem = db.prepare(
-      `INSERT INTO factura_items (factura_id, product_id, unit_id, tipo, descripcion, codigo, cantidad, precio_unitario_usd, subtotal_usd)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO factura_items (factura_id, product_id, unit_id, tipo, descripcion, codigo, cantidad, precio_unitario_usd, subtotal_usd, costo_unitario_usd)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     for (const item of items) {
@@ -424,16 +477,19 @@ ipcMain.handle('facturas:crear', (event, payload) => {
       const precioUnit = parseFloat(item.precio_unitario) || 0;
       const subtotalItem = precioUnit * cantidad;
       let codigo = null;
+      let costoUnitario = 0;
 
       if (product.tipo === 'accesorio') {
         db.prepare('UPDATE products SET stock_cantidad = stock_cantidad - ? WHERE id = ?').run(cantidad, product.id);
+        costoUnitario = product.costo_promedio_usd || 0;
       } else {
         db.prepare("UPDATE inventory_units SET estado = 'vendido' WHERE id = ?").run(item.unit_id);
-        const unit = db.prepare('SELECT codigo FROM inventory_units WHERE id = ?').get(item.unit_id);
+        const unit = db.prepare('SELECT codigo, costo_unitario_usd FROM inventory_units WHERE id = ?').get(item.unit_id);
         codigo = unit ? unit.codigo : null;
+        costoUnitario = unit ? (unit.costo_unitario_usd || 0) : 0;
       }
 
-      insertItem.run(facturaId, product.id, item.unit_id || null, product.tipo, product.nombre, codigo, cantidad, precioUnit, subtotalItem);
+      insertItem.run(facturaId, product.id, item.unit_id || null, product.tipo, product.nombre, codigo, cantidad, precioUnit, subtotalItem, costoUnitario);
     }
 
     db.prepare(
@@ -465,4 +521,112 @@ ipcMain.handle('facturas:detalle', (event, { id }) => {
   if (!factura) return { ok: false, message: 'Factura no encontrada' };
   const items = db.prepare('SELECT * FROM factura_items WHERE factura_id = ?').all(id);
   return { ok: true, factura, items };
+});
+
+// ---------- IPC: Gastos ----------
+ipcMain.handle('gastos:create', (event, { concepto, categoria, monto_usd, usuario }) => {
+  const db = getDb();
+  if (!concepto || !concepto.trim()) return { ok: false, message: 'El concepto es obligatorio' };
+  const monto = parseFloat(monto_usd);
+  if (isNaN(monto) || monto <= 0) return { ok: false, message: 'Monto invalido' };
+  db.prepare(
+    `INSERT INTO gastos (concepto, categoria, monto_usd, usuario, created_at) VALUES (?, ?, ?, ?, datetime('now'))`
+  ).run(concepto.trim(), categoria || '', monto, usuario || '');
+  return { ok: true };
+});
+
+ipcMain.handle('gastos:list', (event, { desde, hasta } = {}) => {
+  const db = getDb();
+  if (desde && hasta) {
+    return db.prepare(
+      "SELECT * FROM gastos WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY id DESC"
+    ).all(desde, hasta);
+  }
+  return db.prepare('SELECT * FROM gastos ORDER BY id DESC').all();
+});
+
+ipcMain.handle('gastos:delete', (event, { id }) => {
+  const db = getDb();
+  db.prepare('DELETE FROM gastos WHERE id = ?').run(id);
+  return { ok: true };
+});
+
+// ---------- IPC: Compras (historial) ----------
+ipcMain.handle('compras:list', (event, { desde, hasta } = {}) => {
+  const db = getDb();
+  if (desde && hasta) {
+    return db.prepare(
+      "SELECT * FROM compras WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY id DESC"
+    ).all(desde, hasta);
+  }
+  return db.prepare('SELECT * FROM compras ORDER BY id DESC').all();
+});
+
+// ---------- IPC: Reportes ----------
+ipcMain.handle('reportes:ganancias', (event, { desde, hasta }) => {
+  const db = getDb();
+  const facturas = db.prepare(
+    "SELECT * FROM facturas WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at"
+  ).all(desde, hasta);
+
+  const ventasSubtotalUsd = facturas.reduce((acc, f) => acc + f.subtotal_usd, 0);
+  const ivaCobradoUsd = facturas.reduce((acc, f) => acc + f.iva_usd, 0);
+  const ventasTotalUsd = facturas.reduce((acc, f) => acc + f.total_usd, 0);
+
+  const idsFacturas = facturas.map((f) => f.id);
+  let costoVendidoUsd = 0;
+  if (idsFacturas.length > 0) {
+    const placeholders = idsFacturas.map(() => '?').join(',');
+    const items = db.prepare(
+      `SELECT cantidad, costo_unitario_usd FROM factura_items WHERE factura_id IN (${placeholders})`
+    ).all(...idsFacturas);
+    costoVendidoUsd = items.reduce((acc, i) => acc + (i.costo_unitario_usd * i.cantidad), 0);
+  }
+
+  const gastos = db.prepare(
+    "SELECT * FROM gastos WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at"
+  ).all(desde, hasta);
+  const gastosTotalUsd = gastos.reduce((acc, g) => acc + g.monto_usd, 0);
+
+  const gananciaBrutaUsd = ventasSubtotalUsd - costoVendidoUsd;
+  const gananciaNetaUsd = gananciaBrutaUsd - gastosTotalUsd;
+
+  return {
+    ok: true,
+    desde,
+    hasta,
+    cantidadFacturas: facturas.length,
+    ventasSubtotalUsd,
+    ivaCobradoUsd,
+    ventasTotalUsd,
+    costoVendidoUsd,
+    gananciaBrutaUsd,
+    gastosTotalUsd,
+    gananciaNetaUsd,
+    gastos
+  };
+});
+
+// ---------- IPC: Respaldo de base de datos ----------
+ipcMain.handle('backup:crear', async () => {
+  const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Guardar respaldo de la base de datos',
+    defaultPath: `respaldo-facturacion-${new Date().toISOString().slice(0, 10)}.db`,
+    filters: [{ name: 'Base de datos', extensions: ['db'] }]
+  });
+  if (canceled || !filePath) return { ok: false, message: 'Cancelado' };
+  fs.copyFileSync(getDbPath(), filePath);
+  return { ok: true, path: filePath };
+});
+
+ipcMain.handle('backup:restaurar', async () => {
+  const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Selecciona el archivo de respaldo (.db)',
+    properties: ['openFile'],
+    filters: [{ name: 'Base de datos', extensions: ['db'] }]
+  });
+  if (canceled || filePaths.length === 0) return { ok: false, message: 'Cancelado' };
+  cerrarDb();
+  fs.copyFileSync(filePaths[0], getDbPath());
+  return { ok: true, mensaje: 'Respaldo restaurado. Cierra y vuelve a abrir el programa para ver los cambios.' };
 });
