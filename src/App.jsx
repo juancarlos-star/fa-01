@@ -3,7 +3,7 @@ import Login from './pages/Login.jsx';
 import UsersAdmin from './pages/UsersAdmin.jsx';
 import Inventario from './pages/Inventario.jsx';
 import CategoriasAdmin from './pages/CategoriasAdmin.jsx';
-import HistorialDescargos from './pages/HistorialDescargos.jsx';
+import CargosDescargos from './pages/CargosDescargos.jsx';
 import Configuracion from './pages/Configuracion.jsx';
 import Facturacion from './pages/Facturacion.jsx';
 import Facturas from './pages/Facturas.jsx';
@@ -39,7 +39,7 @@ export default function App() {
             <button onClick={() => setView('categorias')}>Categorias</button>
           )}
           {user.role === 'administrador' && (
-            <button onClick={() => setView('descargos')}>Descargos</button>
+            <button onClick={() => setView('cargosDescargos')}>Cargos y Descargos</button>
           )}
           {user.role === 'administrador' && (
             <button onClick={() => setView('gastos')}>Gastos</button>
@@ -68,7 +68,7 @@ export default function App() {
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
-        {view === 'descargos' && user.role === 'administrador' && <HistorialDescargos />}
+        {view === 'cargosDescargos' && user.role === 'administrador' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
         {view === 'reportes' && user.role === 'administrador' && <Reportes />}
         {view === 'configuracion' && user.role === 'administrador' && <Configuracion />}
