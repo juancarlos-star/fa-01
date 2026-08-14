@@ -62,10 +62,23 @@ export default function Compras({ currentUser }) {
   }, [tipoSeleccionado]);
 
   useEffect(() => {
-    if (listoParaEscanear && modoEscaneo === 'manual' && !escaneoCompleto && scanInputRef.current) {
+    if (!listoParaEscanear || modoEscaneo !== 'manual' || escaneoCompleto || !scanInputRef.current) return;
+    // No robar el foco si el usuario todavia esta escribiendo en otro campo del formulario
+    // (ej: cantidad "10" -> al escribir el "1" ya se cumple listoParaEscanear y sin este chequeo
+    // el foco saltaria al cuadro de escaneo antes de que termine de escribir el "0").
+    const activo = document.activeElement;
+    const escribiendoEnOtroCampo =
+      activo && activo !== scanInputRef.current && (activo.tagName === 'INPUT' || activo.tagName === 'SELECT');
+    if (!escribiendoEnOtroCampo) {
       scanInputRef.current.focus();
     }
   }, [listoParaEscanear, escaneoCompleto, codigosEscaneados.length, modoEscaneo]);
+
+  const enfocarEscaneoSiListo = () => {
+    if (listoParaEscanear && modoEscaneo === 'manual' && !escaneoCompleto && scanInputRef.current) {
+      scanInputRef.current.focus();
+    }
+  };
 
   const handleScanKeyDown = async (e) => {
     if (e.key !== 'Enter') return;
@@ -256,11 +269,13 @@ export default function Compras({ currentUser }) {
 
         <label>Costo unitario sin IVA (USD)</label>
         <input type="number" step="0.01" value={costoUnitario}
-          onChange={(e) => { setCostoUnitario(e.target.value); setCodigosEscaneados([]); }} />
+          onChange={(e) => { setCostoUnitario(e.target.value); setCodigosEscaneados([]); }}
+          onBlur={enfocarEscaneoSiListo} />
 
         <label>Cantidad {esAccesorio ? '' : 'que llego segun la factura'}</label>
         <input type="number" min="1" value={cantidadDeseada}
-          onChange={(e) => { setCantidadDeseada(e.target.value); setCodigosEscaneados([]); }} />
+          onChange={(e) => { setCantidadDeseada(e.target.value); setCodigosEscaneados([]); }}
+          onBlur={enfocarEscaneoSiListo} />
 
         {listoParaEscanear && (
           <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#f4f7fb', borderRadius: '6px' }}>
