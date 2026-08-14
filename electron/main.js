@@ -609,6 +609,27 @@ ipcMain.handle('facturas:detalle', (event, { id }) => {
   return { ok: true, factura, items };
 });
 
+ipcMain.handle('facturas:eliminar', (event, { id }) => {
+  const db = getDb();
+  const factura = db.prepare('SELECT * FROM facturas WHERE id = ?').get(id);
+  if (!factura) return { ok: false, message: 'Factura no encontrada' };
+  const items = db.prepare('SELECT * FROM factura_items WHERE factura_id = ?').all(id);
+
+  const transaccion = db.transaction(() => {
+    items.forEach((item) => {
+      if (item.unit_id) {
+        db.prepare("UPDATE inventory_units SET estado = 'disponible' WHERE id = ?").run(item.unit_id);
+      } else if (item.product_id) {
+        db.prepare('UPDATE products SET stock_cantidad = stock_cantidad + ? WHERE id = ?').run(item.cantidad, item.product_id);
+      }
+    });
+    db.prepare('DELETE FROM factura_items WHERE factura_id = ?').run(id);
+    db.prepare('DELETE FROM facturas WHERE id = ?').run(id);
+  });
+  transaccion();
+  return { ok: true };
+});
+
 // ---------- IPC: Gastos ----------
 ipcMain.handle('gastos:create', (event, { concepto, categoria, monto_usd, usuario }) => {
   const db = getDb();
