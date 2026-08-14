@@ -49,14 +49,19 @@ contextBridge.exposeInMainWorld('api', {
   codigoExiste: (data) => ipcRenderer.invoke('inventario:codigoExiste', data),
   listComprasEncabezados: () => ipcRenderer.invoke('compras:listEncabezados'),
   detalleCompraEncabezado: (id) => ipcRenderer.invoke('compras:detalleEncabezado', { id }),
+  calcularRangoCompra: (codigoInicio, codigoFin) => ipcRenderer.invoke('compras:calcularRango', { codigoInicio, codigoFin }),
   updateProductCosto: (id, costoPromedio) => ipcRenderer.invoke('products:updateCosto', { id, costoPromedio }),
   updateUnitCosto: (id, costoUnitario) => ipcRenderer.invoke('units:updateCosto', { id, costoUnitario }),
+  writeOffUnitRange: (data) => ipcRenderer.invoke('units:writeOffRange', data),
   // Gastos
   createGasto: (data) => ipcRenderer.invoke('gastos:create', data),
   listGastos: (desde, hasta) => ipcRenderer.invoke('gastos:list', { desde, hasta }),
   deleteGasto: (id) => ipcRenderer.invoke('gastos:delete', { id }),
   // Reportes
   getReporteGanancias: (desde, hasta) => ipcRenderer.invoke('reportes:ganancias', { desde, hasta }),
+  getReporteFacturas: (desde, hasta) => ipcRenderer.invoke('reportes:facturas', { desde, hasta }),
+  getReporteCompras: (desde, hasta) => ipcRenderer.invoke('reportes:compras', { desde, hasta }),
+  getReporteCargosDescargos: (desde, hasta) => ipcRenderer.invoke('reportes:cargosDescargos', { desde, hasta }),
   // Respaldo
   crearBackup: () => ipcRenderer.invoke('backup:crear'),
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar')

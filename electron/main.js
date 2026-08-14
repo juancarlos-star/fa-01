@@ -894,3 +894,117 @@ ipcMain.handle('compras:detalleEncabezado', (event, { id }) => {
   const items = db.prepare('SELECT * FROM compras WHERE compra_encabezado_id = ?').all(id);
   return { ok: true, encabezado, items };
 });
+
+// ---------- IPC: Compras - calcular rango sin escribir en la BD (para escaneo por lote en Compras) ----------
+ipcMain.handle('compras:calcularRango', (event, { codigoInicio, codigoFin }) => {
+  if (!codigoInicio || !codigoFin) return { ok: false, message: 'Debes escanear o escribir el primer y el ultimo codigo' };
+  const rango = calcularRango(codigoInicio, codigoFin);
+  if (!rango.ok) return rango;
+  const db = getDb();
+  const existsStmt = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?');
+  const disponibles = [];
+  const yaExisten = [];
+  for (const codigo of rango.codigos) {
+    if (existsStmt.get(codigo)) yaExisten.push(codigo);
+    else disponibles.push(codigo);
+  }
+  return { ok: true, total: rango.codigos.length, disponibles, yaExisten };
+});
+
+// ---------- IPC: Descargo (baja) de SimCard/USIM por rango, con manejo de fallos parciales ----------
+ipcMain.handle('units:writeOffRange', (event, { product_id, codigoInicio, codigoFin, motivo, usuario, soloValidos }) => {
+  const db = getDb();
+  if (!codigoInicio || !codigoFin) return { ok: false, message: 'Debes escanear o escribir el primer y el ultimo codigo' };
+  if (!motivo || !motivo.trim()) return { ok: false, message: 'Debes indicar un motivo para el descargo' };
+  const rango = calcularRango(codigoInicio, codigoFin);
+  if (!rango.ok) return rango;
+
+  const getUnit = db.prepare('SELECT * FROM inventory_units WHERE codigo = ? AND product_id = ?');
+  const validos = [];
+  const invalidos = [];
+  for (const codigo of rango.codigos) {
+    const unit = getUnit.get(codigo, product_id);
+    if (unit && unit.estado === 'disponible') {
+      validos.push(unit);
+    } else {
+      invalidos.push({ codigo, razon: !unit ? 'no existe en el inventario' : `estado actual: ${unit.estado}` });
+    }
+  }
+
+  if (invalidos.length > 0 && !soloValidos) {
+    return {
+      ok: false,
+      bloqueado: true,
+      message: `${invalidos.length} de ${rango.codigos.length} codigo(s) no se pueden dar de baja`,
+      invalidos,
+      validosCount: validos.length,
+      total: rango.codigos.length
+    };
+  }
+
+  if (validos.length === 0) {
+    return { ok: false, message: 'Ningun codigo del rango esta disponible para dar de baja' };
+  }
+
+  const transaccion = db.transaction(() => {
+    for (const unit of validos) {
+      db.prepare("UPDATE inventory_units SET estado = 'de_baja' WHERE id = ?").run(unit.id);
+      db.prepare(
+        `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at)
+         VALUES (?, ?, 1, ?, ?, datetime('now'))`
+      ).run(unit.product_id, unit.id, motivo.trim(), usuario || '');
+    }
+  });
+  transaccion();
+
+  return { ok: true, total: rango.codigos.length, dadosDeBaja: validos.length, saltados: invalidos.length, invalidos };
+});
+
+// ---------- IPC: Reportes adicionales (facturas, compras, cargos y descargos) ----------
+ipcMain.handle('reportes:facturas', (event, { desde, hasta }) => {
+  const db = getDb();
+  const facturas = db.prepare(
+    "SELECT * FROM facturas WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
+  ).all(desde, hasta);
+  const totalUsd = facturas.reduce((acc, f) => acc + f.total_usd, 0);
+  const totalBs = facturas.reduce((acc, f) => acc + f.total_bs, 0);
+  return { ok: true, desde, hasta, facturas, cantidad: facturas.length, totalUsd, totalBs };
+});
+
+ipcMain.handle('reportes:compras', (event, { desde, hasta }) => {
+  const db = getDb();
+  const compras = db.prepare(
+    "SELECT * FROM compras_encabezado WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
+  ).all(desde, hasta);
+  const totalUsd = compras.reduce((acc, c) => acc + c.total_usd, 0);
+  return { ok: true, desde, hasta, compras, cantidad: compras.length, totalUsd };
+});
+
+ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
+  const db = getDb();
+  const cargos = db.prepare(
+    `SELECT c.*, p.nombre AS producto_nombre FROM compras c
+     LEFT JOIN products p ON p.id = c.product_id
+     WHERE c.compra_encabezado_id IS NULL AND date(c.created_at) BETWEEN date(?) AND date(?)
+     ORDER BY c.created_at DESC`
+  ).all(desde, hasta);
+  const descargos = db.prepare(
+    `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo
+     FROM descargos d
+     LEFT JOIN products p ON p.id = d.product_id
+     LEFT JOIN inventory_units u ON u.id = d.unit_id
+     WHERE date(d.created_at) BETWEEN date(?) AND date(?)
+     ORDER BY d.created_at DESC`
+  ).all(desde, hasta);
+  const totalCargosUsd = cargos.reduce((acc, c) => acc + c.total_usd, 0);
+  return {
+    ok: true,
+    desde,
+    hasta,
+    cargos,
+    descargos,
+    totalCargosUsd,
+    cantidadCargos: cargos.length,
+    cantidadDescargos: descargos.length
+  };
+});
