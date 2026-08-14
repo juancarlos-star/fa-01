@@ -786,6 +786,13 @@ ipcMain.handle('backup:restaurar', async () => {
   return { ok: true, mensaje: 'Respaldo restaurado. Cierra y vuelve a abrir el programa para ver los cambios.' };
 });
 
+// ---------- IPC: verificar si un codigo ya existe en el inventario ----------
+ipcMain.handle('inventario:codigoExiste', (event, { codigo }) => {
+  const db = getDb();
+  const existe = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get((codigo || '').trim());
+  return { existe: !!existe };
+});
+
 // ---------- IPC: Compras por lote (factura de proveedor con varios items) ----------
 ipcMain.handle('compras:crearLote', (event, payload) => {
   const db = getDb();
@@ -796,23 +803,32 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
     if (!numeroFacturaCompra || !numeroFacturaCompra.trim()) return { ok: false, message: 'El numero de factura de compra es obligatorio' };
     if (!items || items.length === 0) return { ok: false, message: 'Agrega al menos un producto a la compra' };
 
+    const codigosVistosEnEsteLote = new Set();
+
     for (const item of items) {
       const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
       if (!product) return { ok: false, message: `Producto no encontrado (id ${item.product_id})` };
+
       const costo = parseFloat(item.costoUnitario);
       if (isNaN(costo) || costo < 0) return { ok: false, message: `Costo invalido para "${product.nombre}"` };
 
       if (product.tipo === 'accesorio') {
         const cantidad = parseInt(item.cantidad, 10);
         if (!cantidad || cantidad <= 0) return { ok: false, message: `Cantidad invalida para "${product.nombre}"` };
-      } else if (item.rango) {
-        if (!item.codigoInicio || !item.codigoFin) return { ok: false, message: `Faltan los codigos del rango para "${product.nombre}"` };
-        const r = calcularRango(item.codigoInicio, item.codigoFin);
-        if (!r.ok) return { ok: false, message: `${product.nombre}: ${r.message}` };
       } else {
-        if (!item.codigo || !item.codigo.trim()) return { ok: false, message: `Falta el codigo para "${product.nombre}"` };
-        const exists = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get(item.codigo.trim());
-        if (exists) return { ok: false, message: `El codigo "${item.codigo}" ya esta registrado` };
+        const codigos = Array.isArray(item.codigos) ? item.codigos.map((c) => (c || '').trim()).filter(Boolean) : [];
+        if (codigos.length === 0) return { ok: false, message: `No se escaneo ningun codigo para "${product.nombre}"` };
+        if (!item.cantidadDeclarada || codigos.length !== Number(item.cantidadDeclarada)) {
+          return { ok: false, message: `"${product.nombre}": escaneaste ${codigos.length} codigo(s) pero declaraste ${item.cantidadDeclarada}` };
+        }
+        for (const codigo of codigos) {
+          if (codigosVistosEnEsteLote.has(codigo)) {
+            return { ok: false, message: `El codigo "${codigo}" esta repetido dentro de esta misma compra` };
+          }
+          codigosVistosEnEsteLote.add(codigo);
+          const exists = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get(codigo);
+          if (exists) return { ok: false, message: `El codigo "${codigo}" ya esta registrado en el inventario` };
+        }
       }
     }
 
@@ -829,6 +845,9 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
         `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, compra_encabezado_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`
       );
+      const insertUnit = db.prepare(
+        `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now'))`
+      );
 
       for (const item of items) {
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
@@ -843,28 +862,11 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
           db.prepare('UPDATE products SET stock_cantidad = ?, costo_promedio_usd = ? WHERE id = ?').run(nuevoStock, nuevoPromedio, product.id);
           insertCompra.run(product.id, product.tipo, product.nombre, costo, cantidad, costo * cantidad, usuario || '', encabezadoId);
           totalUsd += costo * cantidad;
-        } else if (item.rango) {
-          const r = calcularRango(item.codigoInicio, item.codigoFin);
-          const existsStmt = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?');
-          const insertUnit = db.prepare(
-            `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now'))`
-          );
-          let agregados = 0;
-          r.codigos.forEach((codigo) => {
-            if (existsStmt.get(codigo)) return;
-            insertUnit.run(product.id, codigo, costo);
-            agregados++;
-          });
-          if (agregados > 0) {
-            insertCompra.run(product.id, product.tipo, product.nombre, costo, agregados, costo * agregados, usuario || '', encabezadoId);
-            totalUsd += costo * agregados;
-          }
         } else {
-          db.prepare(
-            `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now'))`
-          ).run(product.id, item.codigo.trim(), costo);
-          insertCompra.run(product.id, product.tipo, product.nombre, costo, 1, costo, usuario || '', encabezadoId);
-          totalUsd += costo;
+          const codigos = item.codigos.map((c) => c.trim());
+          codigos.forEach((codigo) => insertUnit.run(product.id, codigo, costo));
+          insertCompra.run(product.id, product.tipo, product.nombre, costo, codigos.length, costo * codigos.length, usuario || '', encabezadoId);
+          totalUsd += costo * codigos.length;
         }
       }
 
