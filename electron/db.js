@@ -7,9 +7,7 @@ let db;
 
 function getDbPath() {
   const userDataPath = app.getPath('userData');
-  if (!fs.existsSync(userDataPath)) {
-    fs.mkdirSync(userDataPath, { recursive: true });
-  }
+  if (!fs.existsSync(userDataPath)) fs.mkdirSync(userDataPath, { recursive: true });
   return path.join(userDataPath, 'facturacion.db');
 }
 
@@ -21,10 +19,16 @@ function getDb() {
   return db;
 }
 
+function cerrarDb() {
+  if (db) { db.close(); db = null; }
+}
+
+function tieneColumna(database, tabla, columna) {
+  return database.prepare(`PRAGMA table_info(${tabla})`).all().some((c) => c.name === columna);
+}
+
 function migrarProductsSiHaceFalta(database) {
-  const row = database
-    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='products'")
-    .get();
+  const row = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='products'").get();
   if (row && row.sql && row.sql.includes("'accesorio'") && !row.sql.includes("'usim'")) {
     database.exec(`
       ALTER TABLE products RENAME TO products_old;
@@ -47,14 +51,25 @@ function migrarProductsSiHaceFalta(database) {
 }
 
 function migrarFacturasSiHaceFalta(database) {
-  const existeTabla = database
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facturas'")
-    .get();
-  if (!existeTabla) return;
-  const cols = database.prepare('PRAGMA table_info(facturas)').all();
-  const tieneNumero = cols.some((c) => c.name === 'numero_factura');
-  if (!tieneNumero) {
+  const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facturas'").get();
+  if (!existe) return;
+  if (!tieneColumna(database, 'facturas', 'numero_factura')) {
     database.exec('ALTER TABLE facturas ADD COLUMN numero_factura TEXT');
+  }
+}
+
+function migrarCostosSiHaceFalta(database) {
+  const existeProducts = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products'").get();
+  if (existeProducts && !tieneColumna(database, 'products', 'costo_promedio_usd')) {
+    database.exec('ALTER TABLE products ADD COLUMN costo_promedio_usd REAL NOT NULL DEFAULT 0');
+  }
+  const existeUnits = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_units'").get();
+  if (existeUnits && !tieneColumna(database, 'inventory_units', 'costo_unitario_usd')) {
+    database.exec('ALTER TABLE inventory_units ADD COLUMN costo_unitario_usd REAL NOT NULL DEFAULT 0');
+  }
+  const existeItems = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='factura_items'").get();
+  if (existeItems && !tieneColumna(database, 'factura_items', 'costo_unitario_usd')) {
+    database.exec('ALTER TABLE factura_items ADD COLUMN costo_unitario_usd REAL NOT NULL DEFAULT 0');
   }
 }
 
@@ -123,6 +138,7 @@ function initDb() {
       cliente_nombre TEXT,
       cliente_rif TEXT,
       cliente_direccion TEXT,
+      numero_factura TEXT,
       subtotal_usd REAL NOT NULL,
       iva_usd REAL NOT NULL,
       total_usd REAL NOT NULL,
@@ -148,14 +164,33 @@ function initDb() {
       subtotal_usd REAL NOT NULL,
       FOREIGN KEY (factura_id) REFERENCES facturas(id)
     );
+    CREATE TABLE IF NOT EXISTS compras (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      tipo TEXT,
+      descripcion TEXT,
+      costo_unitario_usd REAL NOT NULL,
+      cantidad INTEGER NOT NULL,
+      total_usd REAL NOT NULL,
+      usuario TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    );
+    CREATE TABLE IF NOT EXISTS gastos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      concepto TEXT NOT NULL,
+      categoria TEXT,
+      monto_usd REAL NOT NULL,
+      usuario TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 
   migrarProductsSiHaceFalta(database);
   migrarFacturasSiHaceFalta(database);
+  migrarCostosSiHaceFalta(database);
 
-  const insertSetting = database.prepare(
-    'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
-  );
+  const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');
   insertSetting.run('moneda_principal', 'USD');
   insertSetting.run('nombre_tienda', 'Tienda Movistar');
@@ -163,9 +198,7 @@ function initDb() {
   insertSetting.run('iva_porcentaje', '16');
   insertSetting.run('numero_factura_siguiente', '1');
 
-  const insertCategoria = database.prepare(
-    'INSERT OR IGNORE INTO categorias (nombre, created_at) VALUES (?, datetime(\'now\'))'
-  );
+  const insertCategoria = database.prepare("INSERT OR IGNORE INTO categorias (nombre, created_at) VALUES (?, datetime('now'))");
   insertCategoria.run('Telefono');
   insertCategoria.run('SimCard');
   insertCategoria.run('Usim');
@@ -174,11 +207,9 @@ function initDb() {
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {
     const hash = bcrypt.hashSync('admin123', 10);
-    database
-      .prepare(
-        "INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime('now'))"
-      )
-      .run('admin', hash, 'Administrador', 'administrador');
+    database.prepare(
+      "INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime('now'))"
+    ).run('admin', hash, 'Administrador', 'administrador');
   }
 }
-module.exports = { getDb, initDb };
+module.exports = { getDb, initDb, cerrarDb, getDbPath };
