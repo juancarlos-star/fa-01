@@ -85,9 +85,7 @@ export default function Compras({ currentUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoEscaneo]);
 
-  const handleScanKeyDown = async (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
+  const agregarCodigoEscaneado = async () => {
     const codigo = valorEscaneo.trim();
     setValorEscaneo('');
     if (!codigo) return;
@@ -116,6 +114,15 @@ export default function Compras({ currentUser }) {
       setVerificando(false);
       if (scanInputRef.current) scanInputRef.current.focus();
     }
+  };
+
+  // La pistola escaneadora manda un "Enter" automatico al terminar de leer el codigo de barras,
+  // por eso el Enter agrega el codigo solo. Al escribir a mano el usuario debe presionar Enter
+  // o el boton "Agregar codigo" de al lado, ya que el teclado no manda ese Enter automatico.
+  const handleScanKeyDown = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    agregarCodigoEscaneado();
   };
 
   const quitarCodigoEscaneado = (index) => {
@@ -333,14 +340,29 @@ export default function Compras({ currentUser }) {
             )}
 
             {modoEscaneo === 'manual' && !escaneoCompleto && (
-              <input
-                ref={scanInputRef}
-                value={valorEscaneo}
-                onChange={(e) => setValorEscaneo(e.target.value)}
-                onKeyDown={handleScanKeyDown}
-                placeholder={verificando ? 'Verificando...' : 'Dispara la pistola aqui o escribe y presiona Enter'}
-                disabled={verificando}
-              />
+              <>
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <input
+                    ref={scanInputRef}
+                    value={valorEscaneo}
+                    onChange={(e) => setValorEscaneo(e.target.value)}
+                    onKeyDown={handleScanKeyDown}
+                    placeholder={verificando ? 'Verificando...' : 'Dispara la pistola aqui o escribe y presiona Enter'}
+                    disabled={verificando}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={agregarCodigoEscaneado}
+                    disabled={verificando || !valorEscaneo.trim()}
+                  >
+                    Agregar codigo
+                  </button>
+                </div>
+                <p style={{ margin: '0.3rem 0 0 0', fontSize: '0.75rem', color: '#888' }}>
+                  Con la pistola se agrega solo al disparar. Si lo escribes a mano, presiona Enter o el boton "Agregar codigo".
+                </p>
+              </>
             )}
 
             {modoEscaneo === 'manual' && escaneoCompleto && (
@@ -388,7 +410,7 @@ export default function Compras({ currentUser }) {
         <button
           type="button"
           onClick={agregarProductoAlCarrito}
-          style={{ marginTop: '0.75rem', opacity: (!esAccesorio && !escaneoCompleto) ? 0.6 : 1 }}
+          style={{ marginTop: '0.75rem' }}
         >
           + Agregar a la compra
         </button>
