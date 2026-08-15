@@ -402,21 +402,34 @@ ipcMain.handle('units:add', (event, { product_id, codigo, costoUnitario, usuario
 function calcularRango(codigoInicio, codigoFin) {
   const a = codigoInicio.trim();
   const b = codigoFin.trim();
-  // El primer y el ultimo codigo ya no necesitan tener la misma longitud: se busca el
-  // prefijo comun que compartan (puede ser vacio) y se toma el resto de cada uno como
-  // la parte numerica que varia, sin importar cuantos digitos tenga cada lado.
-  let i = 0;
-  const minLen = Math.min(a.length, b.length);
-  while (i < minLen && a[i] === b[i]) i++;
-  const prefijo = a.slice(0, i);
-  const restoA = a.slice(i);
-  const restoB = b.slice(i);
-  if (!/^\d+$/.test(restoA) || !/^\d+$/.test(restoB)) {
+  if (!a || !b) return { ok: false, message: 'Debes indicar el primer y el ultimo codigo' };
+
+  // Se toma la corrida de digitos al FINAL de cada codigo como la parte que varia (en vez de
+  // buscar un prefijo comun caracter a caracter). Esto es lo correcto para codigos numericos
+  // de distinta longitud: con "1" y "10" el prefijo-comun-por-caracter deja la parte que
+  // cambia vacia en el primero (porque "1" tambien es el primer caracter de "10"), y por eso
+  // antes fallaba con "La parte que cambia... debe ser numerica" en rangos como 1 a 10, pero
+  // no en rangos como 300 a 309 donde ambos tienen la misma cantidad de digitos.
+  const partirDigitosFinales = (s) => {
+    let i = s.length;
+    while (i > 0 && /\d/.test(s[i - 1])) i--;
+    return { prefijo: s.slice(0, i), digitos: s.slice(i) };
+  };
+
+  const pa = partirDigitosFinales(a);
+  const pb = partirDigitosFinales(b);
+
+  if (pa.prefijo !== pb.prefijo) {
+    return { ok: false, message: 'El primer y el ultimo codigo deben compartir la misma parte fija (el prefijo antes de los numeros)' };
+  }
+  if (!pa.digitos || !pb.digitos) {
     return { ok: false, message: 'La parte que cambia entre los dos codigos debe ser numerica' };
   }
-  const ancho = Math.max(restoA.length, restoB.length);
-  const numA = parseInt(restoA, 10);
-  const numB = parseInt(restoB, 10);
+
+  const prefijo = pa.prefijo;
+  const ancho = Math.max(pa.digitos.length, pb.digitos.length);
+  const numA = parseInt(pa.digitos, 10);
+  const numB = parseInt(pb.digitos, 10);
   if (numA > numB) return { ok: false, message: 'El primer codigo debe ser menor o igual al ultimo' };
   if (numB - numA + 1 > 5000) return { ok: false, message: 'El rango es demasiado grande (mas de 5000 codigos). Verifica los codigos escaneados' };
   const codigos = [];
