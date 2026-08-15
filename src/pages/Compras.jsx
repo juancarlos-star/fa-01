@@ -31,26 +31,29 @@ export default function Compras({ currentUser }) {
   const [codigoInicioRango, setCodigoInicioRango] = useState('');
   const [codigoFinRango, setCodigoFinRango] = useState('');
   const [generandoRango, setGenerandoRango] = useState(false);
+  // Cantidad objetivo cuando se genero un rango (se guarda aparte, porque tras generarlo el
+  // usuario puede borrar codigos individuales y hay que saber cuantos faltan para completar).
+  const [cantidadObjetivoRango, setCantidadObjetivoRango] = useState(0);
 
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
-  // Confirmacion propia (sin dialogo nativo): { tipo: 'quitarCodigo'|'eliminarTodos'|'quitarCarrito', index?, key? }
+  // Confirmacion propia (sin dialogo nativo): { tipo: 'quitarCodigo'|'eliminarTodos'|'quitarCarrito'|'cantidadIncompleta', index?, key?, accion? }
   const [confirmando, setConfirmando] = useState(null);
 
   const esAccesorio = tipoSeleccionado === 'accesorio';
   const cantidadNum = parseInt(cantidadDeseada, 10) || 0;
   const permiteRango = tipoSeleccionado === 'simcard' || tipoSeleccionado === 'usim';
   const modoRangoActivo = permiteRango && modoEscaneo === 'rango';
+  // Cantidad objetivo actual, sea que venga de "Cantidad que llego segun la factura" (modo
+  // manual) o de la cantidad calculada al generar el rango (modo rango).
+  const cantidadObjetivo = modoRangoActivo ? cantidadObjetivoRango : cantidadNum;
 
   // Datos base (producto + costo) ya definidos: a partir de aqui se puede elegir modo manual o por rango.
   const datosBaseListos = !esAccesorio && productoId !== '' && costoUnitario !== '';
   // En modo rango no se pide cantidad: la calcula el sistema a partir del primer y el ultimo codigo.
   const listoParaEscanear = datosBaseListos && (modoRangoActivo || cantidadNum > 0);
-  const cantidadEfectiva = modoRangoActivo ? codigosEscaneados.length : cantidadNum;
-  const escaneoCompleto = modoRangoActivo
-    ? codigosEscaneados.length > 0
-    : listoParaEscanear && codigosEscaneados.length === cantidadNum;
+  const escaneoCompleto = listoParaEscanear && cantidadObjetivo > 0 && codigosEscaneados.length === cantidadObjetivo;
 
   const resetearFormularioProducto = () => {
     setProductoId('');
@@ -61,6 +64,7 @@ export default function Compras({ currentUser }) {
     setErrorEscaneo('');
     setCodigoInicioRango('');
     setCodigoFinRango('');
+    setCantidadObjetivoRango(0);
     setModoEscaneo('manual');
   };
 
@@ -70,6 +74,13 @@ export default function Compras({ currentUser }) {
       resetearFormularioProducto();
     });
   }, [tipoSeleccionado]);
+
+  // El mensaje de error general de la pantalla (setError) se referia a un estado del escaneo
+  // que ya cambio (ej: "Faltan codigos (9 de 10)" seguia visible aunque ya se hubiera
+  // completado el 10 de 10). Se limpia automaticamente cada vez que cambia la lista de codigos.
+  useEffect(() => {
+    setError('');
+  }, [codigosEscaneados]);
 
   // El salto de foco hacia el cuadro de escaneo NUNCA ocurre mientras el usuario esta
   // escribiendo en otro campo (cantidad, costo, etc). Solo se dispara con eventos explicitos:
@@ -85,7 +96,7 @@ export default function Compras({ currentUser }) {
   // de ventana y volver). Un modal de React nunca sale de la ventana del programa, asi que
   // este problema no puede volver a pasar mientras no se reintroduzca window.confirm() aqui.
   const enfocarEscaneoSiListo = () => {
-    if (datosBaseListos && modoEscaneo === 'manual' && cantidadNum > 0 && !escaneoCompleto && scanInputRef.current) {
+    if (listoParaEscanear && !escaneoCompleto && cantidadObjetivo > 0 && scanInputRef.current) {
       scanInputRef.current.focus();
     }
   };
@@ -101,8 +112,8 @@ export default function Compras({ currentUser }) {
     if (!codigo) return;
     setErrorEscaneo('');
 
-    if (codigosEscaneados.length >= cantidadNum) {
-      setErrorEscaneo(`Ya llegaste a los ${cantidadNum} codigos declarados. Quita alguno si necesitas corregir.`);
+    if (codigosEscaneados.length >= cantidadObjetivo) {
+      setErrorEscaneo(`Ya llegaste a los ${cantidadObjetivo} codigos declarados. Quita alguno si necesitas corregir.`);
       return;
     }
     if (codigosEscaneados.includes(codigo)) {
@@ -161,6 +172,12 @@ export default function Compras({ currentUser }) {
     setCodigosEscaneados([]);
     setErrorEscaneo('');
     setConfirmando(null);
+    if (modoRangoActivo) {
+      // Si borra todo, se vuelve a pedir el primer y el ultimo codigo para regenerar el rango.
+      setCantidadObjetivoRango(0);
+      setCodigoInicioRango('');
+      setCodigoFinRango('');
+    }
     setTimeout(enfocarEscaneoSiListo, 0);
   };
 
@@ -184,6 +201,7 @@ export default function Compras({ currentUser }) {
         return;
       }
       setCodigosEscaneados(res.disponibles);
+      setCantidadObjetivoRango(res.disponibles.length);
     } catch (err) {
       setErrorEscaneo('Error calculando el rango: ' + (err?.message || String(err)));
     } finally {
@@ -206,16 +224,30 @@ export default function Compras({ currentUser }) {
         product_id: producto.id, tipo: producto.tipo, descripcion: producto.nombre,
         costoUnitario: costo, cantidad, subtotal: costo * cantidad
       }]);
-    } else {
-      if (modoRangoActivo && codigosEscaneados.length === 0) { setError('Genera el rango de codigos antes de agregar'); return; }
-      if (!escaneoCompleto) { setError(`Faltan codigos por escanear (${codigosEscaneados.length} de ${cantidadNum})`); return; }
-      setCarrito((prev) => [...prev, {
-        key: `${producto.id}-${Date.now()}`,
-        product_id: producto.id, tipo: producto.tipo, descripcion: producto.nombre,
-        costoUnitario: costo, codigos: [...codigosEscaneados], cantidadDeclarada: cantidadEfectiva,
-        subtotal: costo * codigosEscaneados.length
-      }]);
+      resetearFormularioProducto();
+      return;
     }
+
+    if (modoRangoActivo && cantidadObjetivoRango === 0) { setError('Genera el rango de codigos antes de agregar'); return; }
+    if (codigosEscaneados.length === 0) { setError('Escanea o genera al menos un codigo antes de agregar'); return; }
+
+    if (!escaneoCompleto) {
+      // La cantidad escaneada/generada no coincide con la declarada: se pregunta si continuar
+      // con lo que hay, en vez de bloquear el boton sin explicar nada.
+      setConfirmando({ tipo: 'cantidadIncompleta', accion: () => insertarItemNoAccesorio(producto, costo) });
+      return;
+    }
+    insertarItemNoAccesorio(producto, costo);
+  };
+
+  const insertarItemNoAccesorio = (producto, costo) => {
+    setCarrito((prev) => [...prev, {
+      key: `${producto.id}-${Date.now()}`,
+      product_id: producto.id, tipo: producto.tipo, descripcion: producto.nombre,
+      costoUnitario: costo, codigos: [...codigosEscaneados], cantidadDeclarada: codigosEscaneados.length,
+      subtotal: costo * codigosEscaneados.length
+    }]);
+    setConfirmando(null);
     resetearFormularioProducto();
   };
 
@@ -356,18 +388,13 @@ export default function Compras({ currentUser }) {
         {listoParaEscanear && (
           <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#f4f7fb', borderRadius: '6px' }}>
 
-            {!modoRangoActivo && (
+            {cantidadObjetivo > 0 && (
               <p style={{ margin: '0 0 0.4rem 0', fontWeight: '600', fontSize: '0.9rem' }}>
-                Escaneados: {codigosEscaneados.length} de {cantidadNum}
-              </p>
-            )}
-            {modoRangoActivo && codigosEscaneados.length > 0 && (
-              <p style={{ margin: '0 0 0.4rem 0', fontWeight: '600', fontSize: '0.9rem' }}>
-                Codigos generados: {codigosEscaneados.length}
+                Escaneados: {codigosEscaneados.length} de {cantidadObjetivo}
               </p>
             )}
 
-            {modoEscaneo === 'manual' && !escaneoCompleto && (
+            {!escaneoCompleto && cantidadObjetivo > 0 && (
               <>
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                   <input
@@ -393,13 +420,13 @@ export default function Compras({ currentUser }) {
               </>
             )}
 
-            {modoEscaneo === 'manual' && escaneoCompleto && (
+            {escaneoCompleto && (
               <p style={{ margin: 0, color: '#027a48', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                Ha llegado a los {cantidadNum} items
+                Ha llegado a los {cantidadObjetivo} items
               </p>
             )}
 
-            {modoRangoActivo && codigosEscaneados.length === 0 && (
+            {modoRangoActivo && cantidadObjetivoRango === 0 && (
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div>
                   <label style={{ fontSize: '0.75rem' }}>Primer codigo de la caja</label><br />
@@ -449,11 +476,15 @@ export default function Compras({ currentUser }) {
         >
           + Agregar a la compra
         </button>
-        {!esAccesorio && !escaneoCompleto && (
+        {!esAccesorio && codigosEscaneados.length > 0 && !escaneoCompleto && (
           <p style={{ color: '#666', fontSize: '0.8rem', margin: '0.3rem 0 0 0' }}>
-            {modoRangoActivo
-              ? 'Genera el rango de codigos antes de agregar.'
-              : `Debes completar el escaneo (${codigosEscaneados.length} de ${cantidadNum || 0}) antes de agregar.`}
+            Llevas {codigosEscaneados.length} de {cantidadObjetivo} declarados. Puedes seguir escaneando,
+            o presionar "+ Agregar a la compra" para agregarlo con lo que llevas (se te pedira confirmar).
+          </p>
+        )}
+        {!esAccesorio && modoRangoActivo && cantidadObjetivoRango === 0 && (
+          <p style={{ color: '#666', fontSize: '0.8rem', margin: '0.3rem 0 0 0' }}>
+            Genera el rango de codigos antes de agregar.
           </p>
         )}
       </div>
@@ -521,6 +552,15 @@ export default function Compras({ currentUser }) {
           message="¿Seguro que deseas quitar este producto de la compra?"
           confirmLabel="Si, quitar"
           onConfirm={() => ejecutarQuitarDelCarrito(confirmando.key)}
+          onCancel={() => setConfirmando(null)}
+        />
+      )}
+      {confirmando?.tipo === 'cantidadIncompleta' && (
+        <ConfirmDialog
+          message={`La cantidad de codigos (${codigosEscaneados.length}) no coincide con la cantidad declarada (${cantidadObjetivo}). ¿Deseas continuar de todos modos?`}
+          confirmLabel="Si, continuar"
+          danger={false}
+          onConfirm={() => confirmando.accion && confirmando.accion()}
           onCancel={() => setConfirmando(null)}
         />
       )}
