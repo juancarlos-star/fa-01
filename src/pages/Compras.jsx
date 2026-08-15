@@ -74,8 +74,12 @@ export default function Compras({ currentUser }) {
   // Importante: nunca usar autoFocus en el input de escaneo, porque robaria el foco del
   // campo Cantidad apenas se muestre este bloque (eso causaba que solo se pudiera escribir
   // 1 digito en Cantidad).
+  // Ademas: los dialogos nativos (confirm) le quitan el foco a la ventana del programa a nivel
+  // de sistema operativo. window.focus() se lo devuelve a la ventana antes de enfocar el input,
+  // si no, el campo se veia activo pero no aceptaba texto hasta cambiar de ventana y volver.
   const enfocarEscaneoSiListo = () => {
     if (datosBaseListos && modoEscaneo === 'manual' && cantidadNum > 0 && !escaneoCompleto && scanInputRef.current) {
+      window.focus();
       scanInputRef.current.focus();
     }
   };
@@ -129,7 +133,7 @@ export default function Compras({ currentUser }) {
     if (!window.confirm('¿Seguro que deseas quitar este codigo de la lista?')) return;
     setCodigosEscaneados((prev) => prev.filter((_, i) => i !== index));
     setErrorEscaneo('');
-    setTimeout(enfocarEscaneoSiListo, 0);
+    setTimeout(enfocarEscaneoSiListo, 50);
   };
 
   const eliminarTodosLosCodigos = () => {
@@ -137,7 +141,7 @@ export default function Compras({ currentUser }) {
     if (!window.confirm(`¿Seguro que deseas eliminar los ${codigosEscaneados.length} codigo(s) escaneados/generados?`)) return;
     setCodigosEscaneados([]);
     setErrorEscaneo('');
-    setTimeout(enfocarEscaneoSiListo, 0);
+    setTimeout(enfocarEscaneoSiListo, 50);
   };
 
   const handleGenerarRango = async () => {
@@ -391,7 +395,14 @@ export default function Compras({ currentUser }) {
             {codigosEscaneados.length > 0 && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0.4rem 0' }}>
-                  <button type="button" onClick={eliminarTodosLosCodigos} style={{ fontSize: '0.75rem', color: '#b42318' }}>
+                  <button
+                    type="button"
+                    onClick={eliminarTodosLosCodigos}
+                    style={{
+                      fontSize: '0.75rem', padding: '0.3rem 0.7rem', borderRadius: '4px', border: 'none',
+                      cursor: 'pointer', backgroundColor: '#b42318', color: '#fff'
+                    }}
+                  >
                     Eliminar todos
                   </button>
                 </div>
