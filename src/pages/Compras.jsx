@@ -7,6 +7,8 @@ const TIPOS = [
   { key: 'accesorio', label: 'Accesorios' }
 ];
 
+const IVA_TASA = 0.16;
+
 export default function Compras({ currentUser }) {
   const [proveedor, setProveedor] = useState('');
   const [numeroFacturaCompra, setNumeroFacturaCompra] = useState('');
@@ -33,14 +35,19 @@ export default function Compras({ currentUser }) {
   const [error, setError] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
 
-
-
   const esAccesorio = tipoSeleccionado === 'accesorio';
   const cantidadNum = parseInt(cantidadDeseada, 10) || 0;
-  const listoParaEscanear = !esAccesorio && productoId && costoUnitario !== '' && cantidadNum > 0;
-  const escaneoCompleto = listoParaEscanear && codigosEscaneados.length === cantidadNum;
-
   const permiteRango = tipoSeleccionado === 'simcard' || tipoSeleccionado === 'usim';
+  const modoRangoActivo = permiteRango && modoEscaneo === 'rango';
+
+  // Datos base (producto + costo) ya definidos: a partir de aqui se puede elegir modo manual o por rango.
+  const datosBaseListos = !esAccesorio && productoId !== '' && costoUnitario !== '';
+  // En modo rango no se pide cantidad: la calcula el sistema a partir del primer y el ultimo codigo.
+  const listoParaEscanear = datosBaseListos && (modoRangoActivo || cantidadNum > 0);
+  const cantidadEfectiva = modoRangoActivo ? codigosEscaneados.length : cantidadNum;
+  const escaneoCompleto = modoRangoActivo
+    ? codigosEscaneados.length > 0
+    : listoParaEscanear && codigosEscaneados.length === cantidadNum;
 
   const resetearFormularioProducto = () => {
     setProductoId('');
@@ -64,8 +71,11 @@ export default function Compras({ currentUser }) {
   // El salto de foco hacia el cuadro de escaneo NUNCA ocurre mientras el usuario esta
   // escribiendo en otro campo (cantidad, costo, etc). Solo se dispara con eventos explicitos:
   // al salir (blur) de cantidad/costo, al quitar un codigo, o al cambiar a modo manual.
+  // Importante: nunca usar autoFocus en el input de escaneo, porque robaria el foco del
+  // campo Cantidad apenas se muestre este bloque (eso causaba que solo se pudiera escribir
+  // 1 digito en Cantidad).
   const enfocarEscaneoSiListo = () => {
-    if (listoParaEscanear && modoEscaneo === 'manual' && !escaneoCompleto && scanInputRef.current) {
+    if (datosBaseListos && modoEscaneo === 'manual' && cantidadNum > 0 && !escaneoCompleto && scanInputRef.current) {
       scanInputRef.current.focus();
     }
   };
@@ -84,7 +94,7 @@ export default function Compras({ currentUser }) {
     setErrorEscaneo('');
 
     if (codigosEscaneados.length >= cantidadNum) {
-      setErrorEscaneo(`Ya escaneaste los ${cantidadNum} codigos declarados. Quita alguno si necesitas corregir.`);
+      setErrorEscaneo(`Ya llegaste a los ${cantidadNum} codigos declarados. Quita alguno si necesitas corregir.`);
       return;
     }
     if (codigosEscaneados.includes(codigo)) {
@@ -109,7 +119,17 @@ export default function Compras({ currentUser }) {
   };
 
   const quitarCodigoEscaneado = (index) => {
+    if (!window.confirm('¿Seguro que deseas quitar este codigo de la lista?')) return;
     setCodigosEscaneados((prev) => prev.filter((_, i) => i !== index));
+    setErrorEscaneo('');
+    setTimeout(enfocarEscaneoSiListo, 0);
+  };
+
+  const eliminarTodosLosCodigos = () => {
+    if (codigosEscaneados.length === 0) return;
+    if (!window.confirm(`¿Seguro que deseas eliminar los ${codigosEscaneados.length} codigo(s) escaneados/generados?`)) return;
+    setCodigosEscaneados([]);
+    setErrorEscaneo('');
     setTimeout(enfocarEscaneoSiListo, 0);
   };
 
@@ -117,10 +137,6 @@ export default function Compras({ currentUser }) {
     setErrorEscaneo('');
     if (!codigoInicioRango.trim() || !codigoFinRango.trim()) {
       setErrorEscaneo('Escanea o escribe el primer y el ultimo codigo de la caja');
-      return;
-    }
-    if (cantidadNum <= 0) {
-      setErrorEscaneo('Indica primero la cantidad declarada en la factura del proveedor');
       return;
     }
     setGenerandoRango(true);
@@ -134,10 +150,6 @@ export default function Compras({ currentUser }) {
         setErrorEscaneo(
           `${res.yaExisten.length} codigo(s) del rango ya estan registrados en el inventario (ej: ${res.yaExisten[0]}). Corrige el rango o usa escaneo manual para los que faltan.`
         );
-        return;
-      }
-      if (res.total !== cantidadNum) {
-        setErrorEscaneo(`El rango genero ${res.total} codigo(s) pero declaraste ${cantidadNum}. Verifica los codigos de la caja.`);
         return;
       }
       setCodigosEscaneados(res.disponibles);
@@ -164,20 +176,26 @@ export default function Compras({ currentUser }) {
         costoUnitario: costo, cantidad, subtotal: costo * cantidad
       }]);
     } else {
+      if (modoRangoActivo && codigosEscaneados.length === 0) { setError('Genera el rango de codigos antes de agregar'); return; }
       if (!escaneoCompleto) { setError(`Faltan codigos por escanear (${codigosEscaneados.length} de ${cantidadNum})`); return; }
       setCarrito((prev) => [...prev, {
         key: `${producto.id}-${Date.now()}`,
         product_id: producto.id, tipo: producto.tipo, descripcion: producto.nombre,
-        costoUnitario: costo, codigos: [...codigosEscaneados], cantidadDeclarada: cantidadNum,
+        costoUnitario: costo, codigos: [...codigosEscaneados], cantidadDeclarada: cantidadEfectiva,
         subtotal: costo * codigosEscaneados.length
       }]);
     }
     resetearFormularioProducto();
   };
 
-  const quitarDelCarrito = (key) => setCarrito((prev) => prev.filter((i) => i.key !== key));
+  const quitarDelCarrito = (key) => {
+    if (!window.confirm('¿Seguro que deseas quitar este producto de la compra?')) return;
+    setCarrito((prev) => prev.filter((i) => i.key !== key));
+  };
 
-  const totalEstimado = carrito.reduce((acc, i) => acc + i.subtotal, 0);
+  const baseImponible = carrito.reduce((acc, i) => acc + i.subtotal, 0);
+  const totalIva = baseImponible * IVA_TASA;
+  const totalCompra = baseImponible + totalIva;
 
   const handleRegistrarCompra = async () => {
     setError('');
@@ -205,6 +223,8 @@ export default function Compras({ currentUser }) {
       setCarrito([]);
       setProveedor('');
       setNumeroFacturaCompra('');
+      setTipoSeleccionado('equipo');
+      resetearFormularioProducto();
     } catch (err) {
       setError('Error inesperado: ' + (err?.message || String(err)));
     }
@@ -228,10 +248,6 @@ export default function Compras({ currentUser }) {
   return (
     <div>
       <h1>Compras</h1>
-      <p style={{ color: '#666', fontSize: '0.85rem', maxWidth: '600px' }}>
-        Registra aqui todos los productos de una misma factura de proveedor. Para agregar una sola unidad
-        suelta sin factura de proveedor, usa los botones dentro de Inventario.
-      </p>
 
       <div className="form-box" style={{ maxWidth: '500px' }}>
         <h3>Datos del proveedor</h3>
@@ -243,7 +259,7 @@ export default function Compras({ currentUser }) {
 
       <div className="form-box" style={{ maxWidth: '600px' }}>
         <h3>Agregar producto a la compra</h3>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
           {TIPOS.map((t) => (
             <button key={t.key} type="button" onClick={() => setTipoSeleccionado(t.key)}
               style={{
@@ -268,41 +284,53 @@ export default function Compras({ currentUser }) {
           onChange={(e) => { setCostoUnitario(e.target.value); setCodigosEscaneados([]); }}
           onBlur={enfocarEscaneoSiListo} />
 
-        <label>Cantidad {esAccesorio ? '' : 'que llego segun la factura'}</label>
-        <input type="number" min="1" value={cantidadDeseada}
-          onChange={(e) => { setCantidadDeseada(e.target.value); setCodigosEscaneados([]); }}
-          onBlur={enfocarEscaneoSiListo} />
+        {datosBaseListos && permiteRango && codigosEscaneados.length === 0 && (
+          <div style={{ display: 'flex', gap: '0.5rem', margin: '0.75rem 0 0.25rem 0', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setModoEscaneo('manual')}
+              style={{
+                padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                backgroundColor: modoEscaneo === 'manual' ? '#0b4f9e' : '#e2e8f0', color: modoEscaneo === 'manual' ? '#fff' : '#111'
+              }}
+            >
+              Manual (pistola, uno por uno)
+            </button>
+            <button
+              type="button"
+              onClick={() => setModoEscaneo('rango')}
+              style={{
+                padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                backgroundColor: modoEscaneo === 'rango' ? '#0b4f9e' : '#e2e8f0', color: modoEscaneo === 'rango' ? '#fff' : '#111'
+              }}
+            >
+              Por rango (primer y ultimo codigo de la caja)
+            </button>
+          </div>
+        )}
+
+        {!modoRangoActivo && (
+          <>
+            <label>Cantidad {esAccesorio ? '' : 'que llego segun la factura'}</label>
+            <input type="number" min="1" value={cantidadDeseada}
+              onChange={(e) => { setCantidadDeseada(e.target.value); setCodigosEscaneados([]); }}
+              onBlur={enfocarEscaneoSiListo} />
+          </>
+        )}
 
         {listoParaEscanear && (
           <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#f4f7fb', borderRadius: '6px' }}>
-            {permiteRango && codigosEscaneados.length === 0 && (
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.6rem' }}>
-                <button
-                  type="button"
-                  onClick={() => setModoEscaneo('manual')}
-                  style={{
-                    padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                    backgroundColor: modoEscaneo === 'manual' ? '#0b4f9e' : '#e2e8f0', color: modoEscaneo === 'manual' ? '#fff' : '#111'
-                  }}
-                >
-                  Manual (pistola, uno por uno)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModoEscaneo('rango')}
-                  style={{
-                    padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                    backgroundColor: modoEscaneo === 'rango' ? '#0b4f9e' : '#e2e8f0', color: modoEscaneo === 'rango' ? '#fff' : '#111'
-                  }}
-                >
-                  Por rango (primer y ultimo codigo de la caja)
-                </button>
-              </div>
-            )}
 
-            <p style={{ margin: '0 0 0.4rem 0', fontWeight: 'bold' }}>
-              Escaneados: {codigosEscaneados.length} de {cantidadNum}
-            </p>
+            {!modoRangoActivo && (
+              <p style={{ margin: '0 0 0.4rem 0', fontWeight: '600', fontSize: '0.9rem' }}>
+                Escaneados: {codigosEscaneados.length} de {cantidadNum}
+              </p>
+            )}
+            {modoRangoActivo && codigosEscaneados.length > 0 && (
+              <p style={{ margin: '0 0 0.4rem 0', fontWeight: '600', fontSize: '0.9rem' }}>
+                Codigos generados: {codigosEscaneados.length}
+              </p>
+            )}
 
             {modoEscaneo === 'manual' && !escaneoCompleto && (
               <input
@@ -312,11 +340,16 @@ export default function Compras({ currentUser }) {
                 onKeyDown={handleScanKeyDown}
                 placeholder={verificando ? 'Verificando...' : 'Dispara la pistola aqui o escribe y presiona Enter'}
                 disabled={verificando}
-                autoFocus
               />
             )}
 
-            {modoEscaneo === 'rango' && codigosEscaneados.length === 0 && (
+            {modoEscaneo === 'manual' && escaneoCompleto && (
+              <p style={{ margin: 0, color: '#027a48', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                Ha llegado a los {cantidadNum} items
+              </p>
+            )}
+
+            {modoRangoActivo && codigosEscaneados.length === 0 && (
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div>
                   <label style={{ fontSize: '0.75rem' }}>Primer codigo de la caja</label><br />
@@ -334,13 +367,20 @@ export default function Compras({ currentUser }) {
 
             {errorEscaneo && <p style={{ color: 'red', fontSize: '0.85rem' }}>{errorEscaneo}</p>}
             {codigosEscaneados.length > 0 && (
-              <ul style={{ maxHeight: '150px', overflowY: 'auto', margin: '0.5rem 0 0 0', paddingLeft: '1.2rem' }}>
-                {codigosEscaneados.map((c, i) => (
-                  <li key={`${c}-${i}`} style={{ fontSize: '0.85rem' }}>
-                    {c} <button type="button" onClick={() => quitarCodigoEscaneado(i)} style={{ fontSize: '0.75rem' }}>Quitar</button>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0.4rem 0' }}>
+                  <button type="button" onClick={eliminarTodosLosCodigos} style={{ fontSize: '0.75rem', color: '#b42318' }}>
+                    Eliminar todos
+                  </button>
+                </div>
+                <ul style={{ maxHeight: '150px', overflowY: 'auto', margin: 0, paddingLeft: '1.2rem' }}>
+                  {codigosEscaneados.map((c, i) => (
+                    <li key={`${c}-${i}`} style={{ fontSize: '0.85rem' }}>
+                      {c} <button type="button" onClick={() => quitarCodigoEscaneado(i)} style={{ fontSize: '0.75rem' }}>Quitar</button>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
         )}
@@ -366,7 +406,7 @@ export default function Compras({ currentUser }) {
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
               <th style={{ padding: '0.5rem' }}>Producto</th>
               <th>Cantidad</th>
-              <th>Costo unit.</th>
+              <th>Costo unit. sin IVA</th>
               <th>Subtotal</th>
               <th></th>
             </tr>
@@ -386,7 +426,9 @@ export default function Compras({ currentUser }) {
       )}
 
       <div className="form-box" style={{ maxWidth: '340px' }}>
-        <p>Total estimado: <strong>${totalEstimado.toFixed(2)}</strong></p>
+        <p style={{ margin: '0 0 0.3rem 0' }}>Base imponible sin IVA: <strong>${baseImponible.toFixed(2)}</strong></p>
+        <p style={{ margin: '0 0 0.3rem 0' }}>IVA (16%): <strong>${totalIva.toFixed(2)}</strong></p>
+        <p style={{ margin: '0 0 0.3rem 0' }}>Total de la compra: <strong>${totalCompra.toFixed(2)}</strong></p>
         <button onClick={handleRegistrarCompra} style={{ marginTop: '8px' }}>Registrar compra</button>
       </div>
 
