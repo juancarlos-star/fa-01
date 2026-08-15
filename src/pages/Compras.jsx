@@ -13,6 +13,9 @@ const IVA_TASA = 0.16;
 export default function Compras({ currentUser }) {
   const [proveedor, setProveedor] = useState('');
   const [numeroFacturaCompra, setNumeroFacturaCompra] = useState('');
+  // Numero de compra consecutivo que le asigna el sistema (id de compras_encabezado). Se
+  // muestra como vista previa antes de registrar; el numero real se confirma al guardar.
+  const [proximoNumeroCompra, setProximoNumeroCompra] = useState(null);
 
   const [tipoSeleccionado, setTipoSeleccionado] = useState('equipo');
   const [productos, setProductos] = useState([]);
@@ -74,6 +77,12 @@ export default function Compras({ currentUser }) {
       resetearFormularioProducto();
     });
   }, [tipoSeleccionado]);
+
+  const cargarProximoNumeroCompra = () => {
+    window.api.proximoNumeroCompra().then((res) => setProximoNumeroCompra(res.proximoNumero));
+  };
+
+  useEffect(() => { cargarProximoNumeroCompra(); }, []);
 
   // El mensaje de error general de la pantalla (setError) se referia a un estado del escaneo
   // que ya cambio (ej: "Faltan codigos (9 de 10)" seguia visible aunque ya se hubiera
@@ -292,6 +301,7 @@ export default function Compras({ currentUser }) {
       setNumeroFacturaCompra('');
       setTipoSeleccionado('equipo');
       resetearFormularioProducto();
+      cargarProximoNumeroCompra();
     } catch (err) {
       setError('Error inesperado: ' + (err?.message || String(err)));
     }
@@ -302,6 +312,7 @@ export default function Compras({ currentUser }) {
       <div>
         <h1>Compra registrada</h1>
         <div className="form-box" style={{ maxWidth: '400px' }}>
+          <p><strong>N° de compra:</strong> {confirmacion.encabezadoId}</p>
           <p><strong>Total de la compra:</strong> ${confirmacion.totalUsd.toFixed(2)}</p>
           <p style={{ color: '#666', fontSize: '0.85rem' }}>
             Consulta el historial completo de compras en Reportes.
@@ -318,6 +329,11 @@ export default function Compras({ currentUser }) {
 
       <div className="form-box" style={{ maxWidth: '500px' }}>
         <h3>Datos del proveedor</h3>
+        {proximoNumeroCompra !== null && (
+          <p style={{ margin: '0 0 0.75rem 0', color: '#0b4f9e', fontWeight: '600' }}>
+            N° de compra que se asignara: {proximoNumeroCompra}
+          </p>
+        )}
         <label>Proveedor</label>
         <input value={proveedor} onChange={(e) => setProveedor(e.target.value)} placeholder="Ej: Distribuidora XYZ" />
         <label>N° de factura de compra</label>
