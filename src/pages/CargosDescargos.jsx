@@ -322,6 +322,7 @@ function DescargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }
     setError('');
     if (!codigoInicio.trim() || !codigoFin.trim()) { setError('Escanea o escribe el primer y el ultimo codigo de la caja'); return; }
     if (!motivoRango.trim()) { setError('Indica el motivo del descargo'); return; }
+    if (!window.confirm('¿Seguro que deseas dar de baja el rango completo? Esta accion no se puede deshacer.')) return;
     setEnviandoRango(true);
     try {
       const res = await window.api.writeOffUnitRange({
