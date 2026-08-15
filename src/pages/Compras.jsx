@@ -70,17 +70,24 @@ export default function Compras({ currentUser }) {
 
   // El salto de foco hacia el cuadro de escaneo NUNCA ocurre mientras el usuario esta
   // escribiendo en otro campo (cantidad, costo, etc). Solo se dispara con eventos explicitos:
-  // al salir (blur) de cantidad/costo, al quitar un codigo, o al cambiar a modo manual.
+  // al salir (blur) de cantidad/costo, al quitar un codigo, al agregar un codigo manual,
+  // o al cambiar a modo manual.
   // Importante: nunca usar autoFocus en el input de escaneo, porque robaria el foco del
   // campo Cantidad apenas se muestre este bloque (eso causaba que solo se pudiera escribir
   // 1 digito en Cantidad).
-  // Ademas: los dialogos nativos (confirm) le quitan el foco a la ventana del programa a nivel
-  // de sistema operativo. window.focus() se lo devuelve a la ventana antes de enfocar el input,
-  // si no, el campo se veia activo pero no aceptaba texto hasta cambiar de ventana y volver.
+  // Ademas: los dialogos nativos (confirm) le quitan la activacion de la ventana a nivel de
+  // sistema operativo, y window.focus() del renderer no siempre la recupera. Se le pide al
+  // proceso principal de Electron (mainWindow.focus()) que la recupere antes de enfocar el
+  // input; si no se hace esto el campo se ve activo pero no acepta texto ni pistola hasta
+  // cambiar de ventana y volver.
   const enfocarEscaneoSiListo = () => {
     if (datosBaseListos && modoEscaneo === 'manual' && cantidadNum > 0 && !escaneoCompleto && scanInputRef.current) {
-      window.focus();
-      scanInputRef.current.focus();
+      const hacerFoco = () => { if (scanInputRef.current) scanInputRef.current.focus(); };
+      if (window.api?.focusVentana) {
+        window.api.focusVentana().then(hacerFoco).catch(hacerFoco);
+      } else {
+        hacerFoco();
+      }
     }
   };
 
@@ -116,7 +123,11 @@ export default function Compras({ currentUser }) {
       setErrorEscaneo('Error verificando el codigo: ' + (err?.message || String(err)));
     } finally {
       setVerificando(false);
-      if (scanInputRef.current) scanInputRef.current.focus();
+      // El foco se pide en el siguiente tick (no de inmediato), porque el input todavia esta
+      // marcado como disabled en el DOM en este instante (React aun no aplico el cambio de
+      // "verificando"); un input disabled no acepta foco, por eso antes se quedaba sin
+      // regresar el cursor automaticamente al campo para escribir el siguiente codigo.
+      setTimeout(() => { if (scanInputRef.current) scanInputRef.current.focus(); }, 0);
     }
   };
 
