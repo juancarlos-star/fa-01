@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
@@ -45,6 +45,27 @@ if (!gotTheLock) {
     });
   });
 }
+
+// ---------- IPC: Guardar y abrir automaticamente un PDF (facturas y reportes) ----------
+ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subcarpeta }) => {
+  try {
+    const carpetaBase = path.join(app.getPath('documents'), 'Facturacion Movistar', subcarpeta || 'PDFs');
+    if (!fs.existsSync(carpetaBase)) fs.mkdirSync(carpetaBase, { recursive: true });
+    const nombreSeguro = String(nombreArchivo || 'documento').replace(/[\\/:*?"<>|]/g, '-');
+    const nombreFinal = nombreSeguro.toLowerCase().endsWith('.pdf') ? nombreSeguro : `${nombreSeguro}.pdf`;
+    const filePath = path.join(carpetaBase, nombreFinal);
+    const buffer = Buffer.from(base64, 'base64');
+    fs.writeFileSync(filePath, buffer);
+    const errorAlAbrir = await shell.openPath(filePath);
+    if (errorAlAbrir) {
+      return { ok: true, path: filePath, avisoApertura: errorAlAbrir };
+    }
+    return { ok: true, path: filePath };
+  } catch (err) {
+    console.error('Error guardando PDF', err);
+    return { ok: false, message: 'Error guardando el PDF: ' + (err?.message || String(err)) };
+  }
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
