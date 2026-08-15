@@ -61,24 +61,19 @@ export default function Compras({ currentUser }) {
     });
   }, [tipoSeleccionado]);
 
-  useEffect(() => {
-    if (!listoParaEscanear || modoEscaneo !== 'manual' || escaneoCompleto || !scanInputRef.current) return;
-    // No robar el foco si el usuario todavia esta escribiendo en otro campo del formulario
-    // (ej: cantidad "10" -> al escribir el "1" ya se cumple listoParaEscanear y sin este chequeo
-    // el foco saltaria al cuadro de escaneo antes de que termine de escribir el "0").
-    const activo = document.activeElement;
-    const escribiendoEnOtroCampo =
-      activo && activo !== scanInputRef.current && (activo.tagName === 'INPUT' || activo.tagName === 'SELECT');
-    if (!escribiendoEnOtroCampo) {
-      scanInputRef.current.focus();
-    }
-  }, [listoParaEscanear, escaneoCompleto, codigosEscaneados.length, modoEscaneo]);
-
+  // El salto de foco hacia el cuadro de escaneo NUNCA ocurre mientras el usuario esta
+  // escribiendo en otro campo (cantidad, costo, etc). Solo se dispara con eventos explicitos:
+  // al salir (blur) de cantidad/costo, al quitar un codigo, o al cambiar a modo manual.
   const enfocarEscaneoSiListo = () => {
     if (listoParaEscanear && modoEscaneo === 'manual' && !escaneoCompleto && scanInputRef.current) {
       scanInputRef.current.focus();
     }
   };
+
+  useEffect(() => {
+    if (modoEscaneo === 'manual') enfocarEscaneoSiListo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoEscaneo]);
 
   const handleScanKeyDown = async (e) => {
     if (e.key !== 'Enter') return;
@@ -115,6 +110,7 @@ export default function Compras({ currentUser }) {
 
   const quitarCodigoEscaneado = (index) => {
     setCodigosEscaneados((prev) => prev.filter((_, i) => i !== index));
+    setTimeout(enfocarEscaneoSiListo, 0);
   };
 
   const handleGenerarRango = async () => {
