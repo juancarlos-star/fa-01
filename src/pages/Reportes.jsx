@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFecha.jsx';
+import CompraFacturaDetalle from '../components/CompraFacturaDetalle.jsx';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import {
   generarPDFGanancias,
@@ -160,36 +161,7 @@ function ReporteCompras({ desde, hasta }) {
 
   if (detalle) {
     const { encabezado, items } = detalle;
-    return (
-      <div style={{ marginTop: '1rem' }}>
-        <button onClick={() => setDetalle(null)}>&larr; Volver al listado</button>
-        <h3>Compra #{encabezado.id}</h3>
-        <p><strong>Proveedor:</strong> {encabezado.proveedor}</p>
-        <p><strong>N° factura de compra:</strong> {encabezado.numero_factura_compra}</p>
-        <p><strong>Fecha:</strong> {encabezado.created_at}</p>
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Producto</th>
-              <th>Cantidad</th>
-              <th>Costo unit.</th>
-              <th>Subtotal</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((i) => (
-              <tr key={i.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{i.descripcion}</td>
-                <td>{i.cantidad}</td>
-                <td>${i.costo_unitario_usd.toFixed(2)}</td>
-                <td>${i.total_usd.toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p><strong>Total: ${encabezado.total_usd.toFixed(2)}</strong></p>
-      </div>
-    );
+    return <CompraFacturaDetalle encabezado={encabezado} items={items} onVolver={() => setDetalle(null)} />;
   }
 
   return (
@@ -205,7 +177,8 @@ function ReporteCompras({ desde, hasta }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Fecha</th>
+              <th style={{ padding: '0.5rem' }}>N°</th>
+              <th>Fecha</th>
               <th>Proveedor</th>
               <th>N° factura</th>
               <th>Total</th>
@@ -215,7 +188,8 @@ function ReporteCompras({ desde, hasta }) {
           <tbody>
             {reporte.compras.map((c) => (
               <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{c.created_at}</td>
+                <td style={{ padding: '0.5rem' }}>#{c.id}</td>
+                <td>{c.created_at}</td>
                 <td>{c.proveedor}</td>
                 <td>{c.numero_factura_compra}</td>
                 <td>${c.total_usd.toFixed(2)}</td>
