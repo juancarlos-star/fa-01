@@ -895,7 +895,7 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`
       );
       const insertUnit = db.prepare(
-        `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now'))`
+        `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, compra_encabezado_id, created_at) VALUES (?, ?, 'disponible', ?, ?, datetime('now'))`
       );
 
       for (const item of items) {
@@ -913,7 +913,7 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
           totalUsd += costo * cantidad;
         } else {
           const codigos = item.codigos.map((c) => c.trim());
-          codigos.forEach((codigo) => insertUnit.run(product.id, codigo, costo));
+          codigos.forEach((codigo) => insertUnit.run(product.id, codigo, costo, encabezadoId));
           insertCompra.run(product.id, product.tipo, product.nombre, costo, codigos.length, costo * codigos.length, usuario || '', encabezadoId);
           totalUsd += costo * codigos.length;
         }
@@ -941,7 +941,19 @@ ipcMain.handle('compras:detalleEncabezado', (event, { id }) => {
   const encabezado = db.prepare('SELECT * FROM compras_encabezado WHERE id = ?').get(id);
   if (!encabezado) return { ok: false, message: 'Compra no encontrada' };
   const items = db.prepare('SELECT * FROM compras WHERE compra_encabezado_id = ?').all(id);
-  return { ok: true, encabezado, items };
+  const getCodigos = db.prepare('SELECT codigo FROM inventory_units WHERE compra_encabezado_id = ? AND product_id = ? ORDER BY id');
+  const itemsConCodigos = items.map((item) => ({
+    ...item,
+    codigos: item.tipo === 'accesorio' ? [] : getCodigos.all(id, item.product_id).map((r) => r.codigo)
+  }));
+  return { ok: true, encabezado, items: itemsConCodigos };
+});
+
+// ---------- IPC: numero de compra consecutivo (id de compras_encabezado, se muestra antes de registrar) ----------
+ipcMain.handle('compras:proximoNumero', () => {
+  const db = getDb();
+  const fila = db.prepare('SELECT COALESCE(MAX(id), 0) + 1 AS proximo FROM compras_encabezado').get();
+  return { proximoNumero: fila.proximo };
 });
 
 // ---------- IPC: Compras - calcular rango sin escribir en la BD (para escaneo por lote en Compras) ----------
