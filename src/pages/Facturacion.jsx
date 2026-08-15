@@ -145,7 +145,10 @@ export default function Facturacion({ currentUser }) {
     }
   };
 
-  const quitarDelCarrito = (key) => setCarrito(carrito.filter((item) => item.key !== key));
+  const quitarDelCarrito = (key) => {
+    if (!window.confirm('¿Seguro que deseas quitar este producto de la factura?')) return;
+    setCarrito(carrito.filter((item) => item.key !== key));
+  };
 
   const subtotal = carrito.reduce((acc, i) => acc + i.precio_unitario * i.cantidad, 0);
   const ivaPorcentaje = settings ? parseFloat(settings.iva_porcentaje) : 0;
