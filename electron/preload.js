@@ -64,5 +64,8 @@ contextBridge.exposeInMainWorld('api', {
   getReporteCargosDescargos: (desde, hasta) => ipcRenderer.invoke('reportes:cargosDescargos', { desde, hasta }),
   // Respaldo
   crearBackup: () => ipcRenderer.invoke('backup:crear'),
-  restaurarBackup: () => ipcRenderer.invoke('backup:restaurar')
+  restaurarBackup: () => ipcRenderer.invoke('backup:restaurar'),
+  // PDF (facturas y reportes): guarda automaticamente y abre con el visor por defecto
+  guardarYAbrirPDF: (nombreArchivo, base64, subcarpeta) =>
+    ipcRenderer.invoke('pdf:guardarYAbrir', { nombreArchivo, base64, subcarpeta })
 });
