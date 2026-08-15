@@ -161,3 +161,24 @@ th {
   border-radius: 6px;
   cursor: pointer;
 }
+
+/* Impresion: al imprimir una pantalla que contenga un elemento .print-area (ej: la factura
+   de una compra), se oculta todo lo demas (menu lateral, botones, filtros) y solo se imprime
+   ese contenido. Los elementos con .no-print (botones de accion) tampoco se imprimen. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area, .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
