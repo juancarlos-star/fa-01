@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFecha.jsx';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
+import {
+  generarPDFGanancias,
+  generarPDFCompras,
+  generarPDFFacturas,
+  generarPDFCargosDescargos
+} from '../utils/generarReportesPDF.js';
 
 const TABS = [
   { key: 'ganancias', label: 'Ventas y ganancias' },
@@ -51,6 +57,7 @@ export default function Reportes() {
 function ReporteGanancias({ desde, hasta }) {
   const [reporte, setReporte] = useState(null);
   const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -64,8 +71,18 @@ function ReporteGanancias({ desde, hasta }) {
   if (cargando) return <p>Cargando...</p>;
   if (!reporte) return null;
 
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFGanancias(reporte, desde, hasta);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
   return (
     <>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
       <div className="form-box" style={{ maxWidth: '460px', marginTop: '1rem' }}>
         <p>Facturas emitidas: <strong>{reporte.cantidadFacturas}</strong></p>
         <p>Ventas (sin IVA): <strong>${reporte.ventasSubtotalUsd.toFixed(2)}</strong></p>
@@ -113,6 +130,7 @@ function ReporteCompras({ desde, hasta }) {
   const [reporte, setReporte] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [detalle, setDetalle] = useState(null);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -126,6 +144,15 @@ function ReporteCompras({ desde, hasta }) {
   const verDetalle = async (id) => {
     const res = await window.api.detalleCompraEncabezado(id);
     if (res.ok) setDetalle(res);
+  };
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFCompras(reporte, desde, hasta);
+    } finally {
+      setGenerandoPDF(false);
+    }
   };
 
   if (cargando) return <p>Cargando...</p>;
@@ -167,6 +194,7 @@ function ReporteCompras({ desde, hasta }) {
 
   return (
     <div style={{ marginTop: '1rem' }}>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
       <p>
         Compras registradas: <strong>{reporte.cantidad}</strong>{' '}
         — Total: <strong>${reporte.totalUsd.toFixed(2)}</strong>
@@ -207,6 +235,7 @@ function ReporteFacturas({ desde, hasta }) {
   const [reporte, setReporte] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [detalle, setDetalle] = useState(null);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -220,6 +249,15 @@ function ReporteFacturas({ desde, hasta }) {
   const verDetalle = async (id) => {
     const res = await window.api.detalleFactura(id);
     if (res.ok) setDetalle(res);
+  };
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFFacturas(reporte, desde, hasta);
+    } finally {
+      setGenerandoPDF(false);
+    }
   };
 
   if (cargando) return <p>Cargando...</p>;
@@ -270,6 +308,7 @@ function ReporteFacturas({ desde, hasta }) {
 
   return (
     <div style={{ marginTop: '1rem' }}>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
       <p>
         Facturas emitidas: <strong>{reporte.cantidad}</strong>{' '}
         — Total: <strong>${reporte.totalUsd.toFixed(2)}</strong> (Bs {reporte.totalBs.toFixed(2)})
@@ -312,6 +351,7 @@ function ReporteCargosDescargos({ desde, hasta }) {
   const [reporte, setReporte] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [subtab, setSubtab] = useState('cargos');
+  const [generandoPDF, setGenerandoPDF] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -322,11 +362,21 @@ function ReporteCargosDescargos({ desde, hasta }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFCargosDescargos(reporte, desde, hasta);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
   if (cargando) return <p>Cargando...</p>;
   if (!reporte) return null;
 
   return (
     <div style={{ marginTop: '1rem' }}>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
         <button
           onClick={() => setSubtab('cargos')}
@@ -419,5 +469,27 @@ function ReporteCargosDescargos({ desde, hasta }) {
         )
       )}
     </div>
+  );
+}
+
+// ---------------- Boton reutilizable: generar, guardar y abrir PDF ----------------
+
+function BotonPDF({ onClick, generando }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={generando}
+      style={{
+        marginBottom: '0.75rem',
+        backgroundColor: '#0b4f9e',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '4px',
+        padding: '0.5rem 1rem',
+        cursor: generando ? 'default' : 'pointer'
+      }}
+    >
+      {generando ? 'Generando PDF...' : '📄 Descargar PDF'}
+    </button>
   );
 }
