@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
   codigoExiste: (data) => ipcRenderer.invoke('inventario:codigoExiste', data),
   listComprasEncabezados: () => ipcRenderer.invoke('compras:listEncabezados'),
   detalleCompraEncabezado: (id) => ipcRenderer.invoke('compras:detalleEncabezado', { id }),
+  proximoNumeroCompra: () => ipcRenderer.invoke('compras:proximoNumero'),
   calcularRangoCompra: (codigoInicio, codigoFin) => ipcRenderer.invoke('compras:calcularRango', { codigoInicio, codigoFin }),
   updateProductCosto: (id, costoPromedio) => ipcRenderer.invoke('products:updateCosto', { id, costoPromedio }),
   updateUnitCosto: (id, costoUnitario) => ipcRenderer.invoke('units:updateCosto', { id, costoUnitario }),
