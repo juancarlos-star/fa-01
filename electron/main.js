@@ -390,16 +390,19 @@ ipcMain.handle('units:add', (event, { product_id, codigo, costoUnitario, usuario
 function calcularRango(codigoInicio, codigoFin) {
   const a = codigoInicio.trim();
   const b = codigoFin.trim();
-  if (a.length !== b.length) return { ok: false, message: 'El primer y el ultimo codigo deben tener la misma longitud' };
+  // El primer y el ultimo codigo ya no necesitan tener la misma longitud: se busca el
+  // prefijo comun que compartan (puede ser vacio) y se toma el resto de cada uno como
+  // la parte numerica que varia, sin importar cuantos digitos tenga cada lado.
   let i = 0;
-  while (i < a.length && a[i] === b[i]) i++;
+  const minLen = Math.min(a.length, b.length);
+  while (i < minLen && a[i] === b[i]) i++;
   const prefijo = a.slice(0, i);
   const restoA = a.slice(i);
   const restoB = b.slice(i);
   if (!/^\d+$/.test(restoA) || !/^\d+$/.test(restoB)) {
     return { ok: false, message: 'La parte que cambia entre los dos codigos debe ser numerica' };
   }
-  const ancho = restoA.length;
+  const ancho = Math.max(restoA.length, restoB.length);
   const numA = parseInt(restoA, 10);
   const numB = parseInt(restoB, 10);
   if (numA > numB) return { ok: false, message: 'El primer codigo debe ser menor o igual al ultimo' };
