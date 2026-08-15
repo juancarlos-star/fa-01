@@ -1,7 +1,8 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { guardarYAbrirPDF } from './pdfUtils.js';
 
-export function generarFacturaPDF(factura, items) {
+export async function generarFacturaPDF(factura, items) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter' });
 
   doc.setFont('helvetica', 'bold');
@@ -75,5 +76,5 @@ export function generarFacturaPDF(factura, items) {
   doc.setFont('helvetica', 'bold');
   doc.text(factura.total_usd.toFixed(2), 195, finalY + 15, { align: 'right' });
 
-  doc.save(`Factura-${factura.numero_factura || factura.id}.pdf`);
+  await guardarYAbrirPDF(doc, `Factura-${factura.numero_factura || factura.id}`, 'Facturas');
 }
