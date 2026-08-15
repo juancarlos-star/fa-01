@@ -92,6 +92,12 @@ function migrarComprasSiHaceFalta(database) {
   if (existe && !tieneColumna(database, 'compras', 'compra_encabezado_id')) {
     database.exec('ALTER TABLE compras ADD COLUMN compra_encabezado_id INTEGER');
   }
+  // Vincula cada unidad de inventario (IMEI/codigo) con la compra en la que entro, para poder
+  // mostrar en el reporte de compras (factura de compra) todos los codigos de esa compra.
+  const existeUnits = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_units'").get();
+  if (existeUnits && !tieneColumna(database, 'inventory_units', 'compra_encabezado_id')) {
+    database.exec('ALTER TABLE inventory_units ADD COLUMN compra_encabezado_id INTEGER');
+  }
 }
 
 function initDb() {
