@@ -67,5 +67,7 @@ contextBridge.exposeInMainWorld('api', {
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar'),
   // PDF (facturas y reportes): guarda automaticamente y abre con el visor por defecto
   guardarYAbrirPDF: (nombreArchivo, base64, subcarpeta) =>
-    ipcRenderer.invoke('pdf:guardarYAbrir', { nombreArchivo, base64, subcarpeta })
+    ipcRenderer.invoke('pdf:guardarYAbrir', { nombreArchivo, base64, subcarpeta }),
+  // Ventana: forzar el foco a nivel de sistema operativo (usado tras dialogos nativos confirm/alert)
+  focusVentana: () => ipcRenderer.invoke('window:focus')
 });
