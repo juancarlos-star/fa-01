@@ -46,6 +46,18 @@ if (!gotTheLock) {
   });
 }
 
+// ---------- IPC: forzar el foco de la ventana a nivel de sistema operativo ----------
+// Los dialogos nativos (confirm/alert) le quitan la activacion de la ventana al SO.
+// window.focus() desde el renderer no siempre la recupera; mainWindow.focus() del
+// proceso principal si lo hace de forma confiable.
+ipcMain.handle('window:focus', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+  return { ok: true };
+});
+
 // ---------- IPC: Guardar y abrir automaticamente un PDF (facturas y reportes) ----------
 ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subcarpeta }) => {
   try {
