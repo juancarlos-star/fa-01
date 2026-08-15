@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
@@ -34,6 +35,8 @@ export default function Compras({ currentUser }) {
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
+  // Confirmacion propia (sin dialogo nativo): { tipo: 'quitarCodigo'|'eliminarTodos'|'quitarCarrito', index?, key? }
+  const [confirmando, setConfirmando] = useState(null);
 
   const esAccesorio = tipoSeleccionado === 'accesorio';
   const cantidadNum = parseInt(cantidadDeseada, 10) || 0;
@@ -75,19 +78,15 @@ export default function Compras({ currentUser }) {
   // Importante: nunca usar autoFocus en el input de escaneo, porque robaria el foco del
   // campo Cantidad apenas se muestre este bloque (eso causaba que solo se pudiera escribir
   // 1 digito en Cantidad).
-  // Ademas: los dialogos nativos (confirm) le quitan la activacion de la ventana a nivel de
-  // sistema operativo, y window.focus() del renderer no siempre la recupera. Se le pide al
-  // proceso principal de Electron (mainWindow.focus()) que la recupere antes de enfocar el
-  // input; si no se hace esto el campo se ve activo pero no acepta texto ni pistola hasta
-  // cambiar de ventana y volver.
+  // Importante tambien: las confirmaciones de "quitar/eliminar" en esta pantalla usan un
+  // modal propio (ConfirmDialog), NO window.confirm() nativo. El dialogo nativo le quita la
+  // activacion de la ventana a Windows a nivel de sistema operativo y no siempre se recupera
+  // (eso causaba que el campo se viera activo pero no aceptara texto ni pistola hasta cambiar
+  // de ventana y volver). Un modal de React nunca sale de la ventana del programa, asi que
+  // este problema no puede volver a pasar mientras no se reintroduzca window.confirm() aqui.
   const enfocarEscaneoSiListo = () => {
     if (datosBaseListos && modoEscaneo === 'manual' && cantidadNum > 0 && !escaneoCompleto && scanInputRef.current) {
-      const hacerFoco = () => { if (scanInputRef.current) scanInputRef.current.focus(); };
-      if (window.api?.focusVentana) {
-        window.api.focusVentana().then(hacerFoco).catch(hacerFoco);
-      } else {
-        hacerFoco();
-      }
+      scanInputRef.current.focus();
     }
   };
 
@@ -141,18 +140,28 @@ export default function Compras({ currentUser }) {
   };
 
   const quitarCodigoEscaneado = (index) => {
-    if (!window.confirm('¿Seguro que deseas quitar este codigo de la lista?')) return;
-    setCodigosEscaneados((prev) => prev.filter((_, i) => i !== index));
-    setErrorEscaneo('');
-    setTimeout(enfocarEscaneoSiListo, 50);
+    setConfirmando({ tipo: 'quitarCodigo', index });
   };
 
   const eliminarTodosLosCodigos = () => {
     if (codigosEscaneados.length === 0) return;
-    if (!window.confirm(`¿Seguro que deseas eliminar los ${codigosEscaneados.length} codigo(s) escaneados/generados?`)) return;
+    setConfirmando({ tipo: 'eliminarTodos' });
+  };
+
+  const ejecutarQuitarCodigo = (index) => {
+    setCodigosEscaneados((prev) => prev.filter((_, i) => i !== index));
+    setErrorEscaneo('');
+    setConfirmando(null);
+    // Al ser un modal propio de React (no window.confirm nativo), la ventana nunca pierde
+    // el foco a nivel de sistema operativo, asi que el input recupera el foco sin trucos.
+    setTimeout(enfocarEscaneoSiListo, 0);
+  };
+
+  const ejecutarEliminarTodos = () => {
     setCodigosEscaneados([]);
     setErrorEscaneo('');
-    setTimeout(enfocarEscaneoSiListo, 50);
+    setConfirmando(null);
+    setTimeout(enfocarEscaneoSiListo, 0);
   };
 
   const handleGenerarRango = async () => {
@@ -211,8 +220,12 @@ export default function Compras({ currentUser }) {
   };
 
   const quitarDelCarrito = (key) => {
-    if (!window.confirm('¿Seguro que deseas quitar este producto de la compra?')) return;
+    setConfirmando({ tipo: 'quitarCarrito', key });
+  };
+
+  const ejecutarQuitarDelCarrito = (key) => {
     setCarrito((prev) => prev.filter((i) => i.key !== key));
+    setConfirmando(null);
   };
 
   const baseImponible = carrito.reduce((acc, i) => acc + i.subtotal, 0);
@@ -486,6 +499,31 @@ export default function Compras({ currentUser }) {
         El historial de compras ahora se consulta desde <strong>Reportes → Reporte de compras</strong>,
         con filtros por dia, semana, mes, año o rango de fechas.
       </p>
+
+      {confirmando?.tipo === 'quitarCodigo' && (
+        <ConfirmDialog
+          message="¿Seguro que deseas quitar este codigo de la lista?"
+          confirmLabel="Si, quitar"
+          onConfirm={() => ejecutarQuitarCodigo(confirmando.index)}
+          onCancel={() => setConfirmando(null)}
+        />
+      )}
+      {confirmando?.tipo === 'eliminarTodos' && (
+        <ConfirmDialog
+          message={`¿Seguro que deseas eliminar los ${codigosEscaneados.length} codigo(s) escaneados/generados?`}
+          confirmLabel="Si, eliminar todos"
+          onConfirm={ejecutarEliminarTodos}
+          onCancel={() => setConfirmando(null)}
+        />
+      )}
+      {confirmando?.tipo === 'quitarCarrito' && (
+        <ConfirmDialog
+          message="¿Seguro que deseas quitar este producto de la compra?"
+          confirmLabel="Si, quitar"
+          onConfirm={() => ejecutarQuitarDelCarrito(confirmando.key)}
+          onCancel={() => setConfirmando(null)}
+        />
+      )}
     </div>
   );
 }
