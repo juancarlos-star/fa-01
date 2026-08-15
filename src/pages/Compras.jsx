@@ -388,11 +388,17 @@ export default function Compras({ currentUser }) {
         <button
           type="button"
           onClick={agregarProductoAlCarrito}
-          disabled={!esAccesorio && !escaneoCompleto}
-          style={{ marginTop: '0.75rem' }}
+          style={{ marginTop: '0.75rem', opacity: (!esAccesorio && !escaneoCompleto) ? 0.6 : 1 }}
         >
           + Agregar a la compra
         </button>
+        {!esAccesorio && !escaneoCompleto && (
+          <p style={{ color: '#666', fontSize: '0.8rem', margin: '0.3rem 0 0 0' }}>
+            {modoRangoActivo
+              ? 'Genera el rango de codigos antes de agregar.'
+              : `Debes completar el escaneo (${codigosEscaneados.length} de ${cantidadNum || 0}) antes de agregar.`}
+          </p>
+        )}
       </div>
 
       {error && <p style={{ color: 'red' }}>{error}</p>}
