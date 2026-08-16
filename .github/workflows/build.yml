@@ -1,8 +1,6 @@
 name: Compilar instalador Windows
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
