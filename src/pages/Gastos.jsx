@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { fmt } from '../utils/format.js';
 
 export default function Gastos({ currentUser }) {
   const [gastos, setGastos] = useState([]);
@@ -86,7 +87,7 @@ export default function Gastos({ currentUser }) {
                 <td style={{ padding: '0.5rem' }}>{g.created_at}</td>
                 <td>{g.concepto}</td>
                 <td>{g.categoria || '—'}</td>
-                <td>${g.monto_usd.toFixed(2)}</td>
+                <td>${fmt(g.monto_usd)}</td>
                 <td>{g.usuario}</td>
                 <td><button onClick={() => handleEliminar(g.id)}>Eliminar</button></td>
               </tr>
@@ -94,7 +95,7 @@ export default function Gastos({ currentUser }) {
           </tbody>
         </table>
       )}
-      <p style={{ marginTop: '0.5rem' }}><strong>Total mostrado: ${totalMostrado.toFixed(2)}</strong></p>
+      <p style={{ marginTop: '0.5rem' }}><strong>Total mostrado: ${fmt(totalMostrado)}</strong></p>
     </div>
   );
 }

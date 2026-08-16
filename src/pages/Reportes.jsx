@@ -6,14 +6,17 @@ import {
   generarPDFGanancias,
   generarPDFCompras,
   generarPDFFacturas,
-  generarPDFCargosDescargos
+  generarPDFCargosDescargos,
+  generarPDFClientes
 } from '../utils/generarReportesPDF.js';
+import { fmt } from '../utils/format.js';
 
 const TABS = [
   { key: 'ganancias', label: 'Ventas y ganancias' },
   { key: 'compras', label: 'Compras' },
   { key: 'facturas', label: 'Facturas' },
-  { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' }
+  { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' },
+  { key: 'clientes', label: 'Clientes' }
 ];
 
 export default function Reportes() {
@@ -43,12 +46,15 @@ export default function Reportes() {
         ))}
       </div>
 
-      <FiltroFecha desde={desde} hasta={hasta} onChange={(d, h) => { setDesde(d); setHasta(h); }} />
+      {tab !== 'clientes' && (
+        <FiltroFecha desde={desde} hasta={hasta} onChange={(d, h) => { setDesde(d); setHasta(h); }} />
+      )}
 
       {tab === 'ganancias' && <ReporteGanancias desde={desde} hasta={hasta} />}
       {tab === 'compras' && <ReporteCompras desde={desde} hasta={hasta} />}
       {tab === 'facturas' && <ReporteFacturas desde={desde} hasta={hasta} />}
       {tab === 'cargosDescargos' && <ReporteCargosDescargos desde={desde} hasta={hasta} />}
+      {tab === 'clientes' && <ReporteClientes />}
     </div>
   );
 }
@@ -86,13 +92,13 @@ function ReporteGanancias({ desde, hasta }) {
       <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
       <div className="form-box" style={{ maxWidth: '460px', marginTop: '1rem' }}>
         <p>Facturas emitidas: <strong>{reporte.cantidadFacturas}</strong></p>
-        <p>Ventas (sin IVA): <strong>${reporte.ventasSubtotalUsd.toFixed(2)}</strong></p>
-        <p>IVA cobrado: <strong>${reporte.ivaCobradoUsd.toFixed(2)}</strong></p>
-        <p>Costo de lo vendido: <strong>${reporte.costoVendidoUsd.toFixed(2)}</strong></p>
-        <p style={{ color: '#027a48' }}>Ganancia bruta: <strong>${reporte.gananciaBrutaUsd.toFixed(2)}</strong></p>
-        <p>Gastos del periodo: <strong>${reporte.gastosTotalUsd.toFixed(2)}</strong></p>
+        <p>Ventas (sin IVA): <strong>${fmt(reporte.ventasSubtotalUsd)}</strong></p>
+        <p>IVA cobrado: <strong>${fmt(reporte.ivaCobradoUsd)}</strong></p>
+        <p>Costo de lo vendido: <strong>${fmt(reporte.costoVendidoUsd)}</strong></p>
+        <p style={{ color: '#027a48' }}>Ganancia bruta: <strong>${fmt(reporte.gananciaBrutaUsd)}</strong></p>
+        <p>Gastos del periodo: <strong>${fmt(reporte.gastosTotalUsd)}</strong></p>
         <p style={{ color: reporte.gananciaNetaUsd >= 0 ? '#027a48' : '#b42318', fontSize: '1.1rem' }}>
-          <strong>Ganancia neta: ${reporte.gananciaNetaUsd.toFixed(2)}</strong>
+          <strong>Ganancia neta: ${fmt(reporte.gananciaNetaUsd)}</strong>
         </p>
       </div>
 
@@ -115,7 +121,7 @@ function ReporteGanancias({ desde, hasta }) {
                 <td style={{ padding: '0.5rem' }}>{g.created_at}</td>
                 <td>{g.concepto}</td>
                 <td>{g.categoria || '—'}</td>
-                <td>${g.monto_usd.toFixed(2)}</td>
+                <td>${fmt(g.monto_usd)}</td>
               </tr>
             ))}
           </tbody>
@@ -169,7 +175,7 @@ function ReporteCompras({ desde, hasta }) {
       <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
       <p>
         Compras registradas: <strong>{reporte.cantidad}</strong>{' '}
-        — Total: <strong>${reporte.totalUsd.toFixed(2)}</strong>
+        — Total: <strong>${fmt(reporte.totalUsd)}</strong>
       </p>
       {reporte.compras.length === 0 ? (
         <p>No hay compras registradas en este rango de fechas.</p>
@@ -192,7 +198,7 @@ function ReporteCompras({ desde, hasta }) {
                 <td>{c.created_at}</td>
                 <td>{c.proveedor}</td>
                 <td>{c.numero_factura_compra}</td>
-                <td>${c.total_usd.toFixed(2)}</td>
+                <td>${fmt(c.total_usd)}</td>
                 <td><button onClick={() => verDetalle(c.id)}>Ver</button></td>
               </tr>
             ))}
@@ -263,18 +269,18 @@ function ReporteFacturas({ desde, hasta }) {
                 <td style={{ padding: '0.5rem' }}>{i.descripcion}</td>
                 <td>{i.codigo || '—'}</td>
                 <td>{i.cantidad}</td>
-                <td>${i.precio_unitario_usd.toFixed(2)}</td>
-                <td>${i.subtotal_usd.toFixed(2)}</td>
+                <td>${fmt(i.precio_unitario_usd)}</td>
+                <td>${fmt(i.subtotal_usd)}</td>
               </tr>
             ))}
           </tbody>
         </table>
         <div className="form-box" style={{ maxWidth: '320px' }}>
-          <p>Subtotal: ${factura.subtotal_usd.toFixed(2)}</p>
-          <p>IVA ({factura.iva_porcentaje}%): ${factura.iva_usd.toFixed(2)}</p>
-          <p><strong>Total: ${factura.total_usd.toFixed(2)}</strong></p>
+          <p>Subtotal: ${fmt(factura.subtotal_usd)}</p>
+          <p>IVA ({factura.iva_porcentaje}%): ${fmt(factura.iva_usd)}</p>
+          <p><strong>Total: ${fmt(factura.total_usd)}</strong></p>
           <p style={{ color: '#666' }}>Tasa usada: {factura.tasa_cambio} Bs/USD</p>
-          <p><strong>Total Bs: {factura.total_bs.toFixed(2)}</strong></p>
+          <p><strong>Total Bs: {fmt(factura.total_bs)}</strong></p>
         </div>
       </div>
     );
@@ -285,7 +291,7 @@ function ReporteFacturas({ desde, hasta }) {
       <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
       <p>
         Facturas emitidas: <strong>{reporte.cantidad}</strong>{' '}
-        — Total: <strong>${reporte.totalUsd.toFixed(2)}</strong> (Bs {reporte.totalBs.toFixed(2)})
+        — Total: <strong>${fmt(reporte.totalUsd)}</strong> (Bs {fmt(reporte.totalBs)})
       </p>
       {reporte.facturas.length === 0 ? (
         <p>No hay facturas emitidas en este rango de fechas.</p>
@@ -307,8 +313,8 @@ function ReporteFacturas({ desde, hasta }) {
                 <td style={{ padding: '0.5rem' }}>#{f.numero_factura || String(f.id).padStart(6, '0')}</td>
                 <td>{f.created_at}</td>
                 <td>{f.cliente_nombre}</td>
-                <td>${f.total_usd.toFixed(2)}</td>
-                <td>Bs {f.total_bs.toFixed(2)}</td>
+                <td>${fmt(f.total_usd)}</td>
+                <td>Bs {fmt(f.total_bs)}</td>
                 <td><button onClick={() => verDetalle(f.id)}>Ver</button></td>
               </tr>
             ))}
@@ -374,7 +380,7 @@ function ReporteCargosDescargos({ desde, hasta }) {
 
       {subtab === 'cargos' && (
         <>
-          <p>Total cargado en el periodo: <strong>${reporte.totalCargosUsd.toFixed(2)}</strong></p>
+          <p>Total cargado en el periodo: <strong>${fmt(reporte.totalCargosUsd)}</strong></p>
           {reporte.cargos.length === 0 ? (
             <p>No hay cargos manuales de inventario en este rango de fechas.</p>
           ) : (
@@ -397,8 +403,8 @@ function ReporteCargosDescargos({ desde, hasta }) {
                     <td>{c.producto_nombre || c.descripcion}</td>
                     <td>{c.tipo}</td>
                     <td>{c.cantidad}</td>
-                    <td>${c.costo_unitario_usd.toFixed(2)}</td>
-                    <td>${c.total_usd.toFixed(2)}</td>
+                    <td>${fmt(c.costo_unitario_usd)}</td>
+                    <td>${fmt(c.total_usd)}</td>
                     <td>{c.usuario || '—'}</td>
                   </tr>
                 ))}
@@ -441,6 +447,150 @@ function ReporteCargosDescargos({ desde, hasta }) {
             </tbody>
           </table>
         )
+      )}
+    </div>
+  );
+}
+
+// ---------------- Clientes ----------------
+
+function ReporteClientes() {
+  const [clientes, setClientes] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [vista, setVista] = useState('todos'); // todos | emails | telefonos
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.listClientes();
+    setClientes(data);
+    setCargando(false);
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  if (cargando) return <p>Cargando...</p>;
+  if (!clientes) return null;
+
+  const emails = clientes.map((c) => (c.email || '').trim()).filter(Boolean);
+  const telefonos = clientes.map((c) => (c.telefono || '').trim()).filter(Boolean);
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFClientes(clientes);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  const copiarAlPortapapeles = async (lista) => {
+    try {
+      await navigator.clipboard.writeText(lista.join('\n'));
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch (err) {
+      alert('No se pudo copiar: ' + (err?.message || String(err)));
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+      <p>Clientes registrados: <strong>{clientes.length}</strong></p>
+
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <button
+          onClick={() => setVista('todos')}
+          style={{
+            padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
+            backgroundColor: vista === 'todos' ? '#0b4f9e' : '#e2e8f0', color: vista === 'todos' ? '#fff' : '#111'
+          }}
+        >
+          Todos los datos
+        </button>
+        <button
+          onClick={() => setVista('emails')}
+          style={{
+            padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
+            backgroundColor: vista === 'emails' ? '#0b4f9e' : '#e2e8f0', color: vista === 'emails' ? '#fff' : '#111'
+          }}
+        >
+          Solo emails ({emails.length})
+        </button>
+        <button
+          onClick={() => setVista('telefonos')}
+          style={{
+            padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
+            backgroundColor: vista === 'telefonos' ? '#0b4f9e' : '#e2e8f0', color: vista === 'telefonos' ? '#fff' : '#111'
+          }}
+        >
+          Solo telefonos ({telefonos.length})
+        </button>
+      </div>
+
+      {vista === 'todos' && (
+        clientes.length === 0 ? (
+          <p>No hay clientes registrados.</p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+                <th style={{ padding: '0.5rem' }}>Nombre</th>
+                <th>Cedula/RIF</th>
+                <th>Telefono</th>
+                <th>Direccion</th>
+                <th>Email</th>
+                <th>Registrado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clientes.map((c) => (
+                <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '0.5rem' }}>{c.nombre}</td>
+                  <td>{c.rif_cedula || '—'}</td>
+                  <td>{c.telefono || '—'}</td>
+                  <td>{c.direccion || '—'}</td>
+                  <td>{c.email || '—'}</td>
+                  <td>{c.created_at}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      )}
+
+      {vista === 'emails' && (
+        <div>
+          <p style={{ fontSize: '0.85rem', color: '#666' }}>
+            Lista de emails registrados, uno por linea, lista para copiar y pegar en tu herramienta de envio de publicidad.
+          </p>
+          <textarea
+            readOnly
+            value={emails.join('\n')}
+            style={{ width: '100%', minHeight: '220px', fontFamily: 'monospace', padding: '0.5rem' }}
+          />
+          <button type="button" onClick={() => copiarAlPortapapeles(emails)} style={{ marginTop: '0.5rem' }}>
+            {copiado ? 'Copiado ✓' : 'Copiar todos los emails'}
+          </button>
+        </div>
+      )}
+
+      {vista === 'telefonos' && (
+        <div>
+          <p style={{ fontSize: '0.85rem', color: '#666' }}>
+            Lista de telefonos registrados, uno por linea, lista para copiar y pegar en tu herramienta de envio de publicidad.
+          </p>
+          <textarea
+            readOnly
+            value={telefonos.join('\n')}
+            style={{ width: '100%', minHeight: '220px', fontFamily: 'monospace', padding: '0.5rem' }}
+          />
+          <button type="button" onClick={() => copiarAlPortapapeles(telefonos)} style={{ marginTop: '0.5rem' }}>
+            {copiado ? 'Copiado ✓' : 'Copiar todos los telefonos'}
+          </button>
+        </div>
       )}
     </div>
   );

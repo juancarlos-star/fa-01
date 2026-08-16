@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
+import { fmt } from '../utils/format.js';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipo (IMEI)' },
@@ -11,13 +12,15 @@ const TIPOS = [
 export default function Facturacion({ currentUser }) {
   const [settings, setSettings] = useState(null);
 
-  // Cliente
-  const [busquedaCliente, setBusquedaCliente] = useState('');
+  // Cliente (el filtrado y registro se hacen por cedula/RIF)
+  const [cedula, setCedula] = useState('');
   const [resultadosCliente, setResultadosCliente] = useState([]);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
-  const [mostrarFormNuevo, setMostrarFormNuevo] = useState(false);
-  const [clienteNuevo, setClienteNuevo] = useState({ nombre: '', rif_cedula: '', telefono: '', direccion: '' });
-  const [sinCliente, setSinCliente] = useState(false);
+  const [clienteNuevo, setClienteNuevo] = useState({ nombre: '', telefono: '', direccion: '', email: '' });
+  const [mostrarRegistroNuevo, setMostrarRegistroNuevo] = useState(false);
+  const [editandoCliente, setEditandoCliente] = useState(false);
+  const [clienteEdicion, setClienteEdicion] = useState({ nombre: '', rif_cedula: '', telefono: '', direccion: '', email: '' });
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
   // Agregar item
   const [tipoSeleccionado, setTipoSeleccionado] = useState('equipo');
@@ -57,11 +60,12 @@ export default function Facturacion({ currentUser }) {
     }
   }, [productoId, productos, tipoSeleccionado]);
 
-  const buscarCliente = async (texto) => {
-    setBusquedaCliente(texto);
+  const buscarPorCedula = async (texto) => {
+    setCedula(texto);
     setClienteSeleccionado(null);
-    setSinCliente(false);
-    setMostrarFormNuevo(false);
+    setEditandoCliente(false);
+    setMostrarRegistroNuevo(false);
+    setClienteNuevo({ nombre: '', telefono: '', direccion: '', email: '' });
     if (texto.trim().length < 2) {
       setResultadosCliente([]);
       return;
@@ -70,34 +74,58 @@ export default function Facturacion({ currentUser }) {
     setResultadosCliente(data);
   };
 
+  const abrirRegistroNuevo = () => {
+    setMostrarRegistroNuevo(true);
+  };
+
   const seleccionarCliente = (c) => {
     setClienteSeleccionado(c);
-    setBusquedaCliente(c.nombre);
+    setCedula(c.rif_cedula || '');
     setResultadosCliente([]);
-    setMostrarFormNuevo(false);
-    setSinCliente(false);
-  };
-
-  const abrirFormNuevo = () => {
-    setClienteNuevo({ ...clienteNuevo, nombre: busquedaCliente });
-    setMostrarFormNuevo(true);
-    setResultadosCliente([]);
-  };
-
-  const marcarSinCliente = () => {
-    setSinCliente(true);
-    setClienteSeleccionado(null);
-    setMostrarFormNuevo(false);
-    setBusquedaCliente('');
-    setResultadosCliente([]);
+    setEditandoCliente(false);
+    setMostrarRegistroNuevo(false);
   };
 
   const quitarCliente = () => {
     setClienteSeleccionado(null);
-    setSinCliente(false);
-    setMostrarFormNuevo(false);
-    setBusquedaCliente('');
-    setClienteNuevo({ nombre: '', rif_cedula: '', telefono: '', direccion: '' });
+    setEditandoCliente(false);
+    setMostrarRegistroNuevo(false);
+    setCedula('');
+    setResultadosCliente([]);
+    setClienteNuevo({ nombre: '', telefono: '', direccion: '', email: '' });
+  };
+
+  const abrirEdicionCliente = () => {
+    if (!clienteSeleccionado) return;
+    setClienteEdicion({
+      nombre: clienteSeleccionado.nombre || '',
+      rif_cedula: clienteSeleccionado.rif_cedula || '',
+      telefono: clienteSeleccionado.telefono || '',
+      direccion: clienteSeleccionado.direccion || '',
+      email: clienteSeleccionado.email || ''
+    });
+    setEditandoCliente(true);
+  };
+
+  const guardarEdicionCliente = async () => {
+    setError('');
+    if (!clienteEdicion.nombre.trim()) {
+      setError('El nombre del cliente es obligatorio');
+      return;
+    }
+    setGuardandoEdicion(true);
+    try {
+      const res = await window.api.updateCliente(clienteSeleccionado.id, clienteEdicion);
+      if (!res.ok) {
+        setError(res.message || 'No se pudo actualizar el cliente');
+        return;
+      }
+      setClienteSeleccionado(res.cliente);
+      setCedula(res.cliente.rif_cedula || '');
+      setEditandoCliente(false);
+    } finally {
+      setGuardandoEdicion(false);
+    }
   };
 
   const agregarAlCarrito = () => {
@@ -143,6 +171,11 @@ export default function Facturacion({ currentUser }) {
       setUnidadesDisponibles(unidadesDisponibles.filter((u) => u.id !== Number(unitId)));
       setUnitId('');
     }
+
+    // Limpiar los campos de "Agregar producto" tras agregarlo a la factura
+    setProductoId('');
+    setUnitId('');
+    setPrecioUnitario('');
   };
 
   const quitarDelCarrito = (key) => {
@@ -167,14 +200,10 @@ export default function Facturacion({ currentUser }) {
     let cliente = null;
     if (clienteSeleccionado) {
       cliente = { id: clienteSeleccionado.id };
-    } else if (mostrarFormNuevo) {
-      if (!clienteNuevo.nombre.trim()) {
-        setError('Escribe el nombre del cliente nuevo');
-        return;
-      }
-      cliente = clienteNuevo;
-    } else if (!sinCliente) {
-      setError('Selecciona un cliente registrado, crea uno nuevo, o marca "Consumidor final"');
+    } else if (cedula.trim() && clienteNuevo.nombre.trim()) {
+      cliente = { ...clienteNuevo, rif_cedula: cedula.trim() };
+    } else {
+      setError('Escribe la cedula del cliente y su nombre para continuar');
       return;
     }
 
@@ -182,8 +211,7 @@ export default function Facturacion({ currentUser }) {
       const res = await window.api.crearFactura({
         cliente,
         items: carrito,
-        usuario: currentUser?.username,
-        sinCliente
+        usuario: currentUser?.username
       });
 
       if (!res.ok) {
@@ -212,7 +240,7 @@ export default function Facturacion({ currentUser }) {
         <h1>Factura emitida</h1>
         <div className="form-box" style={{ maxWidth: '400px' }}>
           <p><strong>N° de factura:</strong> {confirmacion.numero}</p>
-          <p><strong>Total:</strong> ${confirmacion.totalUsd.toFixed(2)} USD (Bs {confirmacion.totalBs.toFixed(2)})</p>
+          <p><strong>Total:</strong> ${fmt(confirmacion.totalUsd)} USD (Bs {fmt(confirmacion.totalBs)})</p>
           <button onClick={handleImprimir} style={{ marginRight: '8px' }}>Imprimir PDF</button>
           <button onClick={() => setConfirmacion(null)}>Hacer otra factura</button>
         </div>
@@ -227,54 +255,80 @@ export default function Facturacion({ currentUser }) {
       <div className="form-box" style={{ maxWidth: '520px' }}>
         <h3>Cliente</h3>
 
-        {clienteSeleccionado ? (
-          <p style={{ fontSize: '0.9rem', color: '#027a48' }}>
+        <label>Cedula</label>
+        <input
+          placeholder="Escribe la cedula del cliente"
+          value={cedula}
+          onChange={(e) => buscarPorCedula(e.target.value)}
+          disabled={!!clienteSeleccionado}
+        />
+
+        {clienteSeleccionado && !editandoCliente && (
+          <p style={{ fontSize: '0.9rem', color: '#027a48', marginTop: '6px' }}>
             ✓ {clienteSeleccionado.nombre} {clienteSeleccionado.rif_cedula ? `(${clienteSeleccionado.rif_cedula})` : ''}{' '}
-            <button type="button" onClick={quitarCliente}>Cambiar</button>
+            <button type="button" onClick={quitarCliente}>Cambiar</button>{' '}
+            <button type="button" onClick={abrirEdicionCliente}>Editar datos</button>
           </p>
-        ) : sinCliente ? (
-          <p style={{ fontSize: '0.9rem', color: '#666' }}>
-            ✓ Facturando a Consumidor final <button type="button" onClick={quitarCliente}>Cambiar</button>
+        )}
+
+        {clienteSeleccionado && editandoCliente && (
+          <div style={{ marginTop: '6px' }}>
+            <p style={{ fontSize: '0.85rem', color: '#666' }}>Editando datos del cliente:</p>
+            <label>Cedula</label>
+            <input placeholder="Cedula o RIF (ej: V-12345678)" value={clienteEdicion.rif_cedula}
+              onChange={(e) => setClienteEdicion({ ...clienteEdicion, rif_cedula: e.target.value })} />
+            <label>Nombre y apellido</label>
+            <input placeholder="Nombre y apellido / Razon social" value={clienteEdicion.nombre}
+              onChange={(e) => setClienteEdicion({ ...clienteEdicion, nombre: e.target.value })} />
+            <label>Telefono</label>
+            <input placeholder="Telefono" value={clienteEdicion.telefono}
+              onChange={(e) => setClienteEdicion({ ...clienteEdicion, telefono: e.target.value })} />
+            <label>Direccion</label>
+            <input placeholder="Direccion" value={clienteEdicion.direccion}
+              onChange={(e) => setClienteEdicion({ ...clienteEdicion, direccion: e.target.value })} />
+            <label>Email (opcional)</label>
+            <input placeholder="Email" value={clienteEdicion.email}
+              onChange={(e) => setClienteEdicion({ ...clienteEdicion, email: e.target.value })} />
+            <button type="button" onClick={guardarEdicionCliente} disabled={guardandoEdicion} style={{ marginRight: '8px' }}>
+              {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
+            </button>
+            <button type="button" onClick={() => setEditandoCliente(false)}>Cancelar</button>
+          </div>
+        )}
+
+        {!clienteSeleccionado && resultadosCliente.length > 0 && (
+          <ul style={{ listStyle: 'none', padding: 0, border: '1px solid #ddd', borderRadius: '6px', marginTop: '4px' }}>
+            {resultadosCliente.map((c) => (
+              <li key={c.id} onClick={() => seleccionarCliente(c)}
+                style={{ padding: '6px 8px', cursor: 'pointer', borderBottom: '1px solid #eee' }}>
+                {c.nombre} {c.rif_cedula ? `(${c.rif_cedula})` : ''}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!clienteSeleccionado && cedula.trim().length >= 2 && resultadosCliente.length === 0 && !mostrarRegistroNuevo && (
+          <p style={{ fontSize: '0.85rem', color: '#b42318', marginTop: '6px' }}>
+            No se encontro ningun cliente con esa cedula.{' '}
+            <button type="button" onClick={abrirRegistroNuevo}>Registrar cliente</button>
           </p>
-        ) : mostrarFormNuevo ? (
-          <div>
+        )}
+
+        {!clienteSeleccionado && mostrarRegistroNuevo && (
+          <div style={{ marginTop: '6px' }}>
             <p style={{ fontSize: '0.85rem', color: '#666' }}>Registrando cliente nuevo:</p>
-            <input placeholder="Nombre / Razon social" value={clienteNuevo.nombre}
+            <label>Nombre y apellido</label>
+            <input placeholder="Nombre y apellido / Razon social" value={clienteNuevo.nombre}
               onChange={(e) => setClienteNuevo({ ...clienteNuevo, nombre: e.target.value })} />
-            <input placeholder="Cedula o RIF (ej: J-12345678-9)" value={clienteNuevo.rif_cedula}
-              onChange={(e) => setClienteNuevo({ ...clienteNuevo, rif_cedula: e.target.value })} />
+            <label>Telefono</label>
             <input placeholder="Telefono" value={clienteNuevo.telefono}
               onChange={(e) => setClienteNuevo({ ...clienteNuevo, telefono: e.target.value })} />
+            <label>Direccion</label>
             <input placeholder="Direccion" value={clienteNuevo.direccion}
               onChange={(e) => setClienteNuevo({ ...clienteNuevo, direccion: e.target.value })} />
-            <button type="button" onClick={quitarCliente}>Cancelar</button>
-          </div>
-        ) : (
-          <div>
-            <input
-              placeholder="Buscar cliente existente por nombre o RIF/cedula"
-              value={busquedaCliente}
-              onChange={(e) => buscarCliente(e.target.value)}
-            />
-            {resultadosCliente.length > 0 && (
-              <ul style={{ listStyle: 'none', padding: 0, border: '1px solid #ddd', borderRadius: '6px', marginTop: '4px' }}>
-                {resultadosCliente.map((c) => (
-                  <li key={c.id} onClick={() => seleccionarCliente(c)}
-                    style={{ padding: '6px 8px', cursor: 'pointer', borderBottom: '1px solid #eee' }}>
-                    {c.nombre} {c.rif_cedula ? `(${c.rif_cedula})` : ''}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {busquedaCliente.trim().length >= 2 && resultadosCliente.length === 0 && (
-              <p style={{ fontSize: '0.85rem', color: '#b42318' }}>
-                No se encontro ningun cliente con ese nombre/RIF.{' '}
-                <button type="button" onClick={abrirFormNuevo}>Registrar "{busquedaCliente}" como cliente nuevo</button>
-              </p>
-            )}
-            <p style={{ fontSize: '0.8rem', marginTop: '8px' }}>
-              <button type="button" onClick={marcarSinCliente}>Facturar a Consumidor final</button>
-            </p>
+            <label>Email (opcional)</label>
+            <input placeholder="Email" value={clienteNuevo.email}
+              onChange={(e) => setClienteNuevo({ ...clienteNuevo, email: e.target.value })} />
           </div>
         )}
       </div>
@@ -331,42 +385,46 @@ export default function Facturacion({ currentUser }) {
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
       <h3>Detalle de la factura</h3>
-      {carrito.length === 0 ? (
-        <p>Aun no has agregado productos.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1rem' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Producto</th>
-              <th>Codigo</th>
-              <th>Cant.</th>
-              <th>Precio unit.</th>
-              <th>Subtotal</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {carrito.map((item) => (
-              <tr key={item.key} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{item.descripcion}</td>
-                <td>{item.codigo || '—'}</td>
-                <td>{item.cantidad}</td>
-                <td>${item.precio_unitario.toFixed(2)}</td>
-                <td>${(item.precio_unitario * item.cantidad).toFixed(2)}</td>
-                <td><button onClick={() => quitarDelCarrito(item.key)}>Quitar</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 380px', minWidth: '300px' }}>
+          {carrito.length === 0 ? (
+            <p>Aun no has agregado productos.</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+                  <th style={{ padding: '0.5rem' }}>Producto</th>
+                  <th>Codigo</th>
+                  <th>Cant.</th>
+                  <th>Precio unit.</th>
+                  <th>Subtotal</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {carrito.map((item) => (
+                  <tr key={item.key} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '0.5rem' }}>{item.descripcion}</td>
+                    <td>{item.codigo || '—'}</td>
+                    <td>{item.cantidad}</td>
+                    <td>${fmt(item.precio_unitario)}</td>
+                    <td>${fmt((item.precio_unitario * item.cantidad))}</td>
+                    <td><button onClick={() => quitarDelCarrito(item.key)}>Quitar</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
 
-      <div className="form-box" style={{ maxWidth: '340px' }}>
-        <p>Subtotal: <strong>${subtotal.toFixed(2)}</strong></p>
-        <p>IVA ({ivaPorcentaje}%): <strong>${iva.toFixed(2)}</strong></p>
-        <p>Total: <strong>${total.toFixed(2)}</strong></p>
-        <p style={{ color: '#666' }}>Tasa: {tasaCambio} Bs/USD</p>
-        <p>Total en Bs: <strong>Bs {totalBs.toFixed(2)}</strong></p>
-        <button onClick={handleEmitirFactura} style={{ marginTop: '8px' }}>Emitir factura</button>
+        <div className="form-box" style={{ width: '340px', flex: '0 0 auto' }}>
+          <p>Subtotal: <strong>${fmt(subtotal)}</strong></p>
+          <p>IVA ({ivaPorcentaje}%): <strong>${fmt(iva)}</strong></p>
+          <p>Total: <strong>${fmt(total)}</strong></p>
+          <p style={{ color: '#666' }}>Tasa: {tasaCambio} Bs/USD</p>
+          <p>Total en Bs: <strong>Bs {fmt(totalBs)}</strong></p>
+          <button onClick={handleEmitirFactura} style={{ marginTop: '8px' }}>Emitir factura</button>
+        </div>
       </div>
     </div>
   );

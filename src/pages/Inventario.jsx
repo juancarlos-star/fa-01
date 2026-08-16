@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { fmt } from '../utils/format.js';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
@@ -281,7 +282,7 @@ export default function Inventario({ currentUser }) {
                   <tr style={{ borderBottom: '1px solid #eee' }}>
                     <td style={{ padding: '0.5rem' }}>{p.nombre}</td>
                     <td>{p.categoria}</td>
-                    <td>${Number(p.precio).toFixed(2)}</td>
+                    <td>${fmt(Number(p.precio))}</td>
                     {tab === 'accesorio' && <td>{p.codigo_barras}</td>}
                     {tab === 'accesorio' && esAdmin && (
                       <td>
@@ -300,7 +301,7 @@ export default function Inventario({ currentUser }) {
                           </span>
                         ) : (
                           <span>
-                            ${Number(p.costo_promedio_usd || 0).toFixed(2)}{' '}
+                            ${fmt(Number(p.costo_promedio_usd || 0))}{' '}
                             <button onClick={() => abrirEdicionCosto(p)} style={{ fontSize: '0.75rem' }}>Editar</button>
                           </span>
                         )}
@@ -432,7 +433,7 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
                     </span>
                   ) : (
                     <span style={{ marginLeft: '0.5rem', color: '#666' }}>
-                      (costo: ${Number(u.costo_unitario_usd || 0).toFixed(2)}{' '}
+                      (costo: ${fmt(Number(u.costo_unitario_usd || 0))}{' '}
                       <button onClick={() => abrirEdicionCostoUnit(u)} style={{ fontSize: '0.75rem' }}>Editar</button>)
                     </span>
                   )

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { fmt } from '../utils/format.js';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
@@ -313,7 +314,7 @@ export default function Compras({ currentUser }) {
         <h1>Compra registrada</h1>
         <div className="form-box" style={{ maxWidth: '400px' }}>
           <p><strong>N° de compra:</strong> {confirmacion.encabezadoId}</p>
-          <p><strong>Total de la compra:</strong> ${confirmacion.totalUsd.toFixed(2)}</p>
+          <p><strong>Total de la compra:</strong> ${fmt(confirmacion.totalUsd)}</p>
           <p style={{ color: '#666', fontSize: '0.85rem' }}>
             Consulta el historial completo de compras en Reportes.
           </p>
@@ -526,8 +527,8 @@ export default function Compras({ currentUser }) {
               <tr key={item.key} style={{ borderBottom: '1px solid #eee' }}>
                 <td style={{ padding: '0.5rem' }}>{item.descripcion}</td>
                 <td>{item.codigos ? item.codigos.length : item.cantidad}</td>
-                <td>${item.costoUnitario.toFixed(2)}</td>
-                <td>${item.subtotal.toFixed(2)}</td>
+                <td>${fmt(item.costoUnitario)}</td>
+                <td>${fmt(item.subtotal)}</td>
                 <td><button onClick={() => quitarDelCarrito(item.key)}>Quitar</button></td>
               </tr>
             ))}
@@ -536,9 +537,9 @@ export default function Compras({ currentUser }) {
       )}
 
       <div className="form-box" style={{ maxWidth: '340px' }}>
-        <p style={{ margin: '0 0 0.3rem 0' }}>Base imponible sin IVA: <strong>${baseImponible.toFixed(2)}</strong></p>
-        <p style={{ margin: '0 0 0.3rem 0' }}>IVA (16%): <strong>${totalIva.toFixed(2)}</strong></p>
-        <p style={{ margin: '0 0 0.3rem 0' }}>Total de la compra: <strong>${totalCompra.toFixed(2)}</strong></p>
+        <p style={{ margin: '0 0 0.3rem 0' }}>Base imponible sin IVA: <strong>${fmt(baseImponible)}</strong></p>
+        <p style={{ margin: '0 0 0.3rem 0' }}>IVA (16%): <strong>${fmt(totalIva)}</strong></p>
+        <p style={{ margin: '0 0 0.3rem 0' }}>Total de la compra: <strong>${fmt(totalCompra)}</strong></p>
         <button onClick={handleRegistrarCompra} style={{ marginTop: '8px' }}>Registrar compra</button>
       </div>
 

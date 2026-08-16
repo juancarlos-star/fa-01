@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
+import { fmt } from '../utils/format.js';
 
 export default function Facturas({ currentUser }) {
   const [facturas, setFacturas] = useState([]);
@@ -60,18 +61,18 @@ export default function Facturas({ currentUser }) {
                 <td style={{ padding: '0.5rem' }}>{i.descripcion}</td>
                 <td>{i.codigo || '—'}</td>
                 <td>{i.cantidad}</td>
-                <td>${i.precio_unitario_usd.toFixed(2)}</td>
-                <td>${i.subtotal_usd.toFixed(2)}</td>
+                <td>${fmt(i.precio_unitario_usd)}</td>
+                <td>${fmt(i.subtotal_usd)}</td>
               </tr>
             ))}
           </tbody>
         </table>
         <div className="form-box" style={{ maxWidth: '320px' }}>
-          <p>Subtotal: ${factura.subtotal_usd.toFixed(2)}</p>
-          <p>IVA ({factura.iva_porcentaje}%): ${factura.iva_usd.toFixed(2)}</p>
-          <p><strong>Total: ${factura.total_usd.toFixed(2)}</strong></p>
+          <p>Subtotal: ${fmt(factura.subtotal_usd)}</p>
+          <p>IVA ({factura.iva_porcentaje}%): ${fmt(factura.iva_usd)}</p>
+          <p><strong>Total: ${fmt(factura.total_usd)}</strong></p>
           <p style={{ color: '#666' }}>Tasa usada: {factura.tasa_cambio} Bs/USD</p>
-          <p><strong>Total Bs: {factura.total_bs.toFixed(2)}</strong></p>
+          <p><strong>Total Bs: {fmt(factura.total_bs)}</strong></p>
         </div>
       </div>
     );
@@ -100,8 +101,8 @@ export default function Facturas({ currentUser }) {
                 <td style={{ padding: '0.5rem' }}>#{f.numero_factura || String(f.id).padStart(6, '0')}</td>
                 <td>{f.created_at}</td>
                 <td>{f.cliente_nombre}</td>
-                <td>${f.total_usd.toFixed(2)}</td>
-                <td>Bs {f.total_bs.toFixed(2)}</td>
+                <td>${fmt(f.total_usd)}</td>
+                <td>Bs {fmt(f.total_bs)}</td>
                 <td style={{ display: 'flex', gap: '0.4rem' }}>
                   <button onClick={() => verDetalle(f.id)}>Ver</button>
                   {esAdmin && (
