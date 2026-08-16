@@ -46,6 +46,7 @@ export default function Facturacion({ currentUser }) {
       setUnidadesDisponibles([]);
       setUnitId('');
       setPrecioUnitario('');
+      setCantidad(1);
     });
   }, [tipoSeleccionado]);
 
@@ -135,10 +136,10 @@ export default function Facturacion({ currentUser }) {
       return;
     }
     const producto = productos.find((p) => p.id === Number(productoId));
+    const c = parseInt(cantidad, 10);
+    if (!c || c <= 0) { setError('Cantidad invalida'); return; }
 
     if (tipoSeleccionado === 'accesorio') {
-      const c = parseInt(cantidad, 10);
-      if (!c || c <= 0) { setError('Cantidad invalida'); return; }
       if (c > producto.stock_disponible) { setError('No hay suficiente stock disponible'); return; }
       setCarrito([
         ...carrito,
@@ -154,21 +155,28 @@ export default function Facturacion({ currentUser }) {
       ]);
     } else {
       if (!unitId) { setError('Selecciona el codigo (IMEI/SIM/USIM) especifico'); return; }
-      const unidad = unidadesDisponibles.find((u) => u.id === Number(unitId));
-      setCarrito([
-        ...carrito,
-        {
-          key: `${producto.id}-${unitId}`,
-          product_id: producto.id,
-          unit_id: Number(unitId),
-          tipo: producto.tipo,
-          descripcion: producto.nombre,
-          codigo: unidad?.codigo,
-          cantidad: 1,
-          precio_unitario: parseFloat(precioUnitario) || 0
-        }
-      ]);
-      setUnidadesDisponibles(unidadesDisponibles.filter((u) => u.id !== Number(unitId)));
+      // Cada unidad tiene su propio codigo (IMEI/ICCID) unico, por lo que "cantidad" toma,
+      // a partir de la unidad seleccionada, tantas unidades disponibles como se hayan indicado.
+      const indiceInicial = unidadesDisponibles.findIndex((u) => u.id === Number(unitId));
+      if (indiceInicial === -1) { setError('El codigo seleccionado ya no esta disponible'); return; }
+      const unidadesAAgregar = unidadesDisponibles.slice(indiceInicial, indiceInicial + c);
+      if (unidadesAAgregar.length < c) {
+        setError(`Solo hay ${unidadesAAgregar.length} unidad(es) disponible(s) a partir del codigo seleccionado`);
+        return;
+      }
+      const nuevosItems = unidadesAAgregar.map((unidad) => ({
+        key: `${producto.id}-${unidad.id}`,
+        product_id: producto.id,
+        unit_id: unidad.id,
+        tipo: producto.tipo,
+        descripcion: producto.nombre,
+        codigo: unidad.codigo,
+        cantidad: 1,
+        precio_unitario: parseFloat(precioUnitario) || 0
+      }));
+      setCarrito([...carrito, ...nuevosItems]);
+      const idsAgregados = new Set(unidadesAAgregar.map((u) => u.id));
+      setUnidadesDisponibles(unidadesDisponibles.filter((u) => !idsAgregados.has(u.id)));
       setUnitId('');
     }
 
@@ -367,15 +375,14 @@ export default function Facturacion({ currentUser }) {
                 <option key={u.id} value={u.id}>{u.codigo}</option>
               ))}
             </select>
+            <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '-6px' }}>
+              Si facturas mas de una unidad, se tomaran, a partir del codigo seleccionado, tantas unidades disponibles como indiques en Cantidad.
+            </p>
           </>
         )}
 
-        {tipoSeleccionado === 'accesorio' && (
-          <>
-            <label>Cantidad</label>
-            <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-          </>
-        )}
+        <label>Cantidad</label>
+        <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
 
         <label>Precio unitario (USD)</label>
         <input type="number" step="0.01" value={precioUnitario} readOnly disabled />
