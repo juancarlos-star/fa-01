@@ -27,7 +27,8 @@ export default function Facturacion({ currentUser }) {
   const [productos, setProductos] = useState([]);
   const [productoId, setProductoId] = useState('');
   const [unidadesDisponibles, setUnidadesDisponibles] = useState([]);
-  const [unitId, setUnitId] = useState('');
+  const [codigoInput, setCodigoInput] = useState('');
+  const [codigosPendientes, setCodigosPendientes] = useState([]);
   const [cantidad, setCantidad] = useState(1);
   const [precioUnitario, setPrecioUnitario] = useState('');
 
@@ -44,13 +45,16 @@ export default function Facturacion({ currentUser }) {
       setProductos(data);
       setProductoId('');
       setUnidadesDisponibles([]);
-      setUnitId('');
+      setCodigoInput('');
+      setCodigosPendientes([]);
       setPrecioUnitario('');
       setCantidad(1);
     });
   }, [tipoSeleccionado]);
 
   useEffect(() => {
+    setCodigoInput('');
+    setCodigosPendientes([]);
     if (!productoId) return;
     const p = productos.find((x) => x.id === Number(productoId));
     if (p) setPrecioUnitario(p.precio);
@@ -129,6 +133,28 @@ export default function Facturacion({ currentUser }) {
     }
   };
 
+  const agregarCodigoUnidad = () => {
+    setError('');
+    const texto = codigoInput.trim();
+    if (!texto) return;
+    if (codigosPendientes.some((u) => u.codigo.toLowerCase() === texto.toLowerCase())) {
+      setError('Ese codigo ya fue agregado a la lista');
+      setCodigoInput('');
+      return;
+    }
+    const unidad = unidadesDisponibles.find((u) => u.codigo.toLowerCase() === texto.toLowerCase());
+    if (!unidad) {
+      setError('Codigo no encontrado entre las unidades disponibles de este producto');
+      return;
+    }
+    setCodigosPendientes([...codigosPendientes, unidad]);
+    setCodigoInput('');
+  };
+
+  const quitarCodigoPendiente = (id) => {
+    setCodigosPendientes(codigosPendientes.filter((u) => u.id !== id));
+  };
+
   const agregarAlCarrito = () => {
     setError('');
     if (!productoId) {
@@ -136,10 +162,10 @@ export default function Facturacion({ currentUser }) {
       return;
     }
     const producto = productos.find((p) => p.id === Number(productoId));
-    const c = parseInt(cantidad, 10);
-    if (!c || c <= 0) { setError('Cantidad invalida'); return; }
 
     if (tipoSeleccionado === 'accesorio') {
+      const c = parseInt(cantidad, 10);
+      if (!c || c <= 0) { setError('Cantidad invalida'); return; }
       if (c > producto.stock_disponible) { setError('No hay suficiente stock disponible'); return; }
       setCarrito([
         ...carrito,
@@ -154,17 +180,11 @@ export default function Facturacion({ currentUser }) {
         }
       ]);
     } else {
-      if (!unitId) { setError('Selecciona el codigo (IMEI/SIM/USIM) especifico'); return; }
-      // Cada unidad tiene su propio codigo (IMEI/ICCID) unico, por lo que "cantidad" toma,
-      // a partir de la unidad seleccionada, tantas unidades disponibles como se hayan indicado.
-      const indiceInicial = unidadesDisponibles.findIndex((u) => u.id === Number(unitId));
-      if (indiceInicial === -1) { setError('El codigo seleccionado ya no esta disponible'); return; }
-      const unidadesAAgregar = unidadesDisponibles.slice(indiceInicial, indiceInicial + c);
-      if (unidadesAAgregar.length < c) {
-        setError(`Solo hay ${unidadesAAgregar.length} unidad(es) disponible(s) a partir del codigo seleccionado`);
+      if (codigosPendientes.length === 0) {
+        setError('Escanea o escribe al menos un codigo (IMEI/ICCID) antes de agregar');
         return;
       }
-      const nuevosItems = unidadesAAgregar.map((unidad) => ({
+      const nuevosItems = codigosPendientes.map((unidad) => ({
         key: `${producto.id}-${unidad.id}`,
         product_id: producto.id,
         unit_id: unidad.id,
@@ -175,14 +195,14 @@ export default function Facturacion({ currentUser }) {
         precio_unitario: parseFloat(precioUnitario) || 0
       }));
       setCarrito([...carrito, ...nuevosItems]);
-      const idsAgregados = new Set(unidadesAAgregar.map((u) => u.id));
+      const idsAgregados = new Set(codigosPendientes.map((u) => u.id));
       setUnidadesDisponibles(unidadesDisponibles.filter((u) => !idsAgregados.has(u.id)));
-      setUnitId('');
+      setCodigosPendientes([]);
+      setCodigoInput('');
     }
 
     // Limpiar los campos de "Agregar producto" tras agregarlo a la factura
     setProductoId('');
-    setUnitId('');
     setPrecioUnitario('');
     setCantidad(1);
   };
@@ -368,21 +388,54 @@ export default function Facturacion({ currentUser }) {
 
         {tipoSeleccionado !== 'accesorio' && productoId && (
           <>
-            <label>Codigo especifico</label>
-            <select value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-              <option value="">-- Selecciona codigo --</option>
-              {unidadesDisponibles.map((u) => (
-                <option key={u.id} value={u.id}>{u.codigo}</option>
-              ))}
-            </select>
-            <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '-6px' }}>
-              Si facturas mas de una unidad, se tomaran, a partir del codigo seleccionado, tantas unidades disponibles como indiques en Cantidad.
-            </p>
+            <label>Codigo (IMEI / ICCID)</label>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <input
+                type="text"
+                placeholder="Escanea con la pistola o escribe el codigo y presiona Enter"
+                value={codigoInput}
+                onChange={(e) => setCodigoInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarCodigoUnidad(); } }}
+                style={{ flex: 1 }}
+              />
+              <button type="button" onClick={agregarCodigoUnidad} style={{ whiteSpace: 'nowrap', height: 'fit-content' }}>
+                + Agregar codigo
+              </button>
+            </div>
+
+            {codigosPendientes.length > 0 && (
+              <div style={{ marginTop: '0.5rem', marginBottom: '10px' }}>
+                <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '4px' }}>
+                  Cantidad detectada: <strong>{codigosPendientes.length}</strong>
+                </p>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {codigosPendientes.map((u) => (
+                    <li key={u.id} style={{
+                      background: '#e2e8f0', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem',
+                      display: 'flex', alignItems: 'center', gap: '6px'
+                    }}>
+                      {u.codigo}
+                      <button
+                        type="button"
+                        onClick={() => quitarCodigoPendiente(u.id)}
+                        style={{ background: 'none', border: 'none', color: '#b42318', cursor: 'pointer', padding: 0, fontWeight: 'bold' }}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
 
-        <label>Cantidad</label>
-        <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+        {tipoSeleccionado === 'accesorio' && (
+          <>
+            <label>Cantidad</label>
+            <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+          </>
+        )}
 
         <label>Precio unitario (USD)</label>
         <input type="number" step="0.01" value={precioUnitario} readOnly disabled />
