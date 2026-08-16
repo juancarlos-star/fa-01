@@ -356,7 +356,9 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
   const cargar = useCallback(async () => {
     setLoading(true);
     const data = await window.api.listUnits(productId);
-    setUnits(data);
+    // Las unidades ya facturadas (vendidas) no deben mostrarse aqui: esta vista
+    // es para ver el inventario disponible/dado de baja, no el historial de ventas.
+    setUnits(data.filter((u) => u.estado !== 'vendido'));
     setLoading(false);
   }, [productId]);
 
@@ -405,44 +407,61 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
       ) : units.length === 0 ? (
         <p>Sin unidades registradas todavia.</p>
       ) : (
-        <ul style={{ listStyle: 'none', padding: 0 }}>
+        <div
+          style={{
+            border: '1px solid #ddd',
+            borderRadius: '6px',
+            background: '#fff',
+            padding: '0.5rem',
+            maxHeight: '380px',
+            overflowY: 'auto',
+            overflowX: 'auto',
+            display: 'grid',
+            gridAutoFlow: 'column',
+            gridTemplateRows: 'repeat(10, auto)',
+            gridAutoColumns: 'minmax(200px, 1fr)',
+            columnGap: '0.75rem',
+            width: '100%'
+          }}
+        >
           {units.map((u) => (
-            <li
+            <div
               key={u.id}
               style={{
                 display: 'flex',
-                justifyContent: 'space-between',
-                padding: '0.3rem 0',
-                borderBottom: '1px solid #eee'
+                flexDirection: 'column',
+                padding: '0.35rem 0.4rem',
+                borderBottom: '1px solid #eee',
+                fontSize: '0.85rem'
               }}
             >
-              <span>
+              <span style={{ wordBreak: 'break-all' }}>
                 {u.codigo} — <em>{u.estado}</em>
-                {esAdmin && (
-                  editandoCostoUnitId === u.id ? (
-                    <span style={{ marginLeft: '0.5rem' }}>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={nuevoCostoUnitValor}
-                        onChange={(e) => setNuevoCostoUnitValor(e.target.value)}
-                        style={{ width: '80px' }}
-                        autoFocus
-                      />
-                      <button onClick={() => guardarEdicionCostoUnit(u.id)}>Guardar</button>
-                      <button onClick={cancelarEdicionCostoUnit}>Cancelar</button>
-                    </span>
-                  ) : (
-                    <span style={{ marginLeft: '0.5rem', color: '#666' }}>
-                      (costo: ${fmt(Number(u.costo_unitario_usd || 0))}{' '}
-                      <button onClick={() => abrirEdicionCostoUnit(u)} style={{ fontSize: '0.75rem' }}>Editar</button>)
-                    </span>
-                  )
-                )}
               </span>
-            </li>
+              {esAdmin && (
+                editandoCostoUnitId === u.id ? (
+                  <span style={{ marginTop: '0.2rem' }}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={nuevoCostoUnitValor}
+                      onChange={(e) => setNuevoCostoUnitValor(e.target.value)}
+                      style={{ width: '80px' }}
+                      autoFocus
+                    />
+                    <button onClick={() => guardarEdicionCostoUnit(u.id)}>Guardar</button>
+                    <button onClick={cancelarEdicionCostoUnit}>Cancelar</button>
+                  </span>
+                ) : (
+                  <span style={{ marginTop: '0.2rem', color: '#666' }}>
+                    (costo: ${fmt(Number(u.costo_unitario_usd || 0))}{' '}
+                    <button onClick={() => abrirEdicionCostoUnit(u)} style={{ fontSize: '0.75rem' }}>Editar</button>)
+                  </span>
+                )
+              )}
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );

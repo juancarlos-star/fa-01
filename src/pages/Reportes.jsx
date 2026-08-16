@@ -2,13 +2,16 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFecha.jsx';
 import CompraFacturaDetalle from '../components/CompraFacturaDetalle.jsx';
 import Facturas from './Facturas.jsx';
+import SelectorProducto from '../components/SelectorProducto.jsx';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
+import { agruparItemsPorProducto } from '../utils/agruparFacturaItems.js';
 import {
   generarPDFGanancias,
   generarPDFCompras,
   generarPDFFacturas,
   generarPDFCargosDescargos,
-  generarPDFClientes
+  generarPDFClientes,
+  generarPDFProductosVendidos
 } from '../utils/generarReportesPDF.js';
 import { fmt } from '../utils/format.js';
 
@@ -17,6 +20,7 @@ const TABS = [
   { key: 'ganancias', label: 'Ventas y ganancias' },
   { key: 'compras', label: 'Compras' },
   { key: 'facturas', label: 'Facturas' },
+  { key: 'productosVendidos', label: 'Productos vendidos' },
   { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' },
   { key: 'clientes', label: 'Clientes' }
 ];
@@ -59,6 +63,7 @@ export default function Reportes({ currentUser }) {
       {tab === 'ganancias' && <ReporteGanancias desde={desde} hasta={hasta} />}
       {tab === 'compras' && <ReporteCompras desde={desde} hasta={hasta} />}
       {tab === 'facturas' && <ReporteFacturas desde={desde} hasta={hasta} />}
+      {tab === 'productosVendidos' && <ReporteProductosVendidos desde={desde} hasta={hasta} />}
       {tab === 'cargosDescargos' && <ReporteCargosDescargos desde={desde} hasta={hasta} />}
       {tab === 'clientes' && <ReporteClientes />}
     </div>
@@ -259,24 +264,32 @@ function ReporteFacturas({ desde, hasta }) {
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
         <button onClick={() => generarFacturaPDF(factura, items)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0', tableLayout: 'fixed' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Producto</th>
-              <th>Codigo</th>
-              <th>Cant.</th>
-              <th>Precio unit.</th>
-              <th>Subtotal</th>
+              <th style={{ padding: '0.5rem', width: '32%' }}>Producto</th>
+              <th style={{ width: '28%' }}>Codigo</th>
+              <th style={{ width: '10%' }}>Cant.</th>
+              <th style={{ width: '15%' }}>Precio unit.</th>
+              <th style={{ width: '15%' }}>Subtotal</th>
             </tr>
           </thead>
           <tbody>
-            {items.map((i) => (
-              <tr key={i.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{i.descripcion}</td>
-                <td>{i.codigo || '—'}</td>
-                <td>{i.cantidad}</td>
-                <td>${fmt(i.precio_unitario_usd)}</td>
-                <td>${fmt(i.subtotal_usd)}</td>
+            {agruparItemsPorProducto(items).map((grupo) => (
+              <tr key={grupo.product_id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem', verticalAlign: 'top', wordBreak: 'break-word' }}>{grupo.descripcion}</td>
+                <td style={{ verticalAlign: 'top' }}>
+                  {grupo.codigos.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      {grupo.codigos.map((c) => (
+                        <span key={c} style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>{c}</span>
+                      ))}
+                    </div>
+                  ) : '—'}
+                </td>
+                <td style={{ verticalAlign: 'top' }}>{grupo.cantidad}</td>
+                <td style={{ verticalAlign: 'top' }}>${fmt(grupo.precio_unitario)}</td>
+                <td style={{ verticalAlign: 'top' }}>${fmt(grupo.subtotal)}</td>
               </tr>
             ))}
           </tbody>
@@ -326,6 +339,156 @@ function ReporteFacturas({ desde, hasta }) {
             ))}
           </tbody>
         </table>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Productos vendidos ----------------
+
+const TIPOS_PRODUCTO = [
+  { key: 'equipo', label: 'Equipos (IMEI)' },
+  { key: 'simcard', label: 'SIM Card' },
+  { key: 'usim', label: 'USIM' },
+  { key: 'accesorio', label: 'Accesorios' }
+];
+
+function ReporteProductosVendidos({ desde, hasta }) {
+  const [tipo, setTipo] = useState('equipo');
+  const [productos, setProductos] = useState([]);
+  const [productoId, setProductoId] = useState('');
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  // Carga los productos del tipo seleccionado, para el buscador de producto
+  useEffect(() => {
+    window.api.listProducts(tipo).then(setProductos);
+    setProductoId('');
+  }, [tipo]);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteProductosVendidos(desde, hasta, tipo, productoId || null);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta, tipo, productoId]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      const tipoLabel = TIPOS_PRODUCTO.find((t) => t.key === tipo)?.label || tipo;
+      await generarPDFProductosVendidos(reporte, desde, hasta, tipoLabel);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div className="form-box" style={{ maxWidth: '620px' }}>
+        <label>Tipo de producto</label>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+          {TIPOS_PRODUCTO.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTipo(t.key)}
+              style={{
+                padding: '0.4rem 0.8rem',
+                backgroundColor: tipo === t.key ? '#0b4f9e' : '#e2e8f0',
+                color: tipo === t.key ? '#fff' : '#111',
+                border: 'none', borderRadius: '4px', cursor: 'pointer'
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <label>Producto (opcional, deja vacio para ver todos los del tipo)</label>
+        <SelectorProducto
+          productos={productos}
+          value={productoId}
+          onChange={setProductoId}
+          placeholder="-- Todos los productos --"
+          mostrarStock={false}
+        />
+        {productoId && (
+          <button type="button" onClick={() => setProductoId('')} style={{ marginTop: '0.4rem' }}>
+            Quitar filtro de producto
+          </button>
+        )}
+      </div>
+
+      {cargando || !reporte ? (
+        <p>Cargando...</p>
+      ) : (
+        <>
+          <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+          <p>
+            Unidades vendidas en el periodo: <strong>{reporte.cantidadTotal}</strong>
+            {' '}— Total: <strong>${fmt(reporte.totalUsd)}</strong>
+          </p>
+
+          <h3>Resumen por producto</h3>
+          {reporte.resumen.length === 0 ? (
+            <p>No hay ventas de este tipo de producto en el rango seleccionado.</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1.5rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+                  <th style={{ padding: '0.5rem' }}>Producto</th>
+                  <th>Cantidad vendida</th>
+                  <th>Total vendido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reporte.resumen.map((r) => (
+                  <tr key={r.product_id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '0.5rem' }}>{r.descripcion}</td>
+                    <td>{r.cantidad}</td>
+                    <td>${fmt(r.totalUsd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <h3>Detalle de ventas</h3>
+          {reporte.items.length === 0 ? (
+            <p>No hay ventas registradas en este rango de fechas.</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+                  <th style={{ padding: '0.5rem' }}>Fecha</th>
+                  <th>N° factura</th>
+                  <th>Cliente</th>
+                  <th>Producto</th>
+                  <th>Codigo</th>
+                  <th>Cant.</th>
+                  <th>Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reporte.items.map((i) => (
+                  <tr key={i.id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '0.5rem' }}>{i.fecha}</td>
+                    <td>{i.numero_factura || '—'}</td>
+                    <td>{i.cliente_nombre}</td>
+                    <td>{i.descripcion}</td>
+                    <td>{i.codigo || '—'}</td>
+                    <td>{i.cantidad}</td>
+                    <td>${fmt(i.subtotal_usd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </div>
   );
