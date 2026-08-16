@@ -31,3 +31,4 @@ jobs:
         with:
           name: FacturacionMovistar-instalador
           path: release/*.exe
+          retention-days: 1
