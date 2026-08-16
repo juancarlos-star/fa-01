@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFecha.jsx';
 import CompraFacturaDetalle from '../components/CompraFacturaDetalle.jsx';
+import Facturas from './Facturas.jsx';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import {
   generarPDFGanancias,
@@ -12,6 +13,7 @@ import {
 import { fmt } from '../utils/format.js';
 
 const TABS = [
+  { key: 'historial', label: 'Historial de facturas' },
   { key: 'ganancias', label: 'Ventas y ganancias' },
   { key: 'compras', label: 'Compras' },
   { key: 'facturas', label: 'Facturas' },
@@ -19,7 +21,10 @@ const TABS = [
   { key: 'clientes', label: 'Clientes' }
 ];
 
-export default function Reportes() {
+// Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
+const SIN_FILTRO_FECHA = ['clientes', 'historial'];
+
+export default function Reportes({ currentUser }) {
   const [tab, setTab] = useState('ganancias');
   const [desde, setDesde] = useState(primerDiaDelMesStr());
   const [hasta, setHasta] = useState(hoyStr());
@@ -46,10 +51,11 @@ export default function Reportes() {
         ))}
       </div>
 
-      {tab !== 'clientes' && (
+      {!SIN_FILTRO_FECHA.includes(tab) && (
         <FiltroFecha desde={desde} hasta={hasta} onChange={(d, h) => { setDesde(d); setHasta(h); }} />
       )}
 
+      {tab === 'historial' && <Facturas currentUser={currentUser} />}
       {tab === 'ganancias' && <ReporteGanancias desde={desde} hasta={hasta} />}
       {tab === 'compras' && <ReporteCompras desde={desde} hasta={hasta} />}
       {tab === 'facturas' && <ReporteFacturas desde={desde} hasta={hasta} />}
@@ -454,32 +460,79 @@ function ReporteCargosDescargos({ desde, hasta }) {
 
 // ---------------- Clientes ----------------
 
+const FILTROS_CLIENTE = [
+  { key: 'nombre', label: 'Nombre' },
+  { key: 'cedula', label: 'Cedula/RIF' },
+  { key: 'telefono', label: 'Telefono' },
+  { key: 'email', label: 'Correo electronico' },
+  { key: 'fecha', label: 'Fecha de facturacion' }
+];
+
 function ReporteClientes() {
   const [clientes, setClientes] = useState(null);
+  const [facturas, setFacturas] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [vista, setVista] = useState('todos'); // todos | emails | telefonos
   const [generandoPDF, setGenerandoPDF] = useState(false);
   const [copiado, setCopiado] = useState(false);
 
+  // Filtro: por nombre, cedula, telefono, correo o fecha de facturacion
+  const [filtroTipo, setFiltroTipo] = useState('nombre');
+  const [filtroTexto, setFiltroTexto] = useState('');
+  const [filtroDesde, setFiltroDesde] = useState(primerDiaDelMesStr());
+  const [filtroHasta, setFiltroHasta] = useState(hoyStr());
+
   const cargar = useCallback(async () => {
     setCargando(true);
-    const data = await window.api.listClientes();
-    setClientes(data);
+    const [dataClientes, dataFacturas] = await Promise.all([
+      window.api.listClientes(),
+      window.api.listFacturas()
+    ]);
+    setClientes(dataClientes);
+    setFacturas(dataFacturas);
     setCargando(false);
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  const clientesFiltrados = useMemo(() => {
+    if (!clientes) return [];
+    if (filtroTipo === 'fecha') {
+      if (!facturas) return [];
+      const idsConFactura = new Set(
+        facturas
+          .filter((f) => {
+            const fecha = (f.created_at || '').slice(0, 10);
+            return fecha && fecha >= filtroDesde && fecha <= filtroHasta;
+          })
+          .map((f) => f.cliente_id)
+      );
+      return clientes.filter((c) => idsConFactura.has(c.id));
+    }
+
+    const texto = filtroTexto.trim().toLowerCase();
+    if (!texto) return clientes;
+
+    const campoPorTipo = {
+      nombre: 'nombre',
+      cedula: 'rif_cedula',
+      telefono: 'telefono',
+      email: 'email'
+    };
+    const campo = campoPorTipo[filtroTipo];
+    return clientes.filter((c) => (c[campo] || '').toLowerCase().includes(texto));
+  }, [clientes, facturas, filtroTipo, filtroTexto, filtroDesde, filtroHasta]);
+
   if (cargando) return <p>Cargando...</p>;
   if (!clientes) return null;
 
-  const emails = clientes.map((c) => (c.email || '').trim()).filter(Boolean);
-  const telefonos = clientes.map((c) => (c.telefono || '').trim()).filter(Boolean);
+  const emails = clientesFiltrados.map((c) => (c.email || '').trim()).filter(Boolean);
+  const telefonos = clientesFiltrados.map((c) => (c.telefono || '').trim()).filter(Boolean);
 
   const descargarPDF = async () => {
     setGenerandoPDF(true);
     try {
-      await generarPDFClientes(clientes);
+      await generarPDFClientes(clientesFiltrados);
     } finally {
       setGenerandoPDF(false);
     }
@@ -498,7 +551,38 @@ function ReporteClientes() {
   return (
     <div style={{ marginTop: '1rem' }}>
       <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
-      <p>Clientes registrados: <strong>{clientes.length}</strong></p>
+      <p>
+        Clientes registrados: <strong>{clientes.length}</strong>
+        {' '}— Filtrados: <strong>{clientesFiltrados.length}</strong>
+      </p>
+
+      <div className="form-box" style={{ maxWidth: '620px' }}>
+        <label>Filtrar por</label>
+        <select value={filtroTipo} onChange={(e) => { setFiltroTipo(e.target.value); setFiltroTexto(''); }}>
+          {FILTROS_CLIENTE.map((f) => (
+            <option key={f.key} value={f.key}>{f.label}</option>
+          ))}
+        </select>
+
+        {filtroTipo === 'fecha' ? (
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ fontSize: '0.8rem' }}>Desde</label><br />
+              <input type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.8rem' }}>Hasta</label><br />
+              <input type="date" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} />
+            </div>
+          </div>
+        ) : (
+          <input
+            placeholder={`Buscar por ${FILTROS_CLIENTE.find((f) => f.key === filtroTipo)?.label.toLowerCase()}`}
+            value={filtroTexto}
+            onChange={(e) => setFiltroTexto(e.target.value)}
+          />
+        )}
+      </div>
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
         <button
@@ -531,8 +615,8 @@ function ReporteClientes() {
       </div>
 
       {vista === 'todos' && (
-        clientes.length === 0 ? (
-          <p>No hay clientes registrados.</p>
+        clientesFiltrados.length === 0 ? (
+          <p>No hay clientes que coincidan con el filtro.</p>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
             <thead>
@@ -546,7 +630,7 @@ function ReporteClientes() {
               </tr>
             </thead>
             <tbody>
-              {clientes.map((c) => (
+              {clientesFiltrados.map((c) => (
                 <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={{ padding: '0.5rem' }}>{c.nombre}</td>
                   <td>{c.rif_cedula || '—'}</td>

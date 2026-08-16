@@ -79,8 +79,7 @@ export default function Facturas({ currentUser }) {
   }
 
   return (
-    <div>
-      <h1>Historial de facturas</h1>
+    <div style={{ marginTop: '1rem' }}>
       {facturas.length === 0 ? (
         <p>Aun no se ha emitido ninguna factura.</p>
       ) : (
