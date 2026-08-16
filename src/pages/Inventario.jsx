@@ -395,7 +395,8 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
   return (
     <div>
       <p style={{ color: '#666', fontSize: '0.85rem', marginTop: 0 }}>
-        Vista de solo lectura de {label}s. Para agregar o dar de baja unidades, usa el modulo{' '}
+        Vista de solo lectura de {label}s. Para agregar se debe hacer por el modulo de{' '}
+        <strong>Compras</strong> o si quiere agregar manualmente o dar de baja unidades, usa el modulo{' '}
         <strong>Cargos y Descargos</strong>.
       </p>
 
