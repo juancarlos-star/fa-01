@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('api', {
   listClientes: () => ipcRenderer.invoke('clientes:list'),
   searchClientes: (query) => ipcRenderer.invoke('clientes:search', { query }),
   createCliente: (data) => ipcRenderer.invoke('clientes:create', data),
+  updateCliente: (id, data) => ipcRenderer.invoke('clientes:update', { id, ...data }),
   // Facturacion
   crearFactura: (payload) => ipcRenderer.invoke('facturas:crear', payload),
   listFacturas: () => ipcRenderer.invoke('facturas:list'),

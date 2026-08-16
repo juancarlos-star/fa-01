@@ -239,7 +239,7 @@ function initDb() {
   insertSetting.run('iva_porcentaje', '16');
   insertSetting.run('numero_factura_siguiente', '1');
 
-  const insertCategoria = database.prepare("INSERT OR IGNORE INTO categorias (nombre, tipo, created_at) VALUES (?, ?, datetime('now'))");
+  const insertCategoria = database.prepare("INSERT OR IGNORE INTO categorias (nombre, tipo, created_at) VALUES (?, ?, datetime('now','localtime'))");
   insertCategoria.run('Telefono', 'equipo');
   insertCategoria.run('SimCard', 'simcard');
   insertCategoria.run('Usim', 'usim');
@@ -249,7 +249,7 @@ function initDb() {
   if (userCount === 0) {
     const hash = bcrypt.hashSync('admin123', 10);
     database.prepare(
-      "INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime('now'))"
+      "INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime('now','localtime'))"
     ).run('admin', hash, 'Administrador', 'administrador');
   }
 }
