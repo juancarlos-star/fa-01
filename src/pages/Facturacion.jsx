@@ -176,6 +176,7 @@ export default function Facturacion({ currentUser }) {
     setProductoId('');
     setUnitId('');
     setPrecioUnitario('');
+    setCantidad(1);
   };
 
   const quitarDelCarrito = (key) => {
@@ -377,7 +378,7 @@ export default function Facturacion({ currentUser }) {
         )}
 
         <label>Precio unitario (USD)</label>
-        <input type="number" step="0.01" value={precioUnitario} onChange={(e) => setPrecioUnitario(e.target.value)} />
+        <input type="number" step="0.01" value={precioUnitario} readOnly disabled />
 
         <button type="button" onClick={agregarAlCarrito}>+ Agregar a la factura</button>
       </div>
