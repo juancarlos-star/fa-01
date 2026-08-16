@@ -108,6 +108,55 @@ export async function generarPDFFacturas(reporte, desde, hasta) {
   await guardarYAbrirPDF(doc, `Reporte-Facturas_${fechaParaNombreArchivo()}`, 'Reportes');
 }
 
+// ---------------- Productos vendidos ----------------
+
+export async function generarPDFProductosVendidos(reporte, desde, hasta, tipoLabel) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  encabezado(doc, `Reporte de Productos Vendidos — ${tipoLabel}`, desde, hasta);
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text(
+    `Unidades vendidas: ${reporte.cantidadTotal}   —   Total: $${fmt(reporte.totalUsd)}`,
+    10,
+    34
+  );
+
+  autoTable(doc, {
+    startY: 40,
+    head: [['Producto', 'Cantidad vendida', 'Total vendido']],
+    body: reporte.resumen.map((r) => [r.descripcion, String(r.cantidad), `$${fmt(r.totalUsd)}`]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  const finalY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 10;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Detalle de ventas', 10, finalY);
+
+  autoTable(doc, {
+    startY: finalY + 6,
+    head: [['Fecha', 'N° factura', 'Cliente', 'Producto', 'Codigo', 'Cant.', 'Subtotal']],
+    body: reporte.items.map((i) => [
+      i.fecha,
+      i.numero_factura || '—',
+      i.cliente_nombre,
+      i.descripcion,
+      i.codigo || '—',
+      String(i.cantidad),
+      `$${fmt(i.subtotal_usd)}`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [2, 122, 72], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Reporte-Productos-Vendidos_${fechaParaNombreArchivo()}`, 'Reportes');
+}
+
 // ---------------- Cargos y descargos de inventario ----------------
 
 export async function generarPDFCargosDescargos(reporte, desde, hasta) {

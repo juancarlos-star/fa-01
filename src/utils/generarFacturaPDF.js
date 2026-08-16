@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { guardarYAbrirPDF } from './pdfUtils.js';
 import { fmt } from './format.js';
+import { agruparItemsPorProducto } from './agruparFacturaItems.js';
 
 export async function generarFacturaPDF(factura, items) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter' });
@@ -38,11 +39,16 @@ export async function generarFacturaPDF(factura, items) {
   const lineasDireccion = doc.splitTextToSize(direccion, 140);
   doc.text(lineasDireccion, 55, 47);
 
-  const filas = items.map((i) => [
-    String(i.cantidad),
-    i.descripcion + (i.codigo ? ` (${i.codigo})` : ''),
-    `${fmt(i.precio_unitario_usd)}`,
-    `${fmt(i.subtotal_usd)}`
+  // Se agrupan por producto para que, si se vendieron varias unidades del
+  // mismo producto (ej. 3 Redmi Note 15), aparezca una sola fila con la
+  // cantidad total y los codigos (IMEI/ICCID) listados en columna dentro de
+  // la misma celda, sin sobreponerse con el resto de la informacion.
+  const grupos = agruparItemsPorProducto(items);
+  const filas = grupos.map((g) => [
+    String(g.cantidad),
+    g.codigos.length > 0 ? `${g.descripcion}\n${g.codigos.join('\n')}` : g.descripcion,
+    `${fmt(g.precio_unitario)}`,
+    `${fmt(g.subtotal)}`
   ]);
 
   autoTable(doc, {
@@ -53,10 +59,10 @@ export async function generarFacturaPDF(factura, items) {
     styles: { fontSize: 9, cellPadding: 2 },
     headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], lineWidth: 0.3, fontStyle: 'bold' },
     columnStyles: {
-      0: { cellWidth: 22, halign: 'center' },
-      1: { cellWidth: 108 },
-      2: { cellWidth: 32, halign: 'right' },
-      3: { cellWidth: 32, halign: 'right' }
+      0: { cellWidth: 22, halign: 'center', valign: 'top' },
+      1: { cellWidth: 108, valign: 'top' },
+      2: { cellWidth: 32, halign: 'right', valign: 'top' },
+      3: { cellWidth: 32, halign: 'right', valign: 'top' }
     },
     margin: { left: 10, right: 10 }
   });
