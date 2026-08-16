@@ -6,7 +6,6 @@ import CategoriasAdmin from './pages/CategoriasAdmin.jsx';
 import CargosDescargos from './pages/CargosDescargos.jsx';
 import Configuracion from './pages/Configuracion.jsx';
 import Facturacion from './pages/Facturacion.jsx';
-import Facturas from './pages/Facturas.jsx';
 import Compras from './pages/Compras.jsx';
 import Gastos from './pages/Gastos.jsx';
 import Reportes from './pages/Reportes.jsx';
@@ -28,30 +27,29 @@ export default function App() {
           {user.full_name} ({user.role})
         </p>
         <nav>
-          <button onClick={() => setView('inicio')}>Inicio</button>
-          <button onClick={() => setView('facturacion')}>Facturar</button>
-          <button onClick={() => setView('facturas')}>Historial de facturas</button>
-          <button onClick={() => setView('inventario')}>Inventario</button>
+          <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}>Inicio</button>
+          <button className={view === 'facturacion' ? 'active' : ''} onClick={() => setView('facturacion')}>Facturar</button>
+          <button className={view === 'inventario' ? 'active' : ''} onClick={() => setView('inventario')}>Inventario</button>
           {user.role === 'administrador' && (
-            <button onClick={() => setView('compras')}>Compras</button>
+            <button className={view === 'compras' ? 'active' : ''} onClick={() => setView('compras')}>Compras</button>
           )}
           {user.role === 'administrador' && (
-            <button onClick={() => setView('categorias')}>Categorias</button>
+            <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}>Categorias</button>
           )}
           {user.role === 'administrador' && (
-            <button onClick={() => setView('cargosDescargos')}>Cargos y Descargos</button>
+            <button className={view === 'cargosDescargos' ? 'active' : ''} onClick={() => setView('cargosDescargos')}>Cargos y Descargos</button>
           )}
           {user.role === 'administrador' && (
-            <button onClick={() => setView('gastos')}>Gastos</button>
+            <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}>Gastos</button>
           )}
           {user.role === 'administrador' && (
-            <button onClick={() => setView('reportes')}>Reportes</button>
+            <button className={view === 'reportes' ? 'active' : ''} onClick={() => setView('reportes')}>Reportes</button>
           )}
           {user.role === 'administrador' && (
-            <button onClick={() => setView('configuracion')}>Configuracion</button>
+            <button className={view === 'configuracion' ? 'active' : ''} onClick={() => setView('configuracion')}>Configuracion</button>
           )}
           {user.role === 'administrador' && (
-            <button onClick={() => setView('usuarios')}>Usuarios</button>
+            <button className={view === 'usuarios' ? 'active' : ''} onClick={() => setView('usuarios')}>Usuarios</button>
           )}
           <button onClick={handleLogout}>Cerrar sesion</button>
         </nav>
@@ -64,13 +62,12 @@ export default function App() {
           </div>
         )}
         {view === 'facturacion' && <Facturacion currentUser={user} />}
-        {view === 'facturas' && <Facturas currentUser={user} />}
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'cargosDescargos' && user.role === 'administrador' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
-        {view === 'reportes' && user.role === 'administrador' && <Reportes />}
+        {view === 'reportes' && user.role === 'administrador' && <Reportes currentUser={user} />}
         {view === 'configuracion' && user.role === 'administrador' && <Configuracion />}
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
