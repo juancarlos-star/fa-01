@@ -385,45 +385,47 @@ export default function Facturacion({ currentUser }) {
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
       <h3>Detalle de la factura</h3>
-      <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 380px', minWidth: '300px' }}>
-          {carrito.length === 0 ? (
-            <p>Aun no has agregado productos.</p>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1rem' }}>
-              <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-                  <th style={{ padding: '0.5rem' }}>Producto</th>
-                  <th>Codigo</th>
-                  <th>Cant.</th>
-                  <th>Precio unit.</th>
-                  <th>Subtotal</th>
-                  <th></th>
+      <div>
+        {carrito.length === 0 ? (
+          <p>Aun no has agregado productos.</p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1rem' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+                <th style={{ padding: '0.5rem' }}>Producto</th>
+                <th>Codigo</th>
+                <th>Cant.</th>
+                <th>Precio unit.</th>
+                <th>Subtotal</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {carrito.map((item) => (
+                <tr key={item.key} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '0.5rem' }}>{item.descripcion}</td>
+                  <td>{item.codigo || '—'}</td>
+                  <td>{item.cantidad}</td>
+                  <td>${fmt(item.precio_unitario)}</td>
+                  <td>${fmt((item.precio_unitario * item.cantidad))}</td>
+                  <td><button onClick={() => quitarDelCarrito(item.key)}>Quitar</button></td>
                 </tr>
-              </thead>
-              <tbody>
-                {carrito.map((item) => (
-                  <tr key={item.key} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>{item.descripcion}</td>
-                    <td>{item.codigo || '—'}</td>
-                    <td>{item.cantidad}</td>
-                    <td>${fmt(item.precio_unitario)}</td>
-                    <td>${fmt((item.precio_unitario * item.cantidad))}</td>
-                    <td><button onClick={() => quitarDelCarrito(item.key)}>Quitar</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+              ))}
+            </tbody>
+          </table>
+        )}
 
-        <div className="form-box" style={{ width: '340px', flex: '0 0 auto' }}>
-          <p>Subtotal: <strong>${fmt(subtotal)}</strong></p>
-          <p>IVA ({ivaPorcentaje}%): <strong>${fmt(iva)}</strong></p>
-          <p>Total: <strong>${fmt(total)}</strong></p>
-          <p style={{ color: '#666' }}>Tasa: {tasaCambio} Bs/USD</p>
-          <p>Total en Bs: <strong>Bs {fmt(totalBs)}</strong></p>
-          <button onClick={handleEmitirFactura} style={{ marginTop: '8px' }}>Emitir factura</button>
+        {/* El cuadro de totales siempre se ubica debajo de todos los items agregados,
+            alineado a la derecha, para que nunca quede montado sobre otra informacion. */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div className="form-box" style={{ width: '340px', flex: '0 0 auto', margin: 0 }}>
+            <p>Subtotal: <strong>${fmt(subtotal)}</strong></p>
+            <p>IVA ({ivaPorcentaje}%): <strong>${fmt(iva)}</strong></p>
+            <p>Total: <strong>${fmt(total)}</strong></p>
+            <p style={{ color: '#666' }}>Tasa: {tasaCambio} Bs/USD</p>
+            <p>Total en Bs: <strong>Bs {fmt(totalBs)}</strong></p>
+            <button onClick={handleEmitirFactura} style={{ marginTop: '8px' }}>Emitir factura</button>
+          </div>
         </div>
       </div>
     </div>
