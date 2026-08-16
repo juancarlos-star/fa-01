@@ -97,6 +97,10 @@ body {
   background: rgba(255,255,255,0.15);
 }
 
+.sidebar nav button.active {
+  background: rgba(255,255,255,0.15);
+}
+
 .content {
   flex: 1;
   padding: 2rem;
