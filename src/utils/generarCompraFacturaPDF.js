@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { guardarYAbrirPDF } from './pdfUtils.js';
+import { fmt } from './format.js';
 
 const IVA_TASA = 0.16;
 
@@ -39,8 +40,8 @@ export async function generarCompraFacturaPDF(encabezado, items, settings) {
   const filas = items.map((i) => [
     i.descripcion,
     String(i.cantidad),
-    `$${i.costo_unitario_usd.toFixed(2)}`,
-    `$${i.total_usd.toFixed(2)}`
+    `$${fmt(i.costo_unitario_usd)}`,
+    `$${fmt(i.total_usd)}`
   ]);
 
   autoTable(doc, {
@@ -99,17 +100,17 @@ export async function generarCompraFacturaPDF(encabezado, items, settings) {
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   doc.text('BASE IMPONIBLE:', 130, y);
-  doc.text(`I.V.A (${(IVA_TASA * 100).toFixed(0)}%):`, 130, y + 5);
+  doc.text(`I.V.A (${fmt((IVA_TASA * 100), 0)}%):`, 130, y + 5);
   doc.text('SUBTOTAL:', 130, y + 10);
   doc.text('TOTAL:', 130, y + 16);
 
   doc.setFont('helvetica', 'normal');
-  doc.text(`$${baseImponible.toFixed(2)}`, 195, y, { align: 'right' });
-  doc.text(`$${iva.toFixed(2)}`, 195, y + 5, { align: 'right' });
-  doc.text(`$${subtotal.toFixed(2)}`, 195, y + 10, { align: 'right' });
+  doc.text(`$${fmt(baseImponible)}`, 195, y, { align: 'right' });
+  doc.text(`$${fmt(iva)}`, 195, y + 5, { align: 'right' });
+  doc.text(`$${fmt(subtotal)}`, 195, y + 10, { align: 'right' });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text(`$${subtotal.toFixed(2)}`, 195, y + 16, { align: 'right' });
+  doc.text(`$${fmt(subtotal)}`, 195, y + 16, { align: 'right' });
 
   await guardarYAbrirPDF(doc, `Compra-${encabezado.id}`, 'Compras');
 }
