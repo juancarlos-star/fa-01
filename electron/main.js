@@ -143,7 +143,7 @@ ipcMain.handle('categories:create', (event, { nombre, tipo }) => {
   if (!tiposValidos.includes(tipo)) return { ok: false, message: 'Debes indicar a que tipo pertenece esta categoria' };
   const exists = db.prepare('SELECT id FROM categorias WHERE LOWER(nombre) = LOWER(?)').get(limpio);
   if (exists) return { ok: false, message: 'Esa categoria ya existe' };
-  db.prepare("INSERT INTO categorias (nombre, tipo, created_at) VALUES (?, ?, datetime('now'))").run(limpio, tipo);
+  db.prepare("INSERT INTO categorias (nombre, tipo, created_at) VALUES (?, ?, datetime('now','localtime'))").run(limpio, tipo);
   return { ok: true };
 });
 
@@ -287,7 +287,7 @@ ipcMain.handle('products:create', (event, data) => {
   const info = db
     .prepare(
       `INSERT INTO products (tipo, nombre, categoria, precio, stock_minimo, stock_cantidad, costo_promedio_usd, codigo_barras, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
     )
     .run(
       tipo, nombre, categoria || '', precio || 0, stock_minimo || 0,
@@ -300,7 +300,7 @@ ipcMain.handle('products:create', (event, data) => {
   if (tipo === 'accesorio' && stockInicial > 0) {
     db.prepare(
       `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
     ).run(productId, tipo, nombre, costo, stockInicial, costo * stockInicial, usuario || '');
   }
 
@@ -334,7 +334,7 @@ ipcMain.handle('products:addStock', (event, { id, cantidad, costoUnitario, usuar
     db.prepare('UPDATE products SET stock_cantidad = ?, costo_promedio_usd = ? WHERE id = ?').run(nuevoStock, nuevoPromedio, id);
     db.prepare(
       `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
     ).run(id, product.tipo, product.nombre, costo, n, costo * n, usuario || '');
   });
   transaccion();
@@ -363,7 +363,7 @@ ipcMain.handle('products:writeOffStock', (event, { id, cantidad, motivo, usuario
     db.prepare('UPDATE products SET stock_cantidad = ? WHERE id = ?').run(nuevoStock, id);
     db.prepare(
       `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at)
-       VALUES (?, NULL, ?, ?, ?, datetime('now'))`
+       VALUES (?, NULL, ?, ?, ?, datetime('now','localtime'))`
     ).run(id, n, motivo.trim(), usuario || '');
   });
   transaccion();
@@ -388,11 +388,11 @@ ipcMain.handle('units:add', (event, { product_id, codigo, costoUnitario, usuario
   const transaccion = db.transaction(() => {
     db.prepare(
       `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at)
-       VALUES (?, ?, 'disponible', ?, datetime('now'))`
+       VALUES (?, ?, 'disponible', ?, datetime('now','localtime'))`
     ).run(product_id, codigo.trim(), costo);
     db.prepare(
       `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at)
-       VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now'))`
+       VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now','localtime'))`
     ).run(product_id, product.tipo, product.nombre, costo, costo, usuario || '');
   });
   transaccion();
@@ -447,7 +447,7 @@ ipcMain.handle('units:addRange', (event, { product_id, codigoInicio, codigoFin, 
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
 
   const insertStmt = db.prepare(
-    `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now'))`
+    `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now','localtime'))`
   );
   const existsStmt = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?');
   let agregados = 0;
@@ -461,7 +461,7 @@ ipcMain.handle('units:addRange', (event, { product_id, codigoInicio, codigoFin, 
     if (agregados > 0) {
       db.prepare(
         `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
       ).run(product_id, product.tipo, product.nombre, costo, agregados, costo * agregados, usuario || '');
     }
   });
@@ -496,7 +496,7 @@ ipcMain.handle('units:writeOff', (event, { id, motivo, usuario }) => {
     db.prepare("UPDATE inventory_units SET estado = 'de_baja' WHERE id = ?").run(id);
     db.prepare(
       `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at)
-       VALUES (?, ?, 1, ?, ?, datetime('now'))`
+       VALUES (?, ?, 1, ?, ?, datetime('now','localtime'))`
     ).run(unit.product_id, id, motivo.trim(), usuario || '');
   });
   transaccion();
@@ -544,10 +544,11 @@ ipcMain.handle('clientes:list', () => {
 
 ipcMain.handle('clientes:search', (event, { query }) => {
   const db = getDb();
+  // El filtrado de clientes se hace unicamente por cedula/RIF
   const q = `%${(query || '').trim()}%`;
   return db
-    .prepare('SELECT * FROM clientes WHERE nombre LIKE ? OR rif_cedula LIKE ? ORDER BY nombre LIMIT 20')
-    .all(q, q);
+    .prepare('SELECT * FROM clientes WHERE rif_cedula LIKE ? ORDER BY nombre LIMIT 20')
+    .all(q);
 });
 
 ipcMain.handle('clientes:create', (event, data) => {
@@ -557,10 +558,21 @@ ipcMain.handle('clientes:create', (event, data) => {
   const info = db
     .prepare(
       `INSERT INTO clientes (nombre, rif_cedula, telefono, direccion, email, created_at)
-       VALUES (?, ?, ?, ?, ?, datetime('now'))`
+       VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))`
     )
     .run(nombre.trim(), rif_cedula || '', telefono || '', direccion || '', email || '');
   return { ok: true, id: info.lastInsertRowid };
+});
+
+ipcMain.handle('clientes:update', (event, { id, nombre, rif_cedula, telefono, direccion, email }) => {
+  const db = getDb();
+  if (!id) return { ok: false, message: 'Cliente invalido' };
+  if (!nombre || !nombre.trim()) return { ok: false, message: 'El nombre del cliente es obligatorio' };
+  db.prepare(
+    `UPDATE clientes SET nombre = ?, rif_cedula = ?, telefono = ?, direccion = ?, email = ? WHERE id = ?`
+  ).run(nombre.trim(), rif_cedula || '', telefono || '', direccion || '', email || '', id);
+  const actualizado = db.prepare('SELECT * FROM clientes WHERE id = ?').get(id);
+  return { ok: true, cliente: actualizado };
 });
 
 // ---------- IPC: Facturacion ----------
@@ -629,7 +641,7 @@ ipcMain.handle('facturas:crear', (event, payload) => {
         const info = db
           .prepare(
             `INSERT INTO clientes (nombre, rif_cedula, telefono, direccion, email, created_at)
-             VALUES (?, ?, ?, ?, ?, datetime('now'))`
+             VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))`
           )
           .run(cliente.nombre.trim(), cliente.rif_cedula || '', cliente.telefono || '', cliente.direccion || '', cliente.email || '');
         clienteId = info.lastInsertRowid;
@@ -643,7 +655,7 @@ ipcMain.handle('facturas:crear', (event, payload) => {
       .prepare(
         `INSERT INTO facturas
          (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
       )
       .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '');
 
@@ -734,7 +746,7 @@ ipcMain.handle('gastos:create', (event, { concepto, categoria, monto_usd, usuari
   const monto = parseFloat(monto_usd);
   if (isNaN(monto) || monto <= 0) return { ok: false, message: 'Monto invalido' };
   db.prepare(
-    `INSERT INTO gastos (concepto, categoria, monto_usd, usuario, created_at) VALUES (?, ?, ?, ?, datetime('now'))`
+    `INSERT INTO gastos (concepto, categoria, monto_usd, usuario, created_at) VALUES (?, ?, ?, ?, datetime('now','localtime'))`
   ).run(concepto.trim(), categoria || '', monto, usuario || '');
   return { ok: true };
 });
@@ -886,16 +898,16 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
     const transaccion = db.transaction(() => {
       const encabezadoInfo = db.prepare(
         `INSERT INTO compras_encabezado (proveedor, numero_factura_compra, total_usd, usuario, created_at)
-         VALUES (?, ?, 0, ?, datetime('now'))`
+         VALUES (?, ?, 0, ?, datetime('now','localtime'))`
       ).run(proveedor.trim(), numeroFacturaCompra.trim(), usuario || '');
       const encabezadoId = encabezadoInfo.lastInsertRowid;
 
       const insertCompra = db.prepare(
         `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, compra_encabezado_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?)`
       );
       const insertUnit = db.prepare(
-        `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, compra_encabezado_id, created_at) VALUES (?, ?, 'disponible', ?, ?, datetime('now'))`
+        `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, compra_encabezado_id, created_at) VALUES (?, ?, 'disponible', ?, ?, datetime('now','localtime'))`
       );
 
       for (const item of items) {
@@ -1012,7 +1024,7 @@ ipcMain.handle('units:writeOffRange', (event, { product_id, codigoInicio, codigo
       db.prepare("UPDATE inventory_units SET estado = 'de_baja' WHERE id = ?").run(unit.id);
       db.prepare(
         `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at)
-         VALUES (?, ?, 1, ?, ?, datetime('now'))`
+         VALUES (?, ?, 1, ?, ?, datetime('now','localtime'))`
       ).run(unit.product_id, unit.id, motivo.trim(), usuario || '');
     }
   });
