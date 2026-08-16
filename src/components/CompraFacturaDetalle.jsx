@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { generarCompraFacturaPDF } from '../utils/generarCompraFacturaPDF.js';
+import { fmt } from '../utils/format.js';
 
 const IVA_TASA = 0.16;
 
@@ -67,8 +68,8 @@ export default function CompraFacturaDetalle({ encabezado, items, onVolver }) {
               <tr key={i.id} style={{ borderBottom: '1px solid #eee' }}>
                 <td style={{ padding: '0.5rem' }}>{i.descripcion}</td>
                 <td>{i.cantidad}</td>
-                <td>${i.costo_unitario_usd.toFixed(2)}</td>
-                <td>${i.total_usd.toFixed(2)}</td>
+                <td>${fmt(i.costo_unitario_usd)}</td>
+                <td>${fmt(i.total_usd)}</td>
               </tr>
             ))}
           </tbody>
@@ -91,16 +92,16 @@ export default function CompraFacturaDetalle({ encabezado, items, onVolver }) {
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <div style={{ minWidth: '260px' }}>
             <p style={{ display: 'flex', justifyContent: 'space-between', margin: '0.2rem 0' }}>
-              <span>Base imponible:</span> <strong>${baseImponible.toFixed(2)}</strong>
+              <span>Base imponible:</span> <strong>${fmt(baseImponible)}</strong>
             </p>
             <p style={{ display: 'flex', justifyContent: 'space-between', margin: '0.2rem 0' }}>
-              <span>I.V.A. ({(IVA_TASA * 100).toFixed(0)}%):</span> <strong>${iva.toFixed(2)}</strong>
+              <span>I.V.A. ({fmt((IVA_TASA * 100), 0)}%):</span> <strong>${fmt(iva)}</strong>
             </p>
             <p style={{ display: 'flex', justifyContent: 'space-between', margin: '0.2rem 0' }}>
-              <span>Subtotal:</span> <strong>${subtotal.toFixed(2)}</strong>
+              <span>Subtotal:</span> <strong>${fmt(subtotal)}</strong>
             </p>
             <p style={{ display: 'flex', justifyContent: 'space-between', margin: '0.3rem 0', fontSize: '1.1rem', borderTop: '1px solid #333', paddingTop: '0.3rem' }}>
-              <span>TOTAL:</span> <strong>${subtotal.toFixed(2)}</strong>
+              <span>TOTAL:</span> <strong>${fmt(subtotal)}</strong>
             </p>
           </div>
         </div>
