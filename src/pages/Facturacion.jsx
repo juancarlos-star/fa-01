@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { fmt } from '../utils/format.js';
-import { agruparItemsPorProducto } from '../utils/agruparFacturaItems.js';
-import SelectorProducto from '../components/SelectorProducto.jsx';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipo (IMEI)' },
@@ -37,6 +35,7 @@ export default function Facturacion({ currentUser }) {
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
+  const [keyPendienteQuitar, setKeyPendienteQuitar] = useState(null);
 
   useEffect(() => {
     window.api.getSettings().then(setSettings);
@@ -210,16 +209,18 @@ export default function Facturacion({ currentUser }) {
   };
 
   const quitarDelCarrito = (key) => {
-    if (!window.confirm('¿Seguro que deseas quitar este producto de la factura?')) return;
-    setCarrito(carrito.filter((item) => item.key !== key));
+    // Confirmacion dentro de la propia app (no window.confirm) para evitar que el
+    // dialogo nativo de Electron deje los campos de "Agregar producto" sin responder.
+    setKeyPendienteQuitar(key);
   };
 
-  // Quita del carrito todas las unidades de un mismo producto (usado cuando el
-  // detalle de la factura muestra una sola fila agrupada por producto).
-  const quitarGrupoDelCarrito = (keys) => {
-    if (!window.confirm('¿Seguro que deseas quitar este producto de la factura?')) return;
-    const aQuitar = new Set(keys);
-    setCarrito(carrito.filter((item) => !aQuitar.has(item.key)));
+  const confirmarQuitarDelCarrito = () => {
+    setCarrito(carrito.filter((item) => item.key !== keyPendienteQuitar));
+    setKeyPendienteQuitar(null);
+  };
+
+  const cancelarQuitarDelCarrito = () => {
+    setKeyPendienteQuitar(null);
   };
 
   const subtotal = carrito.reduce((acc, i) => acc + i.precio_unitario * i.cantidad, 0);
@@ -389,7 +390,12 @@ export default function Facturacion({ currentUser }) {
         </div>
 
         <label>Producto</label>
-        <SelectorProducto productos={productos} value={productoId} onChange={setProductoId} />
+        <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
+          <option value="">-- Selecciona --</option>
+          {productos.map((p) => (
+            <option key={p.id} value={p.id}>{p.nombre} (disponible: {p.stock_disponible})</option>
+          ))}
+        </select>
 
         {tipoSeleccionado !== 'accesorio' && productoId && (
           <>
@@ -455,35 +461,35 @@ export default function Facturacion({ currentUser }) {
         {carrito.length === 0 ? (
           <p>Aun no has agregado productos.</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1rem', tableLayout: 'fixed' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1rem' }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-                <th style={{ padding: '0.5rem', width: '30%' }}>Producto</th>
-                <th style={{ width: '25%' }}>Codigo</th>
-                <th style={{ width: '8%' }}>Cant.</th>
-                <th style={{ width: '13%' }}>Precio unit.</th>
-                <th style={{ width: '13%' }}>Subtotal</th>
-                <th style={{ width: '11%' }}></th>
+                <th style={{ padding: '0.5rem' }}>Producto</th>
+                <th>Codigo</th>
+                <th>Cant.</th>
+                <th>Precio unit.</th>
+                <th>Subtotal</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {agruparItemsPorProducto(carrito).map((grupo) => (
-                <tr key={grupo.product_id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.5rem', verticalAlign: 'top', wordBreak: 'break-word' }}>{grupo.descripcion}</td>
-                  <td style={{ verticalAlign: 'top' }}>
-                    {grupo.codigos.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                        {grupo.codigos.map((c) => (
-                          <span key={c} style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>{c}</span>
-                        ))}
-                      </div>
-                    ) : '—'}
-                  </td>
-                  <td style={{ verticalAlign: 'top' }}>{grupo.cantidad}</td>
-                  <td style={{ verticalAlign: 'top' }}>${fmt(grupo.precio_unitario)}</td>
-                  <td style={{ verticalAlign: 'top' }}>${fmt(grupo.subtotal)}</td>
-                  <td style={{ verticalAlign: 'top' }}>
-                    <button onClick={() => quitarGrupoDelCarrito(grupo.keys)}>Quitar</button>
+              {carrito.map((item) => (
+                <tr key={item.key} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: '0.5rem' }}>{item.descripcion}</td>
+                  <td>{item.codigo || '—'}</td>
+                  <td>{item.cantidad}</td>
+                  <td>${fmt(item.precio_unitario)}</td>
+                  <td>${fmt((item.precio_unitario * item.cantidad))}</td>
+                  <td>
+                    {keyPendienteQuitar === item.key ? (
+                      <span style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.8rem', color: '#b42318' }}>¿Quitar?</span>
+                        <button type="button" onClick={confirmarQuitarDelCarrito} style={{ color: '#b42318' }}>Si</button>
+                        <button type="button" onClick={cancelarQuitarDelCarrito}>No</button>
+                      </span>
+                    ) : (
+                      <button type="button" onClick={() => quitarDelCarrito(item.key)}>Quitar</button>
+                    )}
                   </td>
                 </tr>
               ))}
