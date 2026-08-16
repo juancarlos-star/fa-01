@@ -1053,6 +1053,42 @@ ipcMain.handle('reportes:compras', (event, { desde, hasta }) => {
   return { ok: true, desde, hasta, compras, cantidad: compras.length, totalUsd };
 });
 
+ipcMain.handle('reportes:productosVendidos', (event, { desde, hasta, tipo, product_id }) => {
+  const db = getDb();
+  let query = `SELECT fi.*, f.created_at AS fecha, f.numero_factura, f.cliente_nombre
+               FROM factura_items fi
+               JOIN facturas f ON f.id = fi.factura_id
+               WHERE date(f.created_at) BETWEEN date(?) AND date(?)`;
+  const params = [desde, hasta];
+  if (tipo) {
+    query += ' AND fi.tipo = ?';
+    params.push(tipo);
+  }
+  if (product_id) {
+    query += ' AND fi.product_id = ?';
+    params.push(product_id);
+  }
+  query += ' ORDER BY f.created_at DESC';
+  const items = db.prepare(query).all(...params);
+
+  const resumenPorProducto = new Map();
+  for (const item of items) {
+    let r = resumenPorProducto.get(item.product_id);
+    if (!r) {
+      r = { product_id: item.product_id, descripcion: item.descripcion, tipo: item.tipo, cantidad: 0, totalUsd: 0 };
+      resumenPorProducto.set(item.product_id, r);
+    }
+    r.cantidad += item.cantidad;
+    r.totalUsd += item.subtotal_usd;
+  }
+  const resumen = Array.from(resumenPorProducto.values()).sort((a, b) => b.cantidad - a.cantidad);
+
+  const cantidadTotal = items.reduce((acc, i) => acc + i.cantidad, 0);
+  const totalUsd = items.reduce((acc, i) => acc + i.subtotal_usd, 0);
+
+  return { ok: true, desde, hasta, tipo, items, resumen, cantidadTotal, totalUsd };
+});
+
 ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
   const db = getDb();
   const cargos = db.prepare(
