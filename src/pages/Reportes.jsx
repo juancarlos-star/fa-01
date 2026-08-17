@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFecha.jsx';
 import CompraFacturaDetalle from '../components/CompraFacturaDetalle.jsx';
+import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
 import Facturas from './Facturas.jsx';
 import SelectorProducto from '../components/SelectorProducto.jsx';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
@@ -501,6 +502,9 @@ function ReporteCargosDescargos({ desde, hasta }) {
   const [cargando, setCargando] = useState(false);
   const [subtab, setSubtab] = useState('cargos');
   const [generandoPDF, setGenerandoPDF] = useState(false);
+  // Documento individual (comprobante) seleccionado para ver/imprimir/descargar:
+  // { registro, tipoDocumento: 'cargo' | 'descargo' }
+  const [detalleDocumento, setDetalleDocumento] = useState(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -509,7 +513,7 @@ function ReporteCargosDescargos({ desde, hasta }) {
     setCargando(false);
   }, [desde, hasta]);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => { cargar(); setDetalleDocumento(null); }, [cargar]);
 
   const descargarPDF = async () => {
     setGenerandoPDF(true);
@@ -522,6 +526,16 @@ function ReporteCargosDescargos({ desde, hasta }) {
 
   if (cargando) return <p>Cargando...</p>;
   if (!reporte) return null;
+
+  if (detalleDocumento) {
+    return (
+      <CargoDescargoDetalle
+        registro={detalleDocumento.registro}
+        tipoDocumento={detalleDocumento.tipoDocumento}
+        onVolver={() => setDetalleDocumento(null)}
+      />
+    );
+  }
 
   return (
     <div style={{ marginTop: '1rem' }}>
@@ -556,25 +570,35 @@ function ReporteCargosDescargos({ desde, hasta }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-                  <th style={{ padding: '0.5rem' }}>Fecha</th>
+                  <th style={{ padding: '0.5rem' }}>N°</th>
+                  <th>Fecha</th>
                   <th>Producto</th>
                   <th>Tipo</th>
+                  <th>Codigo</th>
                   <th>Cantidad</th>
                   <th>Costo unit.</th>
                   <th>Total</th>
                   <th>Usuario</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {reporte.cargos.map((c) => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>{c.created_at}</td>
+                    <td style={{ padding: '0.5rem' }}>#{String(c.secuencia ?? c.id).padStart(5, '0')}</td>
+                    <td>{c.created_at}</td>
                     <td>{c.producto_nombre || c.descripcion}</td>
                     <td>{c.tipo}</td>
+                    <td>{c.unidad_codigo || '—'}</td>
                     <td>{c.cantidad}</td>
                     <td>${fmt(c.costo_unitario_usd)}</td>
                     <td>${fmt(c.total_usd)}</td>
                     <td>{c.usuario || '—'}</td>
+                    <td>
+                      <button onClick={() => setDetalleDocumento({ registro: c, tipoDocumento: 'cargo' })}>
+                        Ver
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -598,12 +622,13 @@ function ReporteCargosDescargos({ desde, hasta }) {
                 <th>Cantidad</th>
                 <th>Motivo</th>
                 <th>Usuario</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {reporte.descargos.map((d) => (
                 <tr key={d.id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.5rem' }}>#{String(d.id).padStart(5, '0')}</td>
+                  <td style={{ padding: '0.5rem' }}>#{String(d.secuencia ?? d.id).padStart(5, '0')}</td>
                   <td>{d.created_at}</td>
                   <td>{d.producto_nombre}</td>
                   <td>{d.producto_tipo}</td>
@@ -611,6 +636,11 @@ function ReporteCargosDescargos({ desde, hasta }) {
                   <td>{d.cantidad}</td>
                   <td>{d.motivo}</td>
                   <td>{d.usuario || '—'}</td>
+                  <td>
+                    <button onClick={() => setDetalleDocumento({ registro: d, tipoDocumento: 'descargo' })}>
+                      Ver
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
