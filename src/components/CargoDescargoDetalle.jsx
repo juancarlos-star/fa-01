@@ -56,7 +56,7 @@ export default function CargoDescargoDetalle({ registro, tipoDocumento, onVolver
       </div>
 
       <div className="print-area" style={{ background: '#fff', padding: '1.5rem', borderRadius: '8px', maxWidth: '620px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', borderBottom: `2px solid ${colorAcento}`, paddingBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', borderBottom: `2px solid ${colorAcento}`, paddingBottom: '0.75rem' }}>
           <div>
             {settings?.nombre_tienda && <h2 style={{ margin: 0 }}>{settings.nombre_tienda}</h2>}
             {settings?.rif_tienda && <p style={{ margin: '0.2rem 0', color: '#555' }}>R.I.F.: {settings.rif_tienda}</p>}
@@ -66,12 +66,20 @@ export default function CargoDescargoDetalle({ registro, tipoDocumento, onVolver
             <p style={{ margin: '0.2rem 0' }}>
               <strong>N°:</strong> {prefijo}-{String(numeroDocumento).padStart(5, '0')}
             </p>
+            <p style={{ margin: '0.1rem 0' }}>
+              <strong>Fecha:</strong> {fecha} {horaParte || ''}
+            </p>
           </div>
         </div>
 
+        {/* Usuario que realizo la operacion, siempre visible justo debajo del encabezado,
+            igual que "Registrado por" en el comprobante de compras. */}
+        <p style={{ margin: '0 0 1rem 0', color: '#555' }}>
+          <strong>Realizado por:</strong> {registro.usuario || 'No especificado'}
+        </p>
+
         <table style={{ width: '100%', borderCollapse: 'collapse', margin: '0.5rem 0 1rem 0' }}>
           <tbody>
-            <FilaDato etiqueta="Fecha" valor={`${fecha}${horaParte ? '  ' + horaParte : ''}`} />
             <FilaDato etiqueta="Producto" valor={producto} />
             <FilaDato etiqueta="Tipo" valor={tipoProducto} />
             <FilaDato etiqueta="Codigo / IMEI" valor={codigo || 'No aplica (sin unidad individual)'} destacado={!!codigo} />
@@ -84,7 +92,6 @@ export default function CargoDescargoDetalle({ registro, tipoDocumento, onVolver
             ) : (
               <FilaDato etiqueta="Motivo del descargo" valor={registro.motivo || '—'} />
             )}
-            <FilaDato etiqueta="Registrado por" valor={registro.usuario || '—'} />
           </tbody>
         </table>
 
