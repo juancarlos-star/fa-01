@@ -1,10 +1,10 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { guardarYAbrirPDF } from './pdfUtils.js';
+import { guardarYAbrirPDF, guardarAbrirEImprimirPDF } from './pdfUtils.js';
 import { fmt } from './format.js';
 import { agruparItemsPorProducto } from './agruparFacturaItems.js';
 
-export async function generarFacturaPDF(factura, items) {
+export async function generarFacturaPDF(factura, items, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter' });
 
   doc.setFont('helvetica', 'bold');
@@ -83,5 +83,9 @@ export async function generarFacturaPDF(factura, items) {
   doc.setFont('helvetica', 'bold');
   doc.text(fmt(factura.total_usd), 195, finalY + 15, { align: 'right' });
 
-  await guardarYAbrirPDF(doc, `Factura-${factura.numero_factura || factura.id}`, 'Facturas');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Factura-${factura.numero_factura || factura.id}`, 'Facturas');
+  } else {
+    await guardarYAbrirPDF(doc, `Factura-${factura.numero_factura || factura.id}`, 'Facturas');
+  }
 }
