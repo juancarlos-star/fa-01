@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { fmt } from '../utils/format.js';
 
@@ -13,19 +13,32 @@ async function avisar(mensaje) {
   await window.api.focusVentana();
 }
 
-const TIPOS = [
-  { key: 'equipo', label: 'Equipos (IMEI)' },
-  { key: 'simcard', label: 'SIM Cards' },
-  { key: 'usim', label: 'USIM' },
-  { key: 'accesorio', label: 'Accesorios' }
+// Las 3 primeras son pestañas fijas del sistema (manejan codigos/IMEI por unidad).
+// El resto de las pestañas se generan dinamicamente: una por cada categoria creada en
+// "Gestion de categorias" (todas de tipo 'accesorio'), y se comportan igual que Accesorios.
+const TABS_FIJAS = [
+  { id: 'equipo', tipo: 'equipo', categoria: null, label: 'Equipos (IMEI)' },
+  { id: 'simcard', tipo: 'simcard', categoria: null, label: 'SIM Cards' },
+  { id: 'usim', tipo: 'usim', categoria: null, label: 'USIM' }
 ];
 
+function labelEstadoUnidad(u) {
+  // Solo los items que entraron por el modulo de Compras muestran "Disponible". Los que
+  // entraron manualmente por Cargos y Descargos muestran "Cargado" (pero igual son
+  // facturables, ya que a nivel interno siguen con estado 'disponible'). Al darlos de baja
+  // desde Cargos y Descargos se muestran como "Descargado".
+  if (u.estado === 'de_baja') return 'Descargado';
+  if (u.estado === 'disponible') return u.compra_encabezado_id ? 'Disponible' : 'Cargado';
+  return u.estado;
+}
+
 export default function Inventario({ currentUser }) {
-  const [tab, setTab] = useState('equipo');
+  const [tabId, setTabId] = useState('equipo');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const [busqueda, setBusqueda] = useState('');
 
   const [categorias, setCategorias] = useState([]);
   const [nombresSugeridos, setNombresSugeridos] = useState([]);
@@ -41,18 +54,29 @@ export default function Inventario({ currentUser }) {
     precio: '',
     stock_minimo: '',
     codigo_barras: '',
-    stock_cantidad: '',
     costo_inicial: ''
   });
 
   const esAdmin = currentUser?.role === 'administrador';
 
+  const tabsDinamicas = useMemo(
+    () =>
+      categorias
+        .filter((c) => c.tipo === 'accesorio')
+        .map((c) => ({ id: `cat-${c.id}`, tipo: 'accesorio', categoria: c.nombre, label: c.nombre })),
+    [categorias]
+  );
+
+  const tabs = useMemo(() => [...TABS_FIJAS, ...tabsDinamicas], [tabsDinamicas]);
+  const tab = tabs.find((t) => t.id === tabId) || TABS_FIJAS[0];
+  const esAccesorio = tab.tipo === 'accesorio';
+
   const cargarProductos = useCallback(async () => {
     setLoading(true);
-    const data = await window.api.listProducts(tab);
+    const data = await window.api.listProducts(tab.tipo, tab.categoria);
     setProducts(data);
     setLoading(false);
-  }, [tab]);
+  }, [tab.tipo, tab.categoria]);
 
   const cargarCategorias = useCallback(async () => {
     const data = await window.api.listCategories();
@@ -60,27 +84,31 @@ export default function Inventario({ currentUser }) {
   }, []);
 
   const cargarNombresSugeridos = useCallback(async () => {
-    const data = await window.api.listProductNames(tab);
+    const data = await window.api.listProductNames(tab.tipo, tab.categoria);
     setNombresSugeridos(data);
-  }, [tab]);
+  }, [tab.tipo, tab.categoria]);
 
   useEffect(() => {
     cargarProductos();
     cargarNombresSugeridos();
     setExpandedId(null);
     setEditandoCostoId(null);
-  }, [tab, cargarProductos, cargarNombresSugeridos]);
+    setBusqueda('');
+  }, [tab.id, cargarProductos, cargarNombresSugeridos]);
 
-  const categoriasDelTipo = categorias.filter((c) => c.tipo === tab);
+  const categoriasDelTipo = categorias.filter((c) => c.tipo === tab.tipo);
 
   useEffect(() => {
-    if (categoriasDelTipo.length === 1) {
+    if (esAccesorio) {
+      // En las pestañas dinamicas la categoria ya esta implicita en la pestaña misma.
+      setForm((f) => ({ ...f, categoria: tab.categoria || '' }));
+    } else if (categoriasDelTipo.length === 1) {
       setForm((f) => ({ ...f, categoria: categoriasDelTipo[0].nombre }));
     } else {
       setForm((f) => ({ ...f, categoria: '' }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, categorias]);
+  }, [tab.id, categorias]);
 
   useEffect(() => {
     cargarCategorias();
@@ -93,18 +121,13 @@ export default function Inventario({ currentUser }) {
       setError('El nombre es obligatorio');
       return;
     }
-    if (tab === 'accesorio' && parseInt(form.stock_cantidad, 10) > 0 && !form.costo_inicial) {
-      setError('Indica el costo unitario del stock inicial');
-      return;
-    }
     const res = await window.api.createProduct({
-      tipo: tab,
+      tipo: tab.tipo,
       nombre: form.nombre.trim(),
       categoria: form.categoria.trim(),
       precio: parseFloat(form.precio) || 0,
       stock_minimo: parseInt(form.stock_minimo, 10) || 0,
       codigo_barras: form.codigo_barras.trim(),
-      stock_cantidad: parseInt(form.stock_cantidad, 10) || 0,
       costo_inicial: parseFloat(form.costo_inicial) || 0,
       usuario: currentUser?.username
     });
@@ -112,7 +135,7 @@ export default function Inventario({ currentUser }) {
       setError(res.message);
       return;
     }
-    setForm({ nombre: '', categoria: '', precio: '', stock_minimo: '', codigo_barras: '', stock_cantidad: '', costo_inicial: '' });
+    setForm({ nombre: '', categoria: esAccesorio ? tab.categoria || '' : '', precio: '', stock_minimo: '', codigo_barras: '', costo_inicial: '' });
     cargarProductos();
     cargarNombresSugeridos();
   };
@@ -160,20 +183,24 @@ export default function Inventario({ currentUser }) {
     cargarProductos();
   };
 
+  const productosFiltrados = products.filter((p) =>
+    p.nombre.toLowerCase().includes(busqueda.trim().toLowerCase())
+  );
+
   return (
     <div>
       <h1>Inventario</h1>
 
-      <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0' }}>
-        {TIPOS.map((t) => (
+      <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
+        {tabs.map((t) => (
           <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
+            key={t.id}
+            onClick={() => setTabId(t.id)}
             style={{
               padding: '0.5rem 1rem',
-              fontWeight: tab === t.key ? 'bold' : 'normal',
-              backgroundColor: tab === t.key ? '#0b4f9e' : '#e2e8f0',
-              color: tab === t.key ? '#fff' : '#111',
+              fontWeight: tab.id === t.id ? 'bold' : 'normal',
+              backgroundColor: tab.id === t.id ? '#0b4f9e' : '#e2e8f0',
+              color: tab.id === t.id ? '#fff' : '#111',
               border: 'none',
               borderRadius: '4px',
               cursor: 'pointer'
@@ -211,19 +238,21 @@ export default function Inventario({ currentUser }) {
             ))}
           </datalist>
         </div>
-        <div>
-          <label>Categoria</label><br />
-          <select
-            value={form.categoria}
-            onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-            disabled={categoriasDelTipo.length <= 1}
-          >
-            {categoriasDelTipo.length === 0 && <option value="">-- Sin categorias para este tipo --</option>}
-            {categoriasDelTipo.map((c) => (
-              <option key={c.id} value={c.nombre}>{c.nombre}</option>
-            ))}
-          </select>
-        </div>
+        {!esAccesorio && (
+          <div>
+            <label>Categoria</label><br />
+            <select
+              value={form.categoria}
+              onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+              disabled={categoriasDelTipo.length <= 1}
+            >
+              {categoriasDelTipo.length === 0 && <option value="">-- Sin categorias para este tipo --</option>}
+              {categoriasDelTipo.map((c) => (
+                <option key={c.id} value={c.nombre}>{c.nombre}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label>Precio de venta (USD)</label><br />
           <input
@@ -241,21 +270,13 @@ export default function Inventario({ currentUser }) {
             onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })}
           />
         </div>
-        {tab === 'accesorio' && (
+        {esAccesorio && (
           <>
             <div>
               <label>Codigo de barras</label><br />
               <input
                 value={form.codigo_barras}
                 onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
-              />
-            </div>
-            <div>
-              <label>Stock inicial</label><br />
-              <input
-                type="number"
-                value={form.stock_cantidad}
-                onChange={(e) => setForm({ ...form, stock_cantidad: e.target.value })}
               />
             </div>
             <div>
@@ -274,12 +295,31 @@ export default function Inventario({ currentUser }) {
         </button>
       </form>
 
+      {esAccesorio && (
+        <p style={{ color: '#666', fontSize: '0.8rem', marginTop: '-1rem' }}>
+          El stock inicial no se define aqui: toda entrada de stock se registra desde{' '}
+          <strong>Compras</strong> o desde <strong>Cargos y Descargos</strong>.
+        </p>
+      )}
+
       {error && <p style={{ color: 'red' }}>{error}</p>}
+
+      <div style={{ margin: '0.75rem 0' }}>
+        <input
+          type="text"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder={`Buscar por nombre en ${tab.label}...`}
+          style={{ width: '100%', maxWidth: '360px', padding: '0.5rem' }}
+        />
+      </div>
 
       {loading ? (
         <p>Cargando...</p>
       ) : products.length === 0 ? (
         <p>No hay productos registrados en esta categoria.</p>
+      ) : productosFiltrados.length === 0 ? (
+        <p>Ningun producto coincide con "{busqueda}".</p>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
           <thead>
@@ -287,14 +327,14 @@ export default function Inventario({ currentUser }) {
               <th style={{ padding: '0.5rem' }}>Nombre</th>
               <th>Categoria</th>
               <th>Precio venta</th>
-              {tab === 'accesorio' && <th>Cod. barras</th>}
-              {tab === 'accesorio' && esAdmin && <th>Costo prom.</th>}
+              {esAccesorio && <th>Cod. barras</th>}
+              {esAccesorio && esAdmin && <th>Costo prom.</th>}
               <th>Stock</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {products.map((p) => {
+            {productosFiltrados.map((p) => {
               const bajoStock = p.stock_disponible <= p.stock_minimo;
               return (
                 <React.Fragment key={p.id}>
@@ -302,8 +342,8 @@ export default function Inventario({ currentUser }) {
                     <td style={{ padding: '0.5rem' }}>{p.nombre}</td>
                     <td>{p.categoria}</td>
                     <td>${fmt(Number(p.precio))}</td>
-                    {tab === 'accesorio' && <td>{p.codigo_barras}</td>}
-                    {tab === 'accesorio' && esAdmin && (
+                    {esAccesorio && <td>{p.codigo_barras}</td>}
+                    {esAccesorio && esAdmin && (
                       <td>
                         {editandoCostoId === p.id ? (
                           <span style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
@@ -330,7 +370,7 @@ export default function Inventario({ currentUser }) {
                       {p.stock_disponible} {bajoStock && '⚠ stock bajo'}
                     </td>
                     <td style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                      {tab === 'accesorio' ? (
+                      {esAccesorio ? (
                         <span style={{ fontSize: '0.8rem', color: '#666' }}>
                           Ajusta el stock desde Cargos y Descargos
                         </span>
@@ -342,12 +382,12 @@ export default function Inventario({ currentUser }) {
                       <button onClick={() => handleEliminar(p.id)}>Eliminar</button>
                     </td>
                   </tr>
-                  {expandedId === p.id && tab !== 'accesorio' && (
+                  {expandedId === p.id && !esAccesorio && (
                     <tr>
                       <td colSpan={6} style={{ background: '#f8fafc', padding: '0.75rem' }}>
                         <UnidadesProducto
                           productId={p.id}
-                          tipo={tab}
+                          tipo={tab.tipo}
                           currentUser={currentUser}
                         />
                       </td>
@@ -428,8 +468,9 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
     <div>
       <p style={{ color: '#666', fontSize: '0.85rem', marginTop: 0 }}>
         Vista de solo lectura de {label}s. Para agregar se debe hacer por el modulo de{' '}
-        <strong>Compras</strong> o si quiere agregar manualmente o dar de baja unidades, usa el modulo{' '}
-        <strong>Cargos y Descargos</strong>.
+        <strong>Compras</strong> (queda como "Disponible") o, si quiere agregar manualmente o dar
+        de baja unidades, usa el modulo <strong>Cargos y Descargos</strong> (queda como "Cargado" o
+        "Descargado"; los "Cargado" igual se pueden facturar).
       </p>
 
       {loading ? (
@@ -466,7 +507,7 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
               }}
             >
               <span style={{ wordBreak: 'break-all' }}>
-                {u.codigo} — <em>{u.estado}</em>
+                {u.codigo} — <em>{labelEstadoUnidad(u)}</em>
               </span>
               {esAdmin && (
                 editandoCostoUnitId === u.id ? (
