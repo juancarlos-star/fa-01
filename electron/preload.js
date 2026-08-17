@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld('api', {
   // PDF (facturas y reportes): guarda automaticamente y abre con el visor por defecto
   guardarYAbrirPDF: (nombreArchivo, base64, subcarpeta) =>
     ipcRenderer.invoke('pdf:guardarYAbrir', { nombreArchivo, base64, subcarpeta }),
+  // PDF: guarda, abre e imprime automaticamente (usado por "Imprimir compra" / "Imprimir PDF" de factura)
+  guardarAbrirEImprimirPDF: (nombreArchivo, base64, subcarpeta) =>
+    ipcRenderer.invoke('pdf:guardarAbrirEImprimir', { nombreArchivo, base64, subcarpeta }),
   // Ventana: forzar el foco a nivel de sistema operativo (usado tras dialogos nativos confirm/alert)
   focusVentana: () => ipcRenderer.invoke('window:focus')
 });
