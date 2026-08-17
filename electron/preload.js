@@ -8,13 +8,13 @@ contextBridge.exposeInMainWorld('api', {
   changePassword: (id, newPassword) => ipcRenderer.invoke('users:changePassword', { id, newPassword }),
   // Categorias
   listCategories: () => ipcRenderer.invoke('categories:list'),
-  createCategory: (nombre, tipo) => ipcRenderer.invoke('categories:create', { nombre, tipo }),
+  createCategory: (nombre) => ipcRenderer.invoke('categories:create', { nombre }),
   updateCategory: (id, nombre) => ipcRenderer.invoke('categories:update', { id, nombre }),
   deleteCategory: (id) => ipcRenderer.invoke('categories:delete', { id }),
   getCategoryImpact: (id) => ipcRenderer.invoke('categories:impacto', { id }),
   // Inventario - productos
-  listProducts: (tipo) => ipcRenderer.invoke('products:list', { tipo }),
-  listProductNames: (tipo) => ipcRenderer.invoke('products:names', { tipo }),
+  listProducts: (tipo, categoria) => ipcRenderer.invoke('products:list', { tipo, categoria }),
+  listProductNames: (tipo, categoria) => ipcRenderer.invoke('products:names', { tipo, categoria }),
   createProduct: (data) => ipcRenderer.invoke('products:create', data),
   deleteProduct: (id) => ipcRenderer.invoke('products:delete', { id }),
   addProductStock: (id, cantidad, costoUnitario, usuario) =>

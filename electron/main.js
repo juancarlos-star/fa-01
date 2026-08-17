@@ -203,12 +203,15 @@ ipcMain.handle('categories:list', () => {
   return db.prepare('SELECT * FROM categorias ORDER BY tipo, nombre').all();
 });
 
-ipcMain.handle('categories:create', (event, { nombre, tipo }) => {
+ipcMain.handle('categories:create', (event, { nombre }) => {
   const db = getDb();
   const limpio = (nombre || '').trim();
   if (!limpio) return { ok: false, message: 'El nombre de la categoria no puede estar vacio' };
-  const tiposValidos = ['equipo', 'simcard', 'usim', 'accesorio'];
-  if (!tiposValidos.includes(tipo)) return { ok: false, message: 'Debes indicar a que tipo pertenece esta categoria' };
+  // Toda categoria creada desde Gestion de categorias se comporta igual que "Accesorios":
+  // aparece automaticamente como una pestaña nueva en Inventario (Nombre, Precio de venta,
+  // Stock minimo, Codigo de barras, Costo unitario de compra; sin stock inicial). Los tipos
+  // especiales (equipo/simcard/usim, con IMEI/codigo) son fijos y no se crean desde aqui.
+  const tipo = 'accesorio';
   const exists = db.prepare('SELECT id FROM categorias WHERE LOWER(nombre) = LOWER(?)').get(limpio);
   if (exists) return { ok: false, message: 'Esa categoria ya existe' };
   db.prepare("INSERT INTO categorias (nombre, tipo, created_at) VALUES (?, ?, datetime('now','localtime'))").run(limpio, tipo);
@@ -314,11 +317,18 @@ ipcMain.handle('categories:delete', (event, { id }) => {
 });
 
 // ---------- IPC: Inventario - productos ----------
-ipcMain.handle('products:list', (event, { tipo } = {}) => {
+ipcMain.handle('products:list', (event, { tipo, categoria } = {}) => {
   const db = getDb();
-  const rows = tipo
-    ? db.prepare('SELECT * FROM products WHERE tipo = ? ORDER BY nombre').all(tipo)
-    : db.prepare('SELECT * FROM products ORDER BY tipo, nombre').all();
+  let rows;
+  if (tipo && categoria) {
+    // Filtrado por categoria: usado en Inventario, donde cada categoria (tipo 'accesorio')
+    // es su propia pestaña y solo debe mostrar sus propios productos.
+    rows = db.prepare('SELECT * FROM products WHERE tipo = ? AND categoria = ? ORDER BY nombre').all(tipo, categoria);
+  } else if (tipo) {
+    rows = db.prepare('SELECT * FROM products WHERE tipo = ? ORDER BY nombre').all(tipo);
+  } else {
+    rows = db.prepare('SELECT * FROM products ORDER BY tipo, nombre').all();
+  }
   const countStmt = db.prepare(
     "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'"
   );
@@ -329,17 +339,22 @@ ipcMain.handle('products:list', (event, { tipo } = {}) => {
   });
 });
 
-ipcMain.handle('products:names', (event, { tipo } = {}) => {
+ipcMain.handle('products:names', (event, { tipo, categoria } = {}) => {
   const db = getDb();
-  const rows = tipo
-    ? db.prepare('SELECT DISTINCT nombre FROM products WHERE tipo = ? ORDER BY nombre').all(tipo)
-    : db.prepare('SELECT DISTINCT nombre FROM products ORDER BY nombre').all();
+  let rows;
+  if (tipo && categoria) {
+    rows = db.prepare('SELECT DISTINCT nombre FROM products WHERE tipo = ? AND categoria = ? ORDER BY nombre').all(tipo, categoria);
+  } else if (tipo) {
+    rows = db.prepare('SELECT DISTINCT nombre FROM products WHERE tipo = ? ORDER BY nombre').all(tipo);
+  } else {
+    rows = db.prepare('SELECT DISTINCT nombre FROM products ORDER BY nombre').all();
+  }
   return rows.map((r) => r.nombre);
 });
 
 ipcMain.handle('products:create', (event, data) => {
   const db = getDb();
-  const { tipo, nombre, categoria, precio, stock_minimo, codigo_barras, stock_cantidad, costo_inicial, usuario } = data;
+  const { tipo, nombre, categoria, precio, stock_minimo, codigo_barras, costo_inicial } = data;
   if (!tipo || !nombre) return { ok: false, message: 'Tipo y nombre son obligatorios' };
 
   if (categoria && categoria.trim()) {
@@ -349,28 +364,23 @@ ipcMain.handle('products:create', (event, data) => {
     }
   }
 
-  const stockInicial = tipo === 'accesorio' ? (parseInt(stock_cantidad, 10) || 0) : 0;
+  // Ya no se admite "stock inicial" al crear el producto: todo el stock debe entrar por el
+  // modulo de Compras o por Cargos y Descargos, para que quede su registro correspondiente.
+  // El costo indicado aqui solo se guarda como costo promedio de referencia inicial (en 0 stock).
   const costo = parseFloat(costo_inicial) || 0;
 
   const info = db
     .prepare(
       `INSERT INTO products (tipo, nombre, categoria, precio, stock_minimo, stock_cantidad, costo_promedio_usd, codigo_barras, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, datetime('now','localtime'))`
     )
     .run(
       tipo, nombre, categoria || '', precio || 0, stock_minimo || 0,
-      stockInicial, costo,
+      costo,
       tipo === 'accesorio' ? (codigo_barras || '') : null
     );
 
   const productId = info.lastInsertRowid;
-
-  if (tipo === 'accesorio' && stockInicial > 0) {
-    db.prepare(
-      `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
-    ).run(productId, tipo, nombre, costo, stockInicial, costo * stockInicial, usuario || '');
-  }
 
   return { ok: true, id: productId };
 });
