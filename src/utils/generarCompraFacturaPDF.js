@@ -1,11 +1,11 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { guardarYAbrirPDF } from './pdfUtils.js';
+import { guardarYAbrirPDF, guardarAbrirEImprimirPDF } from './pdfUtils.js';
 import { fmt } from './format.js';
 
 const IVA_TASA = 0.16;
 
-export async function generarCompraFacturaPDF(encabezado, items, settings) {
+export async function generarCompraFacturaPDF(encabezado, items, settings, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter' });
 
   if (settings?.nombre_tienda) {
@@ -112,5 +112,9 @@ export async function generarCompraFacturaPDF(encabezado, items, settings) {
   doc.setFontSize(11);
   doc.text(`$${fmt(subtotal)}`, 195, y + 16, { align: 'right' });
 
-  await guardarYAbrirPDF(doc, `Compra-${encabezado.id}`, 'Compras');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Compra-${encabezado.id}`, 'Compras');
+  } else {
+    await guardarYAbrirPDF(doc, `Compra-${encabezado.id}`, 'Compras');
+  }
 }
