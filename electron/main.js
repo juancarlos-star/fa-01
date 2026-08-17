@@ -58,16 +58,68 @@ ipcMain.handle('window:focus', () => {
   return { ok: true };
 });
 
+// ---------- Utilidad: guardar un PDF en disco sin fallar si el archivo ya esta abierto ----------
+// Si el mismo archivo ya esta abierto en un visor de PDF (Windows lo deja bloqueado, error
+// EBUSY/EPERM/EACCES), en vez de mostrar un error se guarda con un sufijo " (1)", " (2)", etc.
+// para no perder el documento ni interrumpir al usuario.
+function guardarPdfEvitandoBloqueo(carpetaBase, nombreFinal, buffer) {
+  const ext = path.extname(nombreFinal);
+  const base = nombreFinal.slice(0, nombreFinal.length - ext.length);
+  let nombreActual = nombreFinal;
+  let intento = 0;
+  while (true) {
+    const filePath = path.join(carpetaBase, nombreActual);
+    try {
+      fs.writeFileSync(filePath, buffer);
+      return filePath;
+    } catch (err) {
+      const archivoBloqueado = err && (err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES');
+      if (!archivoBloqueado || intento >= 20) throw err;
+      intento += 1;
+      nombreActual = `${base} (${intento})${ext}`;
+    }
+  }
+}
+
+function prepararGuardadoPDF(nombreArchivo, base64, subcarpeta) {
+  const carpetaBase = path.join(app.getPath('documents'), 'Facturacion Movistar', subcarpeta || 'PDFs');
+  if (!fs.existsSync(carpetaBase)) fs.mkdirSync(carpetaBase, { recursive: true });
+  const nombreSeguro = String(nombreArchivo || 'documento').replace(/[\\/:*?"<>|]/g, '-');
+  const nombreFinal = nombreSeguro.toLowerCase().endsWith('.pdf') ? nombreSeguro : `${nombreSeguro}.pdf`;
+  const buffer = Buffer.from(base64, 'base64');
+  return guardarPdfEvitandoBloqueo(carpetaBase, nombreFinal, buffer);
+}
+
+// ---------- Utilidad: imprimir un PDF automaticamente en segundo plano ----------
+// Abre el PDF en una ventana oculta (usando el visor de PDF integrado de Chromium) y lo manda
+// directo a la impresora predeterminada del sistema apenas termina de cargar, SIN mostrar el
+// dialogo de impresion de Windows (impresion 100% silenciosa, sin que el usuario tenga que
+// confirmar nada).
+function imprimirPdfEnSegundoPlano(filePath) {
+  return new Promise((resolve) => {
+    const ventanaImpresion = new BrowserWindow({
+      show: false,
+      webPreferences: { plugins: true }
+    });
+
+    const finalizar = () => {
+      if (!ventanaImpresion.isDestroyed()) ventanaImpresion.close();
+      resolve();
+    };
+
+    ventanaImpresion.webContents.on('did-finish-load', () => {
+      ventanaImpresion.webContents.print({ silent: true, printBackground: true }, () => finalizar());
+    });
+    ventanaImpresion.webContents.on('did-fail-load', () => finalizar());
+
+    ventanaImpresion.loadFile(filePath).catch(() => finalizar());
+  });
+}
+
 // ---------- IPC: Guardar y abrir automaticamente un PDF (facturas y reportes) ----------
 ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subcarpeta }) => {
   try {
-    const carpetaBase = path.join(app.getPath('documents'), 'Facturacion Movistar', subcarpeta || 'PDFs');
-    if (!fs.existsSync(carpetaBase)) fs.mkdirSync(carpetaBase, { recursive: true });
-    const nombreSeguro = String(nombreArchivo || 'documento').replace(/[\\/:*?"<>|]/g, '-');
-    const nombreFinal = nombreSeguro.toLowerCase().endsWith('.pdf') ? nombreSeguro : `${nombreSeguro}.pdf`;
-    const filePath = path.join(carpetaBase, nombreFinal);
-    const buffer = Buffer.from(base64, 'base64');
-    fs.writeFileSync(filePath, buffer);
+    const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
     const errorAlAbrir = await shell.openPath(filePath);
     if (errorAlAbrir) {
       return { ok: true, path: filePath, avisoApertura: errorAlAbrir };
@@ -75,6 +127,22 @@ ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subca
     return { ok: true, path: filePath };
   } catch (err) {
     console.error('Error guardando PDF', err);
+    return { ok: false, message: 'Error guardando el PDF: ' + (err?.message || String(err)) };
+  }
+});
+
+// ---------- IPC: Guardar, abrir e imprimir automaticamente un PDF (compras y facturas) ----------
+ipcMain.handle('pdf:guardarAbrirEImprimir', async (event, { nombreArchivo, base64, subcarpeta }) => {
+  try {
+    const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
+    const errorAlAbrir = await shell.openPath(filePath);
+    await imprimirPdfEnSegundoPlano(filePath);
+    if (errorAlAbrir) {
+      return { ok: true, path: filePath, avisoApertura: errorAlAbrir };
+    }
+    return { ok: true, path: filePath };
+  } catch (err) {
+    console.error('Error guardando/imprimiendo PDF', err);
     return { ok: false, message: 'Error guardando el PDF: ' + (err?.message || String(err)) };
   }
 });
