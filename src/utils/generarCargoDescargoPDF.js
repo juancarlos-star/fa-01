@@ -31,19 +31,28 @@ export async function generarCargoDescargoPDF(registro, tipoDocumento, settings,
   doc.text(`N°: ${prefijo}-${String(numeroDocumento).padStart(5, '0')}`, 200, 21, { align: 'right' });
   doc.setTextColor(0, 0, 0);
 
-  doc.setDrawColor(...colorAcento);
-  doc.setLineWidth(0.6);
-  doc.line(10, 25, 200, 25);
-
   const [fechaParte, horaParte] = (registro.created_at || '').split(' ');
   const fecha = (fechaParte || '').split('-').reverse().join('/');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Fecha: ${fecha}${horaParte ? '  ' + horaParte : ''}`, 200, 26, { align: 'right' });
+
+  doc.setDrawColor(...colorAcento);
+  doc.setLineWidth(0.6);
+  doc.line(10, 29, 200, 29);
+
+  // Usuario que realizo la operacion, siempre visible justo debajo del encabezado.
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Realizado por:', 10, 35);
+  doc.setFont('helvetica', 'normal');
+  doc.text(registro.usuario || 'No especificado', 40, 35);
 
   const producto = registro.producto_nombre || registro.descripcion || '—';
   const tipoProducto = registro.tipo || registro.producto_tipo || '—';
   const codigo = registro.unidad_codigo || 'No aplica (sin unidad individual)';
 
   const filas = [
-    ['Fecha', `${fecha}${horaParte ? '  ' + horaParte : ''}`],
     ['Producto', producto],
     ['Tipo', tipoProducto],
     ['Codigo / IMEI', codigo],
@@ -56,9 +65,8 @@ export async function generarCargoDescargoPDF(registro, tipoDocumento, settings,
   } else {
     filas.push(['Motivo del descargo', registro.motivo || '—']);
   }
-  filas.push(['Registrado por', registro.usuario || '—']);
 
-  let y = 36;
+  let y = 45;
   doc.setFontSize(10);
   filas.forEach(([etiqueta, valor]) => {
     doc.setFont('helvetica', 'bold');
