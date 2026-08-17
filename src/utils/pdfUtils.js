@@ -27,6 +27,23 @@ export async function guardarYAbrirPDF(doc, nombreArchivo, subcarpeta) {
   }
 }
 
+// Igual que guardarYAbrirPDF, pero ademas dispara la impresion automaticamente (sin que el
+// usuario tenga que abrir el archivo manualmente y buscar la opcion de imprimir).
+export async function guardarAbrirEImprimirPDF(doc, nombreArchivo, subcarpeta) {
+  try {
+    const arrayBuffer = doc.output('arraybuffer');
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    const res = await window.api.guardarAbrirEImprimirPDF(nombreArchivo, base64, subcarpeta);
+    if (!res.ok) {
+      alert(res.message || 'No se pudo guardar el PDF');
+    }
+    return res;
+  } catch (err) {
+    alert('Error generando el PDF: ' + (err?.message || String(err)));
+    return { ok: false };
+  }
+}
+
 export function fechaParaNombreArchivo() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
