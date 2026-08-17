@@ -269,9 +269,16 @@ export default function Facturacion({ currentUser }) {
     }
   };
 
-  const handleImprimir = () => {
+  const [imprimiendoFactura, setImprimiendoFactura] = useState(false);
+
+  const handleImprimir = async () => {
     if (!confirmacion?.detalle) return;
-    generarFacturaPDF(confirmacion.detalle.factura, confirmacion.detalle.items);
+    setImprimiendoFactura(true);
+    try {
+      await generarFacturaPDF(confirmacion.detalle.factura, confirmacion.detalle.items, { imprimir: true });
+    } finally {
+      setImprimiendoFactura(false);
+    }
   };
 
   if (confirmacion) {
@@ -281,7 +288,9 @@ export default function Facturacion({ currentUser }) {
         <div className="form-box" style={{ maxWidth: '400px' }}>
           <p><strong>N° de factura:</strong> {confirmacion.numero}</p>
           <p><strong>Total:</strong> ${fmt(confirmacion.totalUsd)} USD (Bs {fmt(confirmacion.totalBs)})</p>
-          <button onClick={handleImprimir} style={{ marginRight: '8px' }}>Imprimir PDF</button>
+          <button onClick={handleImprimir} disabled={imprimiendoFactura} style={{ marginRight: '8px' }}>
+            {imprimiendoFactura ? 'Imprimiendo...' : 'Imprimir PDF'}
+          </button>
           <button onClick={() => setConfirmacion(null)}>Hacer otra factura</button>
         </div>
       </div>

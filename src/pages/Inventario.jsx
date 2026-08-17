@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { fmt } from '../utils/format.js';
+
+// Los dialogos nativos (alert/confirm) le quitan la activacion de la ventana a Windows a nivel
+// de sistema operativo y no siempre se recupera solos; eso es lo que causaba que, luego de usar
+// "Ver unidades"/"Eliminar" (o de editar un costo), los campos del formulario (Nombre, Precio de
+// venta, Stock minimo, +Crear producto) se vieran habilitados pero no aceptaran texto ni clicks.
+// Se reemplaza window.confirm por el modal propio ConfirmDialog (nunca sale de la ventana), y tras
+// cualquier alert() se le pide al proceso principal que reponga el foco de forma confiable.
+async function avisar(mensaje) {
+  alert(mensaje);
+  await window.api.focusVentana();
+}
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
@@ -20,6 +32,8 @@ export default function Inventario({ currentUser }) {
 
   const [editandoCostoId, setEditandoCostoId] = useState(null);
   const [nuevoCostoValor, setNuevoCostoValor] = useState('');
+
+  const [productoAEliminar, setProductoAEliminar] = useState(null);
 
   const [form, setForm] = useState({
     nombre: '',
@@ -103,11 +117,16 @@ export default function Inventario({ currentUser }) {
     cargarNombresSugeridos();
   };
 
-  const handleEliminar = async (id) => {
-    if (!window.confirm('Eliminar este producto?')) return;
+  const handleEliminar = (id) => {
+    setProductoAEliminar(id);
+  };
+
+  const ejecutarEliminar = async () => {
+    const id = productoAEliminar;
+    setProductoAEliminar(null);
     const res = await window.api.deleteProduct(id);
     if (!res.ok) {
-      alert(res.message);
+      await avisar(res.message);
       return;
     }
     cargarProductos();
@@ -128,12 +147,12 @@ export default function Inventario({ currentUser }) {
   const guardarEdicionCosto = async (id) => {
     const costo = parseFloat(nuevoCostoValor);
     if (isNaN(costo) || costo < 0) {
-      alert('Costo invalido');
+      await avisar('Costo invalido');
       return;
     }
     const res = await window.api.updateProductCosto(id, costo);
     if (!res.ok) {
-      alert(res.message);
+      await avisar(res.message);
       return;
     }
     setEditandoCostoId(null);
@@ -340,6 +359,15 @@ export default function Inventario({ currentUser }) {
           </tbody>
         </table>
       )}
+
+      {productoAEliminar !== null && (
+        <ConfirmDialog
+          message="¿Seguro que deseas eliminar este producto?"
+          confirmLabel="Si, eliminar"
+          onConfirm={ejecutarEliminar}
+          onCancel={() => setProductoAEliminar(null)}
+        />
+      )}
     </div>
   );
 }
@@ -380,11 +408,13 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
     const costo = parseFloat(nuevoCostoUnitValor);
     if (isNaN(costo) || costo < 0) {
       alert('Costo invalido');
+      await window.api.focusVentana();
       return;
     }
     const res = await window.api.updateUnitCosto(id, costo);
     if (!res.ok) {
       alert(res.message);
+      await window.api.focusVentana();
       return;
     }
     setEditandoCostoUnitId(null);

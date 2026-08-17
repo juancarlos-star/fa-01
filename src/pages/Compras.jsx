@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { fmt } from '../utils/format.js';
+import { generarCompraFacturaPDF } from '../utils/generarCompraFacturaPDF.js';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
@@ -42,6 +43,8 @@ export default function Compras({ currentUser }) {
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
+  const [imprimiendoCompra, setImprimiendoCompra] = useState(false);
+  const [errorImprimirCompra, setErrorImprimirCompra] = useState('');
   // Confirmacion propia (sin dialogo nativo): { tipo: 'quitarCodigo'|'eliminarTodos'|'quitarCarrito'|'cantidadIncompleta', index?, key?, accion? }
   const [confirmando, setConfirmando] = useState(null);
 
@@ -308,6 +311,25 @@ export default function Compras({ currentUser }) {
     }
   };
 
+  const handleImprimirCompra = async () => {
+    if (!confirmacion?.encabezadoId) return;
+    setErrorImprimirCompra('');
+    setImprimiendoCompra(true);
+    try {
+      const [detalle, settings] = await Promise.all([
+        window.api.detalleCompraEncabezado(confirmacion.encabezadoId),
+        window.api.getSettings()
+      ]);
+      if (!detalle.ok) {
+        setErrorImprimirCompra(detalle.message || 'No se pudo obtener el detalle de la compra');
+        return;
+      }
+      await generarCompraFacturaPDF(detalle.encabezado, detalle.items, settings, { imprimir: true });
+    } finally {
+      setImprimiendoCompra(false);
+    }
+  };
+
   if (confirmacion) {
     return (
       <div>
@@ -318,6 +340,10 @@ export default function Compras({ currentUser }) {
           <p style={{ color: '#666', fontSize: '0.85rem' }}>
             Consulta el historial completo de compras en Reportes.
           </p>
+          {errorImprimirCompra && <p style={{ color: 'red' }}>{errorImprimirCompra}</p>}
+          <button onClick={handleImprimirCompra} disabled={imprimiendoCompra} style={{ marginRight: '8px' }}>
+            {imprimiendoCompra ? 'Imprimiendo...' : 'Imprimir compra'}
+          </button>
           <button onClick={() => setConfirmacion(null)}>Registrar otra compra</button>
         </div>
       </div>
