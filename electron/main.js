@@ -4,6 +4,25 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { getDb, initDb, cerrarDb, getDbPath } = require('./db');
 
+// Envoltorio de seguridad para TODOS los canales IPC: si un handler lanza una excepcion no
+// controlada (por ejemplo, por un desajuste de esquema en la base de datos), electron rechaza
+// la promesa en el renderer. Cuando esa promesa no tiene un .catch(), el error se pierde en
+// silencio: el usuario ve que "no pasa nada" al presionar un boton (sin mensaje de error), que
+// es exactamente lo que se reporto con "Crear usuario". Con este envoltorio, cualquier error
+// inesperado se registra en consola y se devuelve como { ok:false, message } para que la
+// pantalla pueda mostrarlo.
+const _ipcHandle = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (canal, listener) => {
+  _ipcHandle(canal, async (event, ...args) => {
+    try {
+      return await listener(event, ...args);
+    } catch (err) {
+      console.error(`Error inesperado en el canal IPC "${canal}":`, err);
+      return { ok: false, message: 'Error inesperado: ' + (err && err.message ? err.message : String(err)) };
+    }
+  });
+};
+
 let mainWindow;
 
 function createWindow() {
@@ -172,12 +191,42 @@ ipcMain.handle('users:list', () => {
 
 ipcMain.handle('users:create', (event, { username, password, full_name, role }) => {
   const db = getDb();
-  const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  const usuarioLimpio = (username || '').trim();
+  const nombreLimpio = (full_name || '').trim();
+  if (!usuarioLimpio || !nombreLimpio || !password) return { ok: false, message: 'Completa todos los campos' };
+  if (!['administrador', 'vendedor'].includes(role)) return { ok: false, message: 'Rol invalido' };
+  const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(usuarioLimpio);
   if (exists) return { ok: false, message: 'Ese nombre de usuario ya existe' };
   const hash = bcrypt.hashSync(password, 10);
   db.prepare(
-    'INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime("now"))'
-  ).run(username, hash, full_name, role);
+    'INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime("now","localtime"))'
+  ).run(usuarioLimpio, hash, nombreLimpio, role);
+  return { ok: true };
+});
+
+// Permite editar nombre completo, usuario, rol y (opcionalmente) la contrasena de un usuario
+// ya existente. Si newPassword viene vacio o no se envia, la contrasena actual no se toca.
+ipcMain.handle('users:update', (event, { id, username, full_name, role, newPassword }) => {
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  if (!user) return { ok: false, message: 'Usuario no encontrado' };
+
+  const usuarioLimpio = (username || '').trim();
+  const nombreLimpio = (full_name || '').trim();
+  if (!usuarioLimpio || !nombreLimpio) return { ok: false, message: 'El nombre y el usuario no pueden estar vacios' };
+  if (!['administrador', 'vendedor'].includes(role)) return { ok: false, message: 'Rol invalido' };
+
+  const duplicado = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(usuarioLimpio, id);
+  if (duplicado) return { ok: false, message: 'Ese nombre de usuario ya esta en uso por otro usuario' };
+
+  if (newPassword && newPassword.trim()) {
+    const hash = bcrypt.hashSync(newPassword.trim(), 10);
+    db.prepare('UPDATE users SET username = ?, full_name = ?, role = ?, password_hash = ? WHERE id = ?')
+      .run(usuarioLimpio, nombreLimpio, role, hash, id);
+  } else {
+    db.prepare('UPDATE users SET username = ?, full_name = ?, role = ? WHERE id = ?')
+      .run(usuarioLimpio, nombreLimpio, role, id);
+  }
   return { ok: true };
 });
 
@@ -383,6 +432,46 @@ ipcMain.handle('products:create', (event, data) => {
   const productId = info.lastInsertRowid;
 
   return { ok: true, id: productId };
+});
+
+// Permite editar nombre, categoria, precio, stock minimo y (para accesorios) el codigo de
+// barras de un producto ya existente, desde la propia pantalla de Inventario.
+ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, stock_minimo, codigo_barras }) => {
+  const db = getDb();
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+  if (!product) return { ok: false, message: 'Producto no encontrado' };
+
+  const nombreLimpio = (nombre || '').trim();
+  if (!nombreLimpio) return { ok: false, message: 'El nombre es obligatorio' };
+
+  const categoriaLimpia = (categoria || '').trim();
+  if (categoriaLimpia) {
+    const cat = db.prepare('SELECT tipo FROM categorias WHERE nombre = ?').get(categoriaLimpia);
+    if (!cat || cat.tipo !== product.tipo) {
+      return { ok: false, message: `La categoria "${categoriaLimpia}" no corresponde a este tipo de producto` };
+    }
+  }
+
+  const precioNum = parseFloat(precio);
+  if (isNaN(precioNum) || precioNum < 0) return { ok: false, message: 'Precio invalido' };
+
+  const stockMinNum = parseInt(stock_minimo, 10);
+  if (isNaN(stockMinNum) || stockMinNum < 0) return { ok: false, message: 'Stock minimo invalido' };
+
+  let codigoBarras = product.codigo_barras;
+  if (product.tipo === 'accesorio') {
+    codigoBarras = (codigo_barras || '').trim();
+    if (codigoBarras) {
+      const existente = db.prepare('SELECT id FROM products WHERE codigo_barras = ? AND id != ?').get(codigoBarras, id);
+      if (existente) return { ok: false, message: 'Ese codigo de barras ya esta asignado a otro producto' };
+    }
+  }
+
+  db.prepare(
+    'UPDATE products SET nombre = ?, categoria = ?, precio = ?, stock_minimo = ?, codigo_barras = ? WHERE id = ?'
+  ).run(nombreLimpio, categoriaLimpia, precioNum, stockMinNum, codigoBarras, id);
+
+  return { ok: true };
 });
 
 ipcMain.handle('products:delete', (event, { id }) => {
@@ -661,6 +750,22 @@ ipcMain.handle('units:updateCosto', (event, { id, costoUnitario }) => {
   const costo = parseFloat(costoUnitario);
   if (isNaN(costo) || costo < 0) return { ok: false, message: 'Costo invalido' };
   db.prepare('UPDATE inventory_units SET costo_unitario_usd = ? WHERE id = ?').run(costo, id);
+  return { ok: true };
+});
+
+// Permite editar el codigo (IMEI / ICCID / codigo USIM) de una unidad ya registrada, desde
+// Inventario. No se permite si la unidad ya fue vendida (para no romper la trazabilidad de la
+// factura, que guarda su propia copia del codigo en el momento de la venta).
+ipcMain.handle('units:updateCodigo', (event, { id, codigo }) => {
+  const db = getDb();
+  const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(id);
+  if (!unit) return { ok: false, message: 'No encontrado' };
+  if (unit.estado === 'vendido') return { ok: false, message: 'No se puede editar el codigo de una unidad ya vendida' };
+  const nuevoCodigo = (codigo || '').trim();
+  if (!nuevoCodigo) return { ok: false, message: 'El codigo no puede estar vacio' };
+  const duplicado = db.prepare('SELECT id FROM inventory_units WHERE codigo = ? AND id != ?').get(nuevoCodigo, id);
+  if (duplicado) return { ok: false, message: 'Ese codigo ya esta registrado en otra unidad' };
+  db.prepare('UPDATE inventory_units SET codigo = ? WHERE id = ?').run(nuevoCodigo, id);
   return { ok: true };
 });
 
@@ -1103,9 +1208,12 @@ ipcMain.handle('backup:restaurar', async () => {
 });
 
 // ---------- IPC: verificar si un codigo ya existe en el inventario ----------
-ipcMain.handle('inventario:codigoExiste', (event, { codigo }) => {
+ipcMain.handle('inventario:codigoExiste', (event, { codigo, excludeId }) => {
   const db = getDb();
-  const existe = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get((codigo || '').trim());
+  const c = (codigo || '').trim();
+  const existe = excludeId
+    ? db.prepare('SELECT id FROM inventory_units WHERE codigo = ? AND id != ?').get(c, excludeId)
+    : db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get(c);
   return { existe: !!existe };
 });
 

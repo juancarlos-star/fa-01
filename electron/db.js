@@ -87,6 +87,27 @@ function migrarCategoriasSiHaceFalta(database) {
   }
 }
 
+// La tabla "users" es la unica tabla del sistema que nunca tuvo una funcion de migracion
+// propia. Si la base de datos fue creada por una version anterior de la app cuyo esquema de
+// "users" no tenia exactamente estas columnas, cualquier intento de INSERT (crear usuario)
+// falla con un error de SQLite ("table users has no column named ...") que antes se perdia
+// silenciosamente en el proceso principal: el boton "Crear usuario" no mostraba ningun error
+// y el usuario nunca se creaba ni aparecia en la lista. Esta funcion asegura que las columnas
+// existan, agregandolas con valores por defecto razonables si hace falta.
+function migrarUsersSiHaceFalta(database) {
+  const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
+  if (!existe) return;
+  if (!tieneColumna(database, 'users', 'full_name')) {
+    database.exec("ALTER TABLE users ADD COLUMN full_name TEXT NOT NULL DEFAULT ''");
+  }
+  if (!tieneColumna(database, 'users', 'role')) {
+    database.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'vendedor'");
+  }
+  if (!tieneColumna(database, 'users', 'active')) {
+    database.exec('ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
+  }
+}
+
 function migrarComprasSiHaceFalta(database) {
   const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras'").get();
   if (existe && !tieneColumna(database, 'compras', 'compra_encabezado_id')) {
@@ -239,6 +260,7 @@ function initDb() {
   migrarCostosSiHaceFalta(database);
   migrarCategoriasSiHaceFalta(database);
   migrarComprasSiHaceFalta(database);
+  migrarUsersSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');

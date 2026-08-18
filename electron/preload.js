@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   login: (username, password) => ipcRenderer.invoke('auth:login', { username, password }),
   listUsers: () => ipcRenderer.invoke('users:list'),
   createUser: (data) => ipcRenderer.invoke('users:create', data),
+  updateUser: (id, data) => ipcRenderer.invoke('users:update', { id, ...data }),
   toggleUserActive: (id) => ipcRenderer.invoke('users:toggleActive', { id }),
   changePassword: (id, newPassword) => ipcRenderer.invoke('users:changePassword', { id, newPassword }),
   // Categorias
@@ -16,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   listProducts: (tipo, categoria) => ipcRenderer.invoke('products:list', { tipo, categoria }),
   listProductNames: (tipo, categoria) => ipcRenderer.invoke('products:names', { tipo, categoria }),
   createProduct: (data) => ipcRenderer.invoke('products:create', data),
+  updateProduct: (id, data) => ipcRenderer.invoke('products:update', { id, ...data }),
   deleteProduct: (id) => ipcRenderer.invoke('products:delete', { id }),
   addProductStock: (id, cantidad, costoUnitario, usuario) =>
     ipcRenderer.invoke('products:addStock', { id, cantidad, costoUnitario, usuario }),
@@ -30,6 +32,7 @@ contextBridge.exposeInMainWorld('api', {
   addUnitsBatch: (productId, codigos, costoUnitario, usuario) =>
     ipcRenderer.invoke('units:addBatch', { product_id: productId, codigos, costoUnitario, usuario }),
   deleteUnit: (id) => ipcRenderer.invoke('units:delete', { id }),
+  updateUnitCodigo: (id, codigo) => ipcRenderer.invoke('units:updateCodigo', { id, codigo }),
   writeOffUnit: (id, motivo, usuario) => ipcRenderer.invoke('units:writeOff', { id, motivo, usuario }),
   writeOffUnitsBatch: (ids, motivo, usuario) => ipcRenderer.invoke('units:writeOffBatch', { ids, motivo, usuario }),
   // Historial de descargos
