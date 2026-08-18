@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { fmt } from '../utils/format.js';
 
@@ -53,6 +53,14 @@ export default function Facturacion({ currentUser }) {
     });
   }, [tipoSeleccionado]);
 
+  // Referencia siempre actualizada al carrito, para poder filtrar codigos ya usados sin tener
+  // que agregar "carrito" a las dependencias del efecto de abajo (eso lo haria recargar y
+  // limpiar los codigos pendientes cada vez que se quita o agrega algo al carrito).
+  const carritoRef = useRef(carrito);
+  useEffect(() => {
+    carritoRef.current = carrito;
+  }, [carrito]);
+
   useEffect(() => {
     setCodigoInput('');
     setCodigosPendientes([]);
@@ -61,7 +69,17 @@ export default function Facturacion({ currentUser }) {
     if (p) setPrecioUnitario(p.precio);
     if (tipoSeleccionado !== 'accesorio' && productoId) {
       window.api.listUnits(Number(productoId)).then((data) => {
-        setUnidadesDisponibles(data.filter((u) => u.estado === 'disponible'));
+        // Un codigo/IMEI que ya esta agregado a la factura actual (carrito) no debe volver a
+        // aparecer como "disponible", aunque en la base de datos siga marcado 'disponible'
+        // (todavia no se marca 'vendido' hasta que se emite la factura). Sin este filtro, al
+        // cambiar de producto y volver a seleccionar el mismo, el codigo ya agregado
+        // reaparecia y se podia agregar dos veces a la misma factura.
+        const codigosEnCarrito = new Set(
+          carritoRef.current.filter((i) => i.codigo).map((i) => i.codigo.toLowerCase())
+        );
+        setUnidadesDisponibles(
+          data.filter((u) => u.estado === 'disponible' && !codigosEnCarrito.has(u.codigo.toLowerCase()))
+        );
       });
     }
   }, [productoId, productos, tipoSeleccionado]);
@@ -138,12 +156,22 @@ export default function Facturacion({ currentUser }) {
     setError('');
     const texto = codigoInput.trim();
     if (!texto) return;
-    if (codigosPendientes.some((u) => u.codigo.toLowerCase() === texto.toLowerCase())) {
-      setError('Ese codigo ya fue agregado a la lista');
+    const textoLower = texto.toLowerCase();
+
+    // Verificacion en tiempo real, antes de agregar: el codigo/IMEI no puede repetirse ni con
+    // los que ya estan en la lista de items de la factura (carrito) ni con los que estan por
+    // agregar (codigosPendientes de este mismo producto).
+    if (codigosPendientes.some((u) => u.codigo.toLowerCase() === textoLower)) {
+      setError('Ese codigo ya fue agregado a la lista de items por agregar');
       setCodigoInput('');
       return;
     }
-    const unidad = unidadesDisponibles.find((u) => u.codigo.toLowerCase() === texto.toLowerCase());
+    if (carrito.some((it) => it.codigo && it.codigo.toLowerCase() === textoLower)) {
+      setError('Ese codigo ya esta agregado en la factura');
+      setCodigoInput('');
+      return;
+    }
+    const unidad = unidadesDisponibles.find((u) => u.codigo.toLowerCase() === textoLower);
     if (!unidad) {
       setError('Codigo no encontrado entre las unidades disponibles de este producto');
       return;
@@ -183,6 +211,16 @@ export default function Facturacion({ currentUser }) {
     } else {
       if (codigosPendientes.length === 0) {
         setError('Escanea o escribe al menos un codigo (IMEI/ICCID) antes de agregar');
+        return;
+      }
+      // Ultima verificacion antes de confirmar el "+ Agregar a la factura": por si algun
+      // codigo pendiente quedo repetido con uno ya presente en el carrito.
+      const codigosCarritoActual = new Set(
+        carrito.filter((it) => it.codigo).map((it) => it.codigo.toLowerCase())
+      );
+      const duplicado = codigosPendientes.find((u) => codigosCarritoActual.has(u.codigo.toLowerCase()));
+      if (duplicado) {
+        setError(`El codigo ${duplicado.codigo} ya esta agregado en la factura`);
         return;
       }
       const nuevosItems = codigosPendientes.map((unidad) => ({

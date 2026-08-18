@@ -48,6 +48,14 @@ export default function Inventario({ currentUser }) {
 
   const [productoAEliminar, setProductoAEliminar] = useState(null);
 
+  // ---- Edicion completa de un producto (nombre, categoria, precio, stock minimo, codigo de barras) ----
+  const [editandoProductoId, setEditandoProductoId] = useState(null);
+  const [formEdicionProducto, setFormEdicionProducto] = useState({
+    nombre: '', categoria: '', precio: '', stock_minimo: '', codigo_barras: ''
+  });
+  const [errorEdicionProducto, setErrorEdicionProducto] = useState('');
+  const [guardandoEdicionProducto, setGuardandoEdicionProducto] = useState(false);
+
   const [form, setForm] = useState({
     nombre: '',
     categoria: '',
@@ -181,6 +189,52 @@ export default function Inventario({ currentUser }) {
     setEditandoCostoId(null);
     setNuevoCostoValor('');
     cargarProductos();
+  };
+
+  const abrirEdicionProducto = (p) => {
+    setEditandoProductoId(p.id);
+    setErrorEdicionProducto('');
+    setFormEdicionProducto({
+      nombre: p.nombre || '',
+      categoria: p.categoria || '',
+      precio: String(p.precio ?? ''),
+      stock_minimo: String(p.stock_minimo ?? ''),
+      codigo_barras: p.codigo_barras || ''
+    });
+  };
+
+  const cancelarEdicionProducto = () => {
+    setEditandoProductoId(null);
+    setErrorEdicionProducto('');
+  };
+
+  const guardarEdicionProducto = async (id) => {
+    setErrorEdicionProducto('');
+    if (!formEdicionProducto.nombre.trim()) {
+      setErrorEdicionProducto('El nombre es obligatorio');
+      return;
+    }
+    setGuardandoEdicionProducto(true);
+    try {
+      const res = await window.api.updateProduct(id, {
+        nombre: formEdicionProducto.nombre.trim(),
+        categoria: formEdicionProducto.categoria.trim(),
+        precio: parseFloat(formEdicionProducto.precio) || 0,
+        stock_minimo: parseInt(formEdicionProducto.stock_minimo, 10) || 0,
+        codigo_barras: formEdicionProducto.codigo_barras.trim()
+      });
+      if (!res.ok) {
+        setErrorEdicionProducto(res.message);
+        return;
+      }
+      setEditandoProductoId(null);
+      cargarProductos();
+      cargarNombresSugeridos();
+    } catch (err) {
+      setErrorEdicionProducto('Ocurrio un error inesperado: ' + (err?.message || String(err)));
+    } finally {
+      setGuardandoEdicionProducto(false);
+    }
   };
 
   const productosFiltrados = products.filter((p) =>
@@ -338,6 +392,68 @@ export default function Inventario({ currentUser }) {
               const bajoStock = p.stock_disponible <= p.stock_minimo;
               return (
                 <React.Fragment key={p.id}>
+                  {editandoProductoId === p.id ? (
+                    <tr style={{ borderBottom: '1px solid #eee' }}>
+                      <td colSpan={esAccesorio ? (esAdmin ? 6 : 5) : 5} style={{ background: '#f8fafc', padding: '0.75rem' }}>
+                        {errorEdicionProducto && <p style={{ color: 'red', margin: '0 0 0.5rem' }}>{errorEdicionProducto}</p>}
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                          <div>
+                            <label>Nombre</label><br />
+                            <input
+                              value={formEdicionProducto.nombre}
+                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, nombre: e.target.value })}
+                            />
+                          </div>
+                          {!esAccesorio && (
+                            <div>
+                              <label>Categoria</label><br />
+                              <select
+                                value={formEdicionProducto.categoria}
+                                onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, categoria: e.target.value })}
+                              >
+                                {categoriasDelTipo.length === 0 && <option value="">-- Sin categorias --</option>}
+                                {categoriasDelTipo.map((c) => (
+                                  <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          <div>
+                            <label>Precio de venta (USD)</label><br />
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={formEdicionProducto.precio}
+                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, precio: e.target.value })}
+                              style={{ width: '110px' }}
+                            />
+                          </div>
+                          <div>
+                            <label>Stock minimo</label><br />
+                            <input
+                              type="number"
+                              value={formEdicionProducto.stock_minimo}
+                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, stock_minimo: e.target.value })}
+                              style={{ width: '90px' }}
+                            />
+                          </div>
+                          {esAccesorio && (
+                            <div>
+                              <label>Codigo de barras</label><br />
+                              <input
+                                value={formEdicionProducto.codigo_barras}
+                                onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, codigo_barras: e.target.value })}
+                              />
+                            </div>
+                          )}
+                          <button onClick={() => guardarEdicionProducto(p.id)} disabled={guardandoEdicionProducto}>
+                            {guardandoEdicionProducto ? 'Guardando...' : 'Guardar'}
+                          </button>
+                          <button onClick={cancelarEdicionProducto} disabled={guardandoEdicionProducto}>Cancelar</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
                   <tr style={{ borderBottom: '1px solid #eee' }}>
                     <td style={{ padding: '0.5rem' }}>{p.nombre}</td>
                     <td>{p.categoria}</td>
@@ -379,9 +495,11 @@ export default function Inventario({ currentUser }) {
                           {expandedId === p.id ? 'Ocultar' : 'Ver unidades'}
                         </button>
                       )}
+                      <button onClick={() => abrirEdicionProducto(p)}>Editar</button>
                       <button onClick={() => handleEliminar(p.id)}>Eliminar</button>
                     </td>
                   </tr>
+                  )}
                   {expandedId === p.id && !esAccesorio && (
                     <tr>
                       <td colSpan={6} style={{ background: '#f8fafc', padding: '0.75rem' }}>
@@ -418,6 +536,11 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
 
   const [editandoCostoUnitId, setEditandoCostoUnitId] = useState(null);
   const [nuevoCostoUnitValor, setNuevoCostoUnitValor] = useState('');
+
+  const [editandoCodigoUnitId, setEditandoCodigoUnitId] = useState(null);
+  const [nuevoCodigoUnitValor, setNuevoCodigoUnitValor] = useState('');
+  const [errorCodigoUnit, setErrorCodigoUnit] = useState('');
+  const [guardandoCodigoUnit, setGuardandoCodigoUnit] = useState(false);
 
   const esAdmin = currentUser?.role === 'administrador';
 
@@ -460,6 +583,49 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
     setEditandoCostoUnitId(null);
     setNuevoCostoUnitValor('');
     cargar();
+  };
+
+  const abrirEdicionCodigoUnit = (u) => {
+    setEditandoCodigoUnitId(u.id);
+    setNuevoCodigoUnitValor(u.codigo);
+    setErrorCodigoUnit('');
+  };
+
+  const cancelarEdicionCodigoUnit = () => {
+    setEditandoCodigoUnitId(null);
+    setNuevoCodigoUnitValor('');
+    setErrorCodigoUnit('');
+  };
+
+  const guardarEdicionCodigoUnit = async (id) => {
+    setErrorCodigoUnit('');
+    const nuevoCodigo = nuevoCodigoUnitValor.trim();
+    if (!nuevoCodigo) {
+      setErrorCodigoUnit('El codigo no puede estar vacio');
+      return;
+    }
+    setGuardandoCodigoUnit(true);
+    try {
+      // Verificacion en tiempo real: el codigo/IMEI no debe estar repetido con ninguna otra
+      // unidad ya registrada en el inventario, antes de intentar guardar el cambio.
+      const { existe } = await window.api.codigoExiste({ codigo: nuevoCodigo, excludeId: id });
+      if (existe) {
+        setErrorCodigoUnit('Ese codigo ya esta registrado en otra unidad del inventario');
+        return;
+      }
+      const res = await window.api.updateUnitCodigo(id, nuevoCodigo);
+      if (!res.ok) {
+        setErrorCodigoUnit(res.message);
+        return;
+      }
+      setEditandoCodigoUnitId(null);
+      setNuevoCodigoUnitValor('');
+      cargar();
+    } catch (err) {
+      setErrorCodigoUnit('Ocurrio un error inesperado: ' + (err?.message || String(err)));
+    } finally {
+      setGuardandoCodigoUnit(false);
+    }
   };
 
   const label = tipo === 'equipo' ? 'IMEI' : tipo === 'usim' ? 'Codigo USIM' : 'Codigo SIM (ICCID)';
@@ -506,9 +672,31 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
                 fontSize: '0.85rem'
               }}
             >
-              <span style={{ wordBreak: 'break-all' }}>
-                {u.codigo} — <em>{labelEstadoUnidad(u)}</em>
-              </span>
+              {editandoCodigoUnitId === u.id ? (
+                <span style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                  <input
+                    type="text"
+                    value={nuevoCodigoUnitValor}
+                    onChange={(e) => setNuevoCodigoUnitValor(e.target.value)}
+                    style={{ width: '160px' }}
+                    autoFocus
+                  />
+                  {errorCodigoUnit && <span style={{ color: 'red', fontSize: '0.75rem' }}>{errorCodigoUnit}</span>}
+                  <span>
+                    <button onClick={() => guardarEdicionCodigoUnit(u.id)} disabled={guardandoCodigoUnit} style={{ fontSize: '0.75rem' }}>
+                      {guardandoCodigoUnit ? 'Guardando...' : 'Guardar'}
+                    </button>{' '}
+                    <button onClick={cancelarEdicionCodigoUnit} disabled={guardandoCodigoUnit} style={{ fontSize: '0.75rem' }}>Cancelar</button>
+                  </span>
+                </span>
+              ) : (
+                <span style={{ wordBreak: 'break-all' }}>
+                  {u.codigo} — <em>{labelEstadoUnidad(u)}</em>{' '}
+                  {u.estado !== 'vendido' && (
+                    <button onClick={() => abrirEdicionCodigoUnit(u)} style={{ fontSize: '0.75rem' }}>Editar</button>
+                  )}
+                </span>
+              )}
               {esAdmin && (
                 editandoCostoUnitId === u.id ? (
                   <span style={{ marginTop: '0.2rem' }}>
