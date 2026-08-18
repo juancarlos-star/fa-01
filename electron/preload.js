@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('api', {
   listCompras: (desde, hasta) => ipcRenderer.invoke('compras:list', { desde, hasta }),
   crearCompraLote: (payload) => ipcRenderer.invoke('compras:crearLote', payload),
   codigoExiste: (data) => ipcRenderer.invoke('inventario:codigoExiste', data),
+  buscarPorCodigo: (codigo) => ipcRenderer.invoke('inventario:buscarPorCodigo', { codigo }),
   listComprasEncabezados: () => ipcRenderer.invoke('compras:listEncabezados'),
   detalleCompraEncabezado: (id) => ipcRenderer.invoke('compras:detalleEncabezado', { id }),
   proximoNumeroCompra: () => ipcRenderer.invoke('compras:proximoNumero'),
