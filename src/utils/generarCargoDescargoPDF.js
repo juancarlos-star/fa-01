@@ -187,3 +187,109 @@ export async function generarCargoDescargoLotePDF(registros, tipoDocumento, sett
     await guardarYAbrirPDF(doc, nombreArchivo, 'Cargos y Descargos');
   }
 }
+
+// Genera UN solo PDF consolidado para un DOCUMENTO de cargo o descargo que puede incluir
+// varios productos/tipos distintos a la vez (ej: 4 iPhones + 3 SIM cards + 3 estuches en un
+// mismo procedimiento). A diferencia de generarCargoDescargoLotePDF (pensado para un solo
+// producto repetido muchas veces), aqui cada fila de la tabla muestra tambien a que producto
+// corresponde.
+export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, tipoDocumento, settings, opciones = {}) {
+  if (!registros || registros.length === 0) return;
+  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const esCargo = tipoDocumento === 'cargo';
+  const colorAcento = esCargo ? [2, 122, 72] : [180, 35, 24];
+  const titulo = esCargo ? 'COMPROBANTE DE CARGO DE INVENTARIO' : 'COMPROBANTE DE DESCARGO DE INVENTARIO';
+  const prefijo = esCargo ? 'CAR' : 'DES';
+
+  if (settings?.nombre_tienda) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text(settings.nombre_tienda, 10, 15);
+    if (settings.rif_tienda) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`R.I.F.: ${settings.rif_tienda}`, 10, 20);
+    }
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(...colorAcento);
+  doc.text(titulo, 200, 15, { align: 'right' });
+  doc.setFontSize(10);
+  doc.text(`N°: ${prefijo}-${String(encabezadoId).padStart(5, '0')}`, 200, 21, { align: 'right' });
+  doc.setTextColor(0, 0, 0);
+
+  const primero = registros[0] || {};
+  const [fechaParte, horaParte] = (primero.created_at || '').split(' ');
+  const fecha = (fechaParte || '').split('-').reverse().join('/');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Fecha: ${fecha}${horaParte ? '  ' + horaParte : ''}`, 200, 26, { align: 'right' });
+
+  doc.setDrawColor(...colorAcento);
+  doc.setLineWidth(0.6);
+  doc.line(10, 29, 200, 29);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Realizado por:', 10, 35);
+  doc.setFont('helvetica', 'normal');
+  doc.text(primero.usuario || 'No especificado', 40, 35);
+
+  let y = 42;
+  if (!esCargo && primero.motivo) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Motivo:', 10, y);
+    doc.setFont('helvetica', 'normal');
+    const lineasMotivo = doc.splitTextToSize(String(primero.motivo), 150);
+    doc.text(lineasMotivo, 35, y);
+    y += 6 * Math.max(1, lineasMotivo.length);
+  }
+  y += 3;
+
+  const filasTabla = registros.map((r) => {
+    const producto = r.producto_nombre || r.descripcion || '—';
+    const tipoProducto = r.tipo || r.producto_tipo || '—';
+    const codigo = r.unidad_codigo || '—';
+    const cantidad = String(r.cantidad ?? 1);
+    if (esCargo) {
+      return [producto, tipoProducto, codigo, cantidad, `$${fmt(r.costo_unitario_usd)}`, `$${fmt(r.total_usd)}`];
+    }
+    return [producto, tipoProducto, codigo, cantidad];
+  });
+
+  const head = esCargo
+    ? [['Producto', 'Tipo', 'Codigo / IMEI', 'Cant.', 'Costo unit.', 'Total']]
+    : [['Producto', 'Tipo', 'Codigo / IMEI', 'Cant.']];
+
+  autoTable(doc, {
+    startY: y,
+    head,
+    body: filasTabla,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: colorAcento, textColor: [255, 255, 255], fontStyle: 'bold' },
+    margin: { left: 10, right: 10 }
+  });
+
+  if (esCargo) {
+    const total = registros.reduce((acc, r) => acc + (r.total_usd || 0), 0);
+    const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : y + 20;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(`Total del documento: $${fmt(total)}`, 200, finalY, { align: 'right' });
+  }
+
+  doc.setFontSize(8);
+  doc.setTextColor(140);
+  doc.text(`Documento generado por el sistema el ${new Date().toLocaleString('es-VE')}.`, 10, 285);
+
+  const nombreArchivo = `${prefijo}-${String(encabezadoId).padStart(5, '0')}`;
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, nombreArchivo, 'Cargos y Descargos');
+  } else {
+    await guardarYAbrirPDF(doc, nombreArchivo, 'Cargos y Descargos');
+  }
+}
