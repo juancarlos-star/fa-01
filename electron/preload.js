@@ -27,8 +27,11 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('units:add', { product_id: productId, codigo, costoUnitario, usuario }),
   addUnitsRange: (productId, codigoInicio, codigoFin, costoUnitario, usuario) =>
     ipcRenderer.invoke('units:addRange', { product_id: productId, codigoInicio, codigoFin, costoUnitario, usuario }),
+  addUnitsBatch: (productId, codigos, costoUnitario, usuario) =>
+    ipcRenderer.invoke('units:addBatch', { product_id: productId, codigos, costoUnitario, usuario }),
   deleteUnit: (id) => ipcRenderer.invoke('units:delete', { id }),
   writeOffUnit: (id, motivo, usuario) => ipcRenderer.invoke('units:writeOff', { id, motivo, usuario }),
+  writeOffUnitsBatch: (ids, motivo, usuario) => ipcRenderer.invoke('units:writeOffBatch', { ids, motivo, usuario }),
   // Historial de descargos
   listDescargos: () => ipcRenderer.invoke('descargos:list'),
   // Configuracion
@@ -54,6 +57,7 @@ contextBridge.exposeInMainWorld('api', {
   proximoNumeroCompra: () => ipcRenderer.invoke('compras:proximoNumero'),
   calcularRangoCompra: (codigoInicio, codigoFin) => ipcRenderer.invoke('compras:calcularRango', { codigoInicio, codigoFin }),
   updateProductCosto: (id, costoPromedio) => ipcRenderer.invoke('products:updateCosto', { id, costoPromedio }),
+  updateProductCodigoBarras: (id, codigoBarras) => ipcRenderer.invoke('products:updateCodigoBarras', { id, codigo_barras: codigoBarras }),
   updateUnitCosto: (id, costoUnitario) => ipcRenderer.invoke('units:updateCosto', { id, costoUnitario }),
   writeOffUnitRange: (data) => ipcRenderer.invoke('units:writeOffRange', data),
   // Gastos

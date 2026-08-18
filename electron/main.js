@@ -431,6 +431,19 @@ ipcMain.handle('products:updateCosto', (event, { id, costoPromedio }) => {
   return { ok: true };
 });
 
+// El codigo de barras de un accesorio nunca es obligatorio (a diferencia del IMEI/codigo de
+// equipos, simcards y usim). Este handler permite fijarlo/actualizarlo opcionalmente desde el
+// cargo o descargo de accesorio, sin bloquear la operacion si se deja vacio.
+ipcMain.handle('products:updateCodigoBarras', (event, { id, codigo_barras }) => {
+  const db = getDb();
+  const codigo = (codigo_barras || '').trim();
+  if (!codigo) return { ok: true, updated: false };
+  const existente = db.prepare('SELECT id FROM products WHERE codigo_barras = ? AND id != ?').get(codigo, id);
+  if (existente) return { ok: false, message: 'Ese codigo de barras ya esta asignado a otro producto' };
+  db.prepare('UPDATE products SET codigo_barras = ? WHERE id = ?').run(codigo, id);
+  return { ok: true, updated: true };
+});
+
 ipcMain.handle('products:writeOffStock', (event, { id, cantidad, motivo, usuario }) => {
   const db = getDb();
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
@@ -582,6 +595,67 @@ ipcMain.handle('units:addRange', (event, { product_id, codigoInicio, codigoFin, 
   return { ok: true, total: rango.codigos.length, agregados, saltados, registros };
 });
 
+// Cargo manual de un LOTE de codigos (equipo/simcard/usim): a diferencia de units:addRange
+// (que calcula un rango consecutivo), aqui el usuario declara de antemano cuantos items va a
+// cargar y debe completar exactamente esa cantidad de codigos, uno por uno o con la pistola.
+// Si algun codigo ya existe, se bloquea todo el lote (a diferencia del rango, que los salta en
+// silencio) porque aqui cada codigo fue tecleado/escaneado a proposito y un duplicado suele ser
+// senal de error del operador.
+ipcMain.handle('units:addBatch', (event, { product_id, codigos, costoUnitario, usuario }) => {
+  const db = getDb();
+  if (!Array.isArray(codigos) || codigos.length === 0) {
+    return { ok: false, message: 'Debes indicar la cantidad de items y completar sus codigos' };
+  }
+  const limpios = codigos.map((c) => (c || '').trim());
+  if (limpios.some((c) => !c)) {
+    return { ok: false, message: 'Todos los codigos deben estar completos: la cantidad declarada debe coincidir con la cantidad de codigos escaneados' };
+  }
+  const duplicadosEnLote = [...new Set(limpios.filter((c, i) => limpios.indexOf(c) !== i))];
+  if (duplicadosEnLote.length > 0) {
+    return { ok: false, message: `Codigo repetido en la lista que estas cargando: ${duplicadosEnLote.join(', ')}` };
+  }
+  const costo = parseFloat(costoUnitario);
+  if (isNaN(costo) || costo < 0) return { ok: false, message: 'Debes indicar el costo de compra' };
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
+  if (!product) return { ok: false, message: 'Producto no encontrado' };
+
+  const existsStmt = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?');
+  const yaExisten = limpios.filter((c) => existsStmt.get(c));
+  if (yaExisten.length > 0) {
+    return { ok: false, message: `Estos codigos ya estan registrados en el inventario: ${yaExisten.join(', ')}` };
+  }
+
+  const insertStmt = db.prepare(
+    `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now','localtime'))`
+  );
+  const insertCompra = db.prepare(
+    `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, unit_id)
+     VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now','localtime'), ?)`
+  );
+  const compraIds = [];
+  const transaccion = db.transaction((codigosLote) => {
+    for (const codigo of codigosLote) {
+      const unitInfo = insertStmt.run(product_id, codigo, costo);
+      const compraInfo = insertCompra.run(product_id, product.tipo, product.nombre, costo, costo, usuario || '', unitInfo.lastInsertRowid);
+      compraIds.push(compraInfo.lastInsertRowid);
+    }
+  });
+  transaccion(limpios);
+
+  const registros = compraIds.length
+    ? db.prepare(
+        `SELECT c.*, p.nombre AS producto_nombre, u.codigo AS unidad_codigo
+         FROM compras c
+         LEFT JOIN products p ON p.id = c.product_id
+         LEFT JOIN inventory_units u ON u.id = c.unit_id
+         WHERE c.id IN (${compraIds.map(() => '?').join(',')})
+         ORDER BY c.id ASC`
+      ).all(...compraIds)
+    : [];
+
+  return { ok: true, total: limpios.length, agregados: compraIds.length, registros };
+});
+
 ipcMain.handle('units:updateCosto', (event, { id, costoUnitario }) => {
   const db = getDb();
   const costo = parseFloat(costoUnitario);
@@ -622,6 +696,66 @@ ipcMain.handle('units:writeOff', (event, { id, motivo, usuario }) => {
      WHERE d.id = ?`
   ).get(descargoId);
   return { ok: true, registro };
+});
+
+// Descargo manual de un LOTE de unidades (equipo/simcard/usim): el usuario declara de antemano
+// cuantos items va a descargar y debe seleccionar/escanear exactamente esa cantidad de unidades
+// disponibles antes de poder confirmar; un solo motivo aplica a todo el lote.
+ipcMain.handle('units:writeOffBatch', (event, { ids, motivo, usuario }) => {
+  const db = getDb();
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { ok: false, message: 'Debes indicar la cantidad y seleccionar esa cantidad de unidades' };
+  }
+  if (!motivo || !motivo.trim()) return { ok: false, message: 'Debes indicar un motivo para el descargo' };
+
+  const getUnit = db.prepare('SELECT * FROM inventory_units WHERE id = ?');
+  const validos = [];
+  const invalidos = [];
+  for (const id of ids) {
+    const unit = getUnit.get(id);
+    if (unit && unit.estado === 'disponible') {
+      validos.push(unit);
+    } else {
+      invalidos.push({ codigo: unit ? unit.codigo : `#${id}`, razon: !unit ? 'no existe en el inventario' : `estado actual: ${unit.estado}` });
+    }
+  }
+
+  if (invalidos.length > 0) {
+    return {
+      ok: false,
+      bloqueado: true,
+      message: `${invalidos.length} de ${ids.length} unidad(es) seleccionadas ya no estan disponibles (puede que alguien mas las haya movido)`,
+      invalidos,
+      validosCount: validos.length,
+      total: ids.length
+    };
+  }
+
+  const descargoIds = [];
+  const transaccion = db.transaction(() => {
+    for (const unit of validos) {
+      db.prepare("UPDATE inventory_units SET estado = 'de_baja' WHERE id = ?").run(unit.id);
+      const descargoId = db.prepare(
+        `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at)
+         VALUES (?, ?, 1, ?, ?, datetime('now','localtime'))`
+      ).run(unit.product_id, unit.id, motivo.trim(), usuario || '').lastInsertRowid;
+      descargoIds.push(descargoId);
+    }
+  });
+  transaccion();
+
+  const registros = descargoIds.length
+    ? db.prepare(
+        `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo
+         FROM descargos d
+         LEFT JOIN products p ON p.id = d.product_id
+         LEFT JOIN inventory_units u ON u.id = d.unit_id
+         WHERE d.id IN (${descargoIds.map(() => '?').join(',')})
+         ORDER BY d.id ASC`
+      ).all(...descargoIds)
+    : [];
+
+  return { ok: true, dadosDeBaja: validos.length, registros };
 });
 
 // ---------- IPC: Historial de descargos ----------
