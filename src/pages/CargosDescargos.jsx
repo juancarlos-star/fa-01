@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import PromptModal from '../components/PromptModal.jsx';
 import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
+import { generarCargoDescargoPDF, generarCargoDescargoLotePDF } from '../utils/generarCargoDescargoPDF.js';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipos (IMEI)' },
@@ -14,6 +15,18 @@ export default function CargosDescargos({ currentUser }) {
   const [productos, setProductos] = useState([]);
   const [productoId, setProductoId] = useState('');
   const [accion, setAccion] = useState('cargo'); // 'cargo' | 'descargo'
+  const [settings, setSettings] = useState(null);
+
+  // Producto pendiente de seleccionar en cuanto termine de cargar la lista de la pestaña
+  // correspondiente (usado por el buscador de IMEI/codigo, que puede cambiar de pestaña).
+  const [productoIdPendiente, setProductoIdPendiente] = useState(null);
+  // Codigo encontrado por el buscador, para pre-filtrar la lista de unidades a descargar.
+  const [codigoResaltado, setCodigoResaltado] = useState('');
+
+  // ---- Buscador por IMEI / codigo / codigo de barras ----
+  const [busquedaCodigo, setBusquedaCodigo] = useState('');
+  const [buscando, setBuscando] = useState(false);
+  const [errorBusqueda, setErrorBusqueda] = useState('');
 
   const esAccesorio = tab === 'accesorio';
   const permiteRango = tab === 'simcard' || tab === 'usim';
@@ -22,11 +35,59 @@ export default function CargosDescargos({ currentUser }) {
   const cargarProductos = useCallback(async () => {
     const data = await window.api.listProducts(tab);
     setProductos(data);
-    setProductoId('');
+    // Si hay un producto pendiente de seleccionar (venido del buscador de codigo), no se
+    // limpia aqui: lo selecciona el efecto de abajo en cuanto aparezca en la lista recien
+    // cargada. En cualquier otro caso (cambio manual de pestaña), se limpia la seleccion.
+    setProductoId((actual) => {
+      const idsDisponibles = data.map((p) => p.id);
+      if (idsDisponibles.includes(Number(actual))) return actual;
+      return '';
+    });
   }, [tab]);
 
+  useEffect(() => { window.api.getSettings().then(setSettings); }, []);
   useEffect(() => { cargarProductos(); }, [cargarProductos]);
-  useEffect(() => { setAccion('cargo'); }, [tab]);
+
+  // En cuanto la lista de productos de la pestaña activa incluya el producto que encontro el
+  // buscador, se selecciona automaticamente (sin esto, cargarProductos() lo pisaria con '').
+  useEffect(() => {
+    if (productoIdPendiente != null && productos.some((p) => p.id === productoIdPendiente)) {
+      setProductoId(String(productoIdPendiente));
+      setProductoIdPendiente(null);
+    }
+  }, [productos, productoIdPendiente]);
+
+  const seleccionarTab = (key) => {
+    setTab(key);
+    setAccion('cargo');
+    setProductoIdPendiente(null);
+    setCodigoResaltado('');
+    setErrorBusqueda('');
+  };
+
+  const handleBuscarCodigo = async (e) => {
+    e.preventDefault();
+    const codigo = busquedaCodigo.trim();
+    setErrorBusqueda('');
+    if (!codigo) return;
+    setBuscando(true);
+    try {
+      const res = await window.api.buscarPorCodigo(codigo);
+      if (!res.ok) {
+        setErrorBusqueda(res.message);
+        return;
+      }
+      setTab(res.tipo);
+      setAccion('descargo');
+      setProductoIdPendiente(res.product_id);
+      setCodigoResaltado(res.tipoResultado === 'unidad' ? res.unit.codigo : '');
+      setBusquedaCodigo('');
+    } catch (err) {
+      setErrorBusqueda('Error buscando el codigo: ' + (err?.message || String(err)));
+    } finally {
+      setBuscando(false);
+    }
+  };
 
   return (
     <div>
@@ -36,11 +97,34 @@ export default function CargosDescargos({ currentUser }) {
         Solo el administrador tiene acceso a este modulo.
       </p>
 
+      <form
+        onSubmit={handleBuscarCodigo}
+        className="form-box"
+        style={{ maxWidth: '500px', marginBottom: '1rem' }}
+      >
+        <label>Buscar por IMEI, codigo o codigo de barras (para descargar)</label>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <input
+            value={busquedaCodigo}
+            onChange={(e) => setBusquedaCodigo(e.target.value)}
+            placeholder="Dispara la pistola aqui o escribe el codigo"
+            style={{ flex: 1 }}
+          />
+          <button type="submit" disabled={buscando || !busquedaCodigo.trim()}>
+            {buscando ? 'Buscando...' : 'Buscar'}
+          </button>
+        </div>
+        <p style={{ margin: '0.3rem 0 0 0', fontSize: '0.75rem', color: '#888' }}>
+          Te lleva directo al producto y a la accion de descargo, sin tener que buscarlo en la lista.
+        </p>
+        {errorBusqueda && <p style={{ color: 'red', fontSize: '0.85rem' }}>{errorBusqueda}</p>}
+      </form>
+
       <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0' }}>
         {TIPOS.map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => seleccionarTab(t.key)}
             style={{
               padding: '0.5rem 1rem',
               fontWeight: tab === t.key ? 'bold' : 'normal',
@@ -92,16 +176,16 @@ export default function CargosDescargos({ currentUser }) {
       </div>
 
       {productoId && esAccesorio && accion === 'cargo' && (
-        <CargoAccesorio productId={producto.id} currentUser={currentUser} onDone={cargarProductos} />
+        <CargoAccesorio key={producto.id} productId={producto.id} currentUser={currentUser} settings={settings} onDone={cargarProductos} />
       )}
       {productoId && esAccesorio && accion === 'descargo' && (
-        <DescargoAccesorio productId={producto.id} stockActual={producto.stock_disponible} currentUser={currentUser} onDone={cargarProductos} />
+        <DescargoAccesorio key={producto.id} productId={producto.id} stockActual={producto.stock_disponible} currentUser={currentUser} settings={settings} onDone={cargarProductos} />
       )}
       {productoId && !esAccesorio && accion === 'cargo' && (
-        <CargoUnidades productId={producto.id} tipo={tab} permiteRango={permiteRango} currentUser={currentUser} onDone={cargarProductos} />
+        <CargoUnidades key={producto.id} productId={producto.id} tipo={tab} permiteRango={permiteRango} currentUser={currentUser} settings={settings} onDone={cargarProductos} />
       )}
       {productoId && !esAccesorio && accion === 'descargo' && (
-        <DescargoUnidades productId={producto.id} tipo={tab} permiteRango={permiteRango} currentUser={currentUser} onDone={cargarProductos} />
+        <DescargoUnidades key={producto.id} productId={producto.id} tipo={tab} permiteRango={permiteRango} currentUser={currentUser} settings={settings} filtroInicial={codigoResaltado} onDone={cargarProductos} />
       )}
     </div>
   );
@@ -109,12 +193,13 @@ export default function CargosDescargos({ currentUser }) {
 
 // ---------------- Accesorios: cargo (cantidad) ----------------
 
-function CargoAccesorio({ productId, currentUser, onDone }) {
+function CargoAccesorio({ productId, currentUser, settings, onDone }) {
   const [cantidad, setCantidad] = useState('');
   const [costoUnitario, setCostoUnitario] = useState('');
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [comprobante, setComprobante] = useState(null);
+  const [enviando, setEnviando] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -123,12 +208,22 @@ function CargoAccesorio({ productId, currentUser, onDone }) {
     if (!n || n <= 0) { setError('Cantidad invalida'); return; }
     const costo = parseFloat(costoUnitario);
     if (isNaN(costo) || costo < 0) { setError('Indica el costo unitario'); return; }
-    const res = await window.api.addProductStock(productId, n, costo, currentUser?.username);
-    if (!res.ok) { setError(res.message); return; }
-    setOk(`Cargo registrado. Nuevo stock: ${res.stock}`);
-    setCantidad(''); setCostoUnitario('');
-    setComprobante(res.registro || null);
-    onDone();
+    setEnviando(true);
+    try {
+      const res = await window.api.addProductStock(productId, n, costo, currentUser?.username);
+      if (!res.ok) { setError(res.message); return; }
+      setOk(`Cargo registrado. Nuevo stock: ${res.stock}`);
+      setCantidad(''); setCostoUnitario('');
+      setComprobante(res.registro || null);
+      onDone();
+      // El codigo de barras es opcional en accesorios: no bloquea el cargo. En cuanto se
+      // registra, el comprobante sale impreso de una vez, sin que el usuario tenga que pedirlo.
+      if (res.registro) {
+        await generarCargoDescargoPDF(res.registro, 'cargo', settings, { imprimir: true });
+      }
+    } finally {
+      setEnviando(false);
+    }
   };
 
   if (comprobante) {
@@ -144,19 +239,22 @@ function CargoAccesorio({ productId, currentUser, onDone }) {
       <input type="number" step="0.01" value={costoUnitario} onChange={(e) => setCostoUnitario(e.target.value)} />
       {error && <p style={{ color: 'red' }}>{error}</p>}
       {ok && <p style={{ color: 'green' }}>{ok}</p>}
-      <button type="submit" style={{ marginTop: '0.5rem' }}>Registrar cargo</button>
+      <button type="submit" disabled={enviando} style={{ marginTop: '0.5rem' }}>
+        {enviando ? 'Registrando...' : 'Registrar cargo'}
+      </button>
     </form>
   );
 }
 
 // ---------------- Accesorios: descargo (cantidad + motivo) ----------------
 
-function DescargoAccesorio({ productId, stockActual, currentUser, onDone }) {
+function DescargoAccesorio({ productId, stockActual, currentUser, settings, onDone }) {
   const [cantidad, setCantidad] = useState('');
   const [motivo, setMotivo] = useState('');
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [comprobante, setComprobante] = useState(null);
+  const [enviando, setEnviando] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -164,12 +262,20 @@ function DescargoAccesorio({ productId, stockActual, currentUser, onDone }) {
     const n = parseInt(cantidad, 10);
     if (!n || n <= 0) { setError('Cantidad invalida'); return; }
     if (!motivo.trim()) { setError('Indica el motivo del descargo'); return; }
-    const res = await window.api.writeOffProductStock(productId, n, motivo.trim(), currentUser?.username);
-    if (!res.ok) { setError(res.message); return; }
-    setOk(`Descargo registrado. Nuevo stock: ${res.stock}`);
-    setCantidad(''); setMotivo('');
-    setComprobante(res.registro || null);
-    onDone();
+    setEnviando(true);
+    try {
+      const res = await window.api.writeOffProductStock(productId, n, motivo.trim(), currentUser?.username);
+      if (!res.ok) { setError(res.message); return; }
+      setOk(`Descargo registrado. Nuevo stock: ${res.stock}`);
+      setCantidad(''); setMotivo('');
+      setComprobante(res.registro || null);
+      onDone();
+      if (res.registro) {
+        await generarCargoDescargoPDF(res.registro, 'descargo', settings, { imprimir: true });
+      }
+    } finally {
+      setEnviando(false);
+    }
   };
 
   if (comprobante) {
@@ -186,14 +292,16 @@ function DescargoAccesorio({ productId, stockActual, currentUser, onDone }) {
       <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} style={{ width: '100%' }} />
       {error && <p style={{ color: 'red' }}>{error}</p>}
       {ok && <p style={{ color: 'green' }}>{ok}</p>}
-      <button type="submit" style={{ marginTop: '0.5rem' }}>Registrar descargo</button>
+      <button type="submit" disabled={enviando} style={{ marginTop: '0.5rem' }}>
+        {enviando ? 'Registrando...' : 'Registrar descargo'}
+      </button>
     </form>
   );
 }
 
 // ---------------- Equipo/SimCard/USIM: cargo (manual o por rango) ----------------
 
-function CargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }) {
+function CargoUnidades({ productId, tipo, permiteRango, currentUser, settings, onDone }) {
   const [modo, setModo] = useState('manual');
   const [codigo, setCodigo] = useState('');
   const [costoManual, setCostoManual] = useState('');
@@ -212,7 +320,8 @@ function CargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }) {
   const handleAgregarManual = async (e) => {
     e.preventDefault();
     setError(''); setOk(''); setComprobante(null);
-    if (!codigo.trim()) { setError('Escribe o escanea el codigo'); return; }
+    // Obligatorio: en equipos/simcards/usim nunca se permite cargar sin IMEI o codigo.
+    if (!codigo.trim()) { setError(`Debes escribir o escanear el ${label} antes de poder cargar`); return; }
     const costo = parseFloat(costoManual);
     if (isNaN(costo) || costo < 0) { setError('Indica el costo de compra'); return; }
     setEnviando(true);
@@ -223,6 +332,9 @@ function CargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }) {
       setCodigo('');
       setComprobante(res.registro || null);
       onDone();
+      if (res.registro) {
+        await generarCargoDescargoPDF(res.registro, 'cargo', settings, { imprimir: true });
+      }
     } finally {
       setEnviando(false);
     }
@@ -231,6 +343,7 @@ function CargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }) {
   const handleAgregarRango = async (e) => {
     e.preventDefault();
     setError(''); setOk(''); setComprobantesRango([]);
+    // Obligatorio tambien en modo rango: sin el primer y ultimo codigo no hay como cargar.
     if (!codigoInicio.trim() || !codigoFin.trim()) { setError('Escanea o escribe el primer y el ultimo codigo de la caja'); return; }
     const costo = parseFloat(costoRango);
     if (isNaN(costo) || costo < 0) { setError('Indica el costo unitario de este lote'); return; }
@@ -242,6 +355,11 @@ function CargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }) {
       setCodigoInicio(''); setCodigoFin(''); setCostoRango('');
       setComprobantesRango(res.registros || []);
       onDone();
+      // Un solo comprobante consolidado con todos los codigos del lote, en vez de imprimir
+      // uno por uno (seria decenas de dialogos de impresion en un rango grande).
+      if (res.registros && res.registros.length > 0) {
+        await generarCargoDescargoLotePDF(res.registros, 'cargo', settings, { imprimir: true });
+      }
     } finally {
       setEnviando(false);
     }
@@ -280,32 +398,32 @@ function CargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }) {
       {modo === 'manual' && (
         <form onSubmit={handleAgregarManual} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div>
-            <label style={{ fontSize: '0.8rem' }}>{label}</label><br />
-            <input value={codigo} onChange={(e) => setCodigo(e.target.value)} autoFocus />
+            <label style={{ fontSize: '0.8rem' }}>{label} *</label><br />
+            <input value={codigo} onChange={(e) => setCodigo(e.target.value)} autoFocus required />
           </div>
           <div>
             <label style={{ fontSize: '0.8rem' }}>Costo de compra (USD)</label><br />
             <input type="number" step="0.01" value={costoManual} onChange={(e) => setCostoManual(e.target.value)} style={{ width: '100px' }} />
           </div>
-          <button type="submit" disabled={enviando}>+ Agregar {label}</button>
+          <button type="submit" disabled={enviando || !codigo.trim()}>+ Agregar {label}</button>
         </form>
       )}
 
       {modo === 'rango' && permiteRango && (
         <form onSubmit={handleAgregarRango} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div>
-            <label style={{ fontSize: '0.8rem' }}>Primer codigo de la caja</label><br />
-            <input placeholder="Ej: 190000" value={codigoInicio} onChange={(e) => setCodigoInicio(e.target.value)} />
+            <label style={{ fontSize: '0.8rem' }}>Primer codigo de la caja *</label><br />
+            <input placeholder="Ej: 190000" value={codigoInicio} onChange={(e) => setCodigoInicio(e.target.value)} required />
           </div>
           <div>
-            <label style={{ fontSize: '0.8rem' }}>Ultimo codigo de la caja</label><br />
-            <input placeholder="Ej: 190050" value={codigoFin} onChange={(e) => setCodigoFin(e.target.value)} />
+            <label style={{ fontSize: '0.8rem' }}>Ultimo codigo de la caja *</label><br />
+            <input placeholder="Ej: 190050" value={codigoFin} onChange={(e) => setCodigoFin(e.target.value)} required />
           </div>
           <div>
             <label style={{ fontSize: '0.8rem' }}>Costo unitario del lote (USD)</label><br />
             <input type="number" step="0.01" value={costoRango} onChange={(e) => setCostoRango(e.target.value)} style={{ width: '100px' }} />
           </div>
-          <button type="submit" disabled={enviando}>Generar rango completo</button>
+          <button type="submit" disabled={enviando || !codigoInicio.trim() || !codigoFin.trim()}>Generar rango completo</button>
         </form>
       )}
 
@@ -333,11 +451,14 @@ function CargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }) {
 
 // ---------------- Equipo/SimCard/USIM: descargo (manual, seleccion, o por rango) ----------------
 
-function DescargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }) {
+function DescargoUnidades({ productId, tipo, permiteRango, currentUser, settings, filtroInicial, onDone }) {
   const [modo, setModo] = useState('manual');
   const [units, setUnits] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [modalBaja, setModalBaja] = useState(null);
+  // Filtro por codigo/IMEI para no tener que buscar a mano en una lista larga de unidades.
+  // Se prellena si se llego aqui desde el buscador global (arriba, por codigo/IMEI/cod. barras).
+  const [filtro, setFiltro] = useState(filtroInicial || '');
 
   const [codigoInicio, setCodigoInicio] = useState('');
   const [codigoFin, setCodigoFin] = useState('');
@@ -360,6 +481,10 @@ function DescargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }
 
   useEffect(() => { cargarUnidades(); }, [cargarUnidades]);
 
+  const unitsFiltradas = filtro.trim()
+    ? units.filter((u) => u.codigo.toLowerCase().includes(filtro.trim().toLowerCase()))
+    : units;
+
   const abrirModalBaja = (unitId) => setModalBaja({ unitId });
   const confirmarBajaManual = async (values) => {
     const res = await window.api.writeOffUnit(modalBaja.unitId, values.motivo, currentUser?.username);
@@ -368,6 +493,9 @@ function DescargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }
     cargarUnidades();
     setComprobante(res.registro || null);
     onDone();
+    if (res.registro) {
+      await generarCargoDescargoPDF(res.registro, 'descargo', settings, { imprimir: true });
+    }
   };
 
   const ejecutarDescargoRango = async (soloValidos) => {
@@ -395,6 +523,10 @@ function DescargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }
       setComprobantesRango(res.registros || []);
       cargarUnidades();
       onDone();
+      // Un solo comprobante consolidado con todos los codigos dados de baja en el lote.
+      if (res.registros && res.registros.length > 0) {
+        await generarCargoDescargoLotePDF(res.registros, 'descargo', settings, { imprimir: true });
+      }
     } finally {
       setEnviandoRango(false);
     }
@@ -432,18 +564,34 @@ function DescargoUnidades({ productId, tipo, permiteRango, currentUser, onDone }
       )}
 
       {modo === 'manual' && (
-        cargando ? <p>Cargando...</p> : units.length === 0 ? (
-          <p>No hay unidades disponibles para dar de baja.</p>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0, maxHeight: '260px', overflowY: 'auto' }}>
-            {units.map((u) => (
-              <li key={u.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.3rem 0', borderBottom: '1px solid #eee' }}>
-                <span>{u.codigo}</span>
-                <button onClick={() => abrirModalBaja(u.id)}>Dar de baja</button>
-              </li>
-            ))}
-          </ul>
-        )
+        <div>
+          {units.length > 0 && (
+            <div style={{ marginBottom: '0.5rem' }}>
+              <label style={{ fontSize: '0.8rem' }}>Filtrar por codigo / IMEI</label><br />
+              <input
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                placeholder="Escanea o escribe para filtrar la lista"
+                autoFocus={!!filtroInicial}
+                style={{ width: '100%' }}
+              />
+            </div>
+          )}
+          {cargando ? <p>Cargando...</p> : units.length === 0 ? (
+            <p>No hay unidades disponibles para dar de baja.</p>
+          ) : unitsFiltradas.length === 0 ? (
+            <p>Ningun codigo coincide con "{filtro}".</p>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0, maxHeight: '260px', overflowY: 'auto' }}>
+              {unitsFiltradas.map((u) => (
+                <li key={u.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.3rem 0', borderBottom: '1px solid #eee' }}>
+                  <span>{u.codigo}</span>
+                  <button onClick={() => abrirModalBaja(u.id)}>Dar de baja</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {modo === 'rango' && permiteRango && (
