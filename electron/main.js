@@ -975,6 +975,47 @@ ipcMain.handle('inventario:codigoExiste', (event, { codigo }) => {
   return { existe: !!existe };
 });
 
+// Busca un IMEI/codigo de unidad (equipo, simcard, usim) o un codigo de barras de accesorio,
+// para que el modulo de Cargos y Descargos pueda saltar directo al producto correspondiente
+// sin que el usuario tenga que buscarlo a mano en una lista larga.
+ipcMain.handle('inventario:buscarPorCodigo', (event, { codigo }) => {
+  const db = getDb();
+  const c = (codigo || '').trim();
+  if (!c) return { ok: false, message: 'Escribe o escanea un codigo, IMEI o codigo de barras' };
+
+  const unidad = db.prepare(
+    `SELECT u.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo
+     FROM inventory_units u
+     JOIN products p ON p.id = u.product_id
+     WHERE u.codigo = ?`
+  ).get(c);
+  if (unidad) {
+    return {
+      ok: true,
+      tipoResultado: 'unidad',
+      product_id: unidad.product_id,
+      tipo: unidad.producto_tipo,
+      producto_nombre: unidad.producto_nombre,
+      unit: { id: unidad.id, codigo: unidad.codigo, estado: unidad.estado }
+    };
+  }
+
+  const producto = db.prepare(
+    `SELECT * FROM products WHERE tipo = 'accesorio' AND codigo_barras = ? AND codigo_barras IS NOT NULL AND codigo_barras != ''`
+  ).get(c);
+  if (producto) {
+    return {
+      ok: true,
+      tipoResultado: 'accesorio',
+      product_id: producto.id,
+      tipo: 'accesorio',
+      producto_nombre: producto.nombre
+    };
+  }
+
+  return { ok: false, message: `No se encontro ningun producto ni unidad con el codigo "${c}"` };
+});
+
 // ---------- IPC: Compras por lote (factura de proveedor con varios items) ----------
 ipcMain.handle('compras:crearLote', (event, payload) => {
   const db = getDb();
