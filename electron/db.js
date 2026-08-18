@@ -128,6 +128,20 @@ function migrarComprasSiHaceFalta(database) {
   }
 }
 
+// Permite agrupar varios renglones de cargo o descargo (incluso de productos distintos:
+// equipos, simcards, usim y accesorios mezclados) bajo un mismo "documento", para poder
+// imprimir un solo comprobante consolidado y llevar la operacion como un unico procedimiento.
+function migrarCargosDescargosEncabezadoSiHaceFalta(database) {
+  const existeCompras = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras'").get();
+  if (existeCompras && !tieneColumna(database, 'compras', 'encabezado_id')) {
+    database.exec('ALTER TABLE compras ADD COLUMN encabezado_id INTEGER');
+  }
+  const existeDescargos = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='descargos'").get();
+  if (existeDescargos && !tieneColumna(database, 'descargos', 'encabezado_id')) {
+    database.exec('ALTER TABLE descargos ADD COLUMN encabezado_id INTEGER');
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -253,6 +267,13 @@ function initDb() {
       usuario TEXT,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS cargos_descargos_encabezado (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tipo_documento TEXT NOT NULL CHECK(tipo_documento IN ('cargo','descargo')),
+      motivo TEXT,
+      usuario TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 
   migrarProductsSiHaceFalta(database);
@@ -261,6 +282,7 @@ function initDb() {
   migrarCategoriasSiHaceFalta(database);
   migrarComprasSiHaceFalta(database);
   migrarUsersSiHaceFalta(database);
+  migrarCargosDescargosEncabezadoSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');

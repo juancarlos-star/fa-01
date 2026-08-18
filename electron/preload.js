@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('api', {
   writeOffUnitsBatch: (ids, motivo, usuario) => ipcRenderer.invoke('units:writeOffBatch', { ids, motivo, usuario }),
   // Historial de descargos
   listDescargos: () => ipcRenderer.invoke('descargos:list'),
+  // Documento de Cargo/Descargo con varios items (incluso de productos distintos, mezclados
+  // en un mismo procedimiento).
+  crearDocumentoCargoDescargo: (payload) => ipcRenderer.invoke('cargosDescargos:crearDocumento', payload),
   // Configuracion
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (values) => ipcRenderer.invoke('settings:update', values),

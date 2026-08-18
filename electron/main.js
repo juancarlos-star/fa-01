@@ -199,7 +199,7 @@ ipcMain.handle('users:create', (event, { username, password, full_name, role }) 
   if (exists) return { ok: false, message: 'Ese nombre de usuario ya existe' };
   const hash = bcrypt.hashSync(password, 10);
   db.prepare(
-    'INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime("now","localtime"))'
+    "INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime('now','localtime'))"
   ).run(usuarioLimpio, hash, nombreLimpio, role);
   return { ok: true };
 });
@@ -861,6 +861,166 @@ ipcMain.handle('units:writeOffBatch', (event, { ids, motivo, usuario }) => {
     : [];
 
   return { ok: true, dadosDeBaja: validos.length, registros };
+});
+
+// ---------- IPC: Documento de Cargo/Descargo con VARIOS items (incluso de productos y
+// tipos distintos: equipos, simcards, usim y accesorios mezclados en un mismo procedimiento) ----------
+// A diferencia de los handlers de arriba (que solo permiten trabajar un producto a la vez),
+// este agrupa cualquier combinacion de renglones bajo un mismo "encabezado" y los aplica todos
+// en una sola transaccion: o se registra el documento completo, o no se registra nada.
+//
+// Forma esperada de cada item en "items":
+//   Para un accesorio (cantidad, no unidad individual):
+//     { productId, esAccesorio: true, cantidad, costoUnitario (solo cargo) }
+//   Para equipo/simcard/usim en un CARGO (codigo nuevo que aun no existe en el inventario):
+//     { productId, esAccesorio: false, codigo, costoUnitario }
+//   Para equipo/simcard/usim en un DESCARGO (unidad ya existente que se va a dar de baja):
+//     { productId, esAccesorio: false, unitId, codigo (solo para mensajes de error) }
+ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo, usuario, items }) => {
+  const db = getDb();
+  if (!['cargo', 'descargo'].includes(tipoDocumento)) return { ok: false, message: 'Tipo de documento invalido' };
+  if (!Array.isArray(items) || items.length === 0) return { ok: false, message: 'El documento no tiene ningun item agregado' };
+  if (tipoDocumento === 'descargo' && !(motivo || '').trim()) return { ok: false, message: 'Indica el motivo del descargo' };
+
+  // ---- Validaciones previas (antes de tocar la base de datos) ----
+  const productosCache = new Map();
+  const getProducto = (id) => {
+    if (!productosCache.has(id)) productosCache.set(id, db.prepare('SELECT * FROM products WHERE id = ?').get(id));
+    return productosCache.get(id);
+  };
+
+  for (const it of items) {
+    const product = getProducto(it.productId);
+    if (!product) return { ok: false, message: 'Uno de los productos del documento ya no existe' };
+    if (tipoDocumento === 'cargo') {
+      if (product.tipo === 'accesorio') {
+        const n = parseInt(it.cantidad, 10);
+        if (!n || n <= 0) return { ok: false, message: `Cantidad invalida para "${product.nombre}"` };
+        const costo = parseFloat(it.costoUnitario);
+        if (isNaN(costo) || costo < 0) return { ok: false, message: `Costo invalido para "${product.nombre}"` };
+      } else {
+        const codigo = (it.codigo || '').trim();
+        if (!codigo) return { ok: false, message: `Falta el codigo de un item de "${product.nombre}"` };
+        const costo = parseFloat(it.costoUnitario);
+        if (isNaN(costo) || costo < 0) return { ok: false, message: `Costo invalido para el codigo "${codigo}"` };
+      }
+    } else {
+      if (product.tipo === 'accesorio') {
+        const n = parseInt(it.cantidad, 10);
+        if (!n || n <= 0) return { ok: false, message: `Cantidad invalida para "${product.nombre}"` };
+        if (n > product.stock_cantidad) return { ok: false, message: `No hay suficiente stock de "${product.nombre}" (disponible: ${product.stock_cantidad})` };
+      } else if (!it.unitId) {
+        return { ok: false, message: `Falta la unidad a descargar de "${product.nombre}"` };
+      }
+    }
+  }
+
+  // Validaciones cruzadas dentro del propio documento (codigos/unidades repetidos entre
+  // renglones), y contra lo que ya existe en la base de datos.
+  if (tipoDocumento === 'cargo') {
+    const codigosNuevos = items.filter((it) => it.codigo).map((it) => it.codigo.trim());
+    const repetidosEnDocumento = [...new Set(codigosNuevos.filter((c, i) => codigosNuevos.indexOf(c) !== i))];
+    if (repetidosEnDocumento.length > 0) {
+      return { ok: false, message: `Codigo repetido dentro del mismo documento: ${repetidosEnDocumento.join(', ')}` };
+    }
+    const existsStmt = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?');
+    const yaExisten = codigosNuevos.filter((c) => existsStmt.get(c));
+    if (yaExisten.length > 0) {
+      return { ok: false, message: `Estos codigos ya estan registrados en el inventario: ${yaExisten.join(', ')}` };
+    }
+  } else {
+    const unitIds = items.filter((it) => it.unitId).map((it) => it.unitId);
+    const repetidos = unitIds.filter((id, i) => unitIds.indexOf(id) !== i);
+    if (repetidos.length > 0) return { ok: false, message: 'Hay una unidad repetida dentro del mismo documento' };
+    for (const id of unitIds) {
+      const u = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(id);
+      if (!u) return { ok: false, message: 'Una de las unidades del documento ya no existe' };
+      if (u.estado !== 'disponible') return { ok: false, message: `La unidad "${u.codigo}" ya no esta disponible (puede que alguien mas la haya movido)` };
+    }
+  }
+
+  let encabezadoId;
+  const registros = [];
+  const transaccion = db.transaction(() => {
+    encabezadoId = db.prepare(
+      `INSERT INTO cargos_descargos_encabezado (tipo_documento, motivo, usuario, created_at) VALUES (?, ?, ?, datetime('now','localtime'))`
+    ).run(tipoDocumento, (motivo || '').trim() || null, usuario || '').lastInsertRowid;
+
+    for (const it of items) {
+      const product = getProducto(it.productId);
+
+      if (tipoDocumento === 'cargo') {
+        if (product.tipo === 'accesorio') {
+          const n = parseInt(it.cantidad, 10);
+          const costo = parseFloat(it.costoUnitario);
+          const stockActual = product.stock_cantidad;
+          const costoActual = product.costo_promedio_usd || 0;
+          const nuevoStock = stockActual + n;
+          const nuevoPromedio = nuevoStock > 0 ? ((stockActual * costoActual) + (n * costo)) / nuevoStock : costo;
+          db.prepare('UPDATE products SET stock_cantidad = ?, costo_promedio_usd = ? WHERE id = ?').run(nuevoStock, nuevoPromedio, product.id);
+          product.stock_cantidad = nuevoStock;
+          product.costo_promedio_usd = nuevoPromedio;
+          const compraId = db.prepare(
+            `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, encabezado_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?)`
+          ).run(product.id, product.tipo, product.nombre, costo, n, costo * n, usuario || '', encabezadoId).lastInsertRowid;
+          registros.push(
+            db.prepare(`SELECT c.*, p.nombre AS producto_nombre FROM compras c LEFT JOIN products p ON p.id = c.product_id WHERE c.id = ?`).get(compraId)
+          );
+        } else {
+          const codigo = it.codigo.trim();
+          const costo = parseFloat(it.costoUnitario);
+          const unitInfo = db.prepare(
+            `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now','localtime'))`
+          ).run(product.id, codigo, costo);
+          const compraId = db.prepare(
+            `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, unit_id, encabezado_id)
+             VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now','localtime'), ?, ?)`
+          ).run(product.id, product.tipo, product.nombre, costo, costo, usuario || '', unitInfo.lastInsertRowid, encabezadoId).lastInsertRowid;
+          registros.push(
+            db.prepare(
+              `SELECT c.*, p.nombre AS producto_nombre, u.codigo AS unidad_codigo
+               FROM compras c LEFT JOIN products p ON p.id = c.product_id LEFT JOIN inventory_units u ON u.id = c.unit_id
+               WHERE c.id = ?`
+            ).get(compraId)
+          );
+        }
+      } else {
+        if (product.tipo === 'accesorio') {
+          const n = parseInt(it.cantidad, 10);
+          const nuevoStock = product.stock_cantidad - n;
+          db.prepare('UPDATE products SET stock_cantidad = ? WHERE id = ?').run(nuevoStock, product.id);
+          product.stock_cantidad = nuevoStock;
+          const descargoId = db.prepare(
+            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id)
+             VALUES (?, NULL, ?, ?, ?, datetime('now','localtime'), ?)`
+          ).run(product.id, n, (motivo || '').trim(), usuario || '', encabezadoId).lastInsertRowid;
+          registros.push(
+            db.prepare(
+              `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo FROM descargos d LEFT JOIN products p ON p.id = d.product_id WHERE d.id = ?`
+            ).get(descargoId)
+          );
+        } else {
+          const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(it.unitId);
+          db.prepare("UPDATE inventory_units SET estado = 'de_baja' WHERE id = ?").run(unit.id);
+          const descargoId = db.prepare(
+            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id)
+             VALUES (?, ?, 1, ?, ?, datetime('now','localtime'), ?)`
+          ).run(product.id, unit.id, (motivo || '').trim(), usuario || '', encabezadoId).lastInsertRowid;
+          registros.push(
+            db.prepare(
+              `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo
+               FROM descargos d LEFT JOIN products p ON p.id = d.product_id LEFT JOIN inventory_units u ON u.id = d.unit_id
+               WHERE d.id = ?`
+            ).get(descargoId)
+          );
+        }
+      }
+    }
+  });
+  transaccion();
+
+  return { ok: true, encabezadoId, registros };
 });
 
 // ---------- IPC: Historial de descargos ----------
