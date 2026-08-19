@@ -487,24 +487,20 @@ export default function Facturacion({ currentUser }) {
         <div className="pos-right">
           <div className="pos-right-header">Factura N° {numeroFacturaPreview}</div>
           <div className="pos-right-row">
-            <span>Total renglones</span>
+            <span>Base imponible</span>
             <span>{fmt(subtotal)}</span>
           </div>
           <div className="pos-right-row">
-            <span>Impuestos</span>
+            <span>IVA ({ivaPorcentaje}%)</span>
             <span>{fmt(iva)}</span>
           </div>
           <div className="pos-right-row total-final">
             <span>Total</span>
             <span>{fmt(total)}</span>
           </div>
-          <div className="pos-right-row">
-            <span>Vuelto</span>
-            <span>{fmt(0)}</span>
-          </div>
           <div className="pos-right-footer">
-            <span>Total cantidad o piezas</span>
-            <span>{carrito.length}&nbsp;&nbsp;{totalPiezas}</span>
+            <span>Total cantidad de Items</span>
+            <span>{totalPiezas}</span>
           </div>
         </div>
       </div>
