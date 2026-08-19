@@ -422,28 +422,64 @@ ipcMain.handle('products:list', (event, { tipo, categoria, depositoId } = {}) =>
   });
 });
 
-// Busqueda EXACTA por codigo_producto: usada en el renglon "Codigo" de Facturacion, donde al
-// escribir el codigo corto del producto (ej. "ss24") y presionar Enter se debe traer ese
-// producto puntual con su stock disponible, para autocompletar descripcion y precio.
+// Busqueda por el renglon "Codigo" de Facturacion. Reconoce, en este orden:
+//  1) Codigo corto del producto (ej. "ss24") - coincidencia exacta.
+//  2) Codigo individual de una unidad (IMEI/ICCID) - por si se lee con la pistola. En ese caso
+//     ya se sabe la pieza fisica exacta, asi que se devuelve tambien "unidad_encontrada" para que
+//     el frontend la agregue directo sin pedir cantidad ni abrir el selector de unidades.
+//  3) Nombre/descripcion del producto - exacto primero, y si no, coincidencia parcial (solo si
+//     es unica; si hay varias con ese texto se avisa para que sea mas especifico).
 ipcMain.handle('products:buscarPorCodigo', (event, { codigo, depositoId }) => {
   const db = getDb();
   const c = (codigo || '').trim();
   if (!c) return null;
-  const p = db.prepare('SELECT * FROM products WHERE codigo_producto = ? COLLATE NOCASE').get(c);
-  if (!p) return null;
-  let stock_disponible;
-  if (p.tipo === 'accesorio') {
-    stock_disponible = depositoId ? (obtenerStockDeposito(db, p.id, depositoId) || 0) : p.stock_cantidad;
-  } else if (depositoId) {
-    stock_disponible = db.prepare(
-      "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
-    ).get(p.id, depositoId).c;
-  } else {
-    stock_disponible = db.prepare(
+
+  const calcularStock = (p) => {
+    if (p.tipo === 'accesorio') {
+      return depositoId ? (obtenerStockDeposito(db, p.id, depositoId) || 0) : p.stock_cantidad;
+    }
+    if (depositoId) {
+      return db.prepare(
+        "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
+      ).get(p.id, depositoId).c;
+    }
+    return db.prepare(
       "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'"
     ).get(p.id).c;
+  };
+
+  // 1) Codigo corto del producto
+  let p = db.prepare('SELECT * FROM products WHERE codigo_producto = ? COLLATE NOCASE').get(c);
+  if (p) return { ...p, stock_disponible: calcularStock(p) };
+
+  // 2) Codigo individual (IMEI/ICCID) leido con pistola
+  const unidad = db.prepare('SELECT * FROM inventory_units WHERE codigo = ? COLLATE NOCASE').get(c);
+  if (unidad) {
+    p = db.prepare('SELECT * FROM products WHERE id = ?').get(unidad.product_id);
+    if (p) {
+      if (unidad.estado !== 'disponible') {
+        return { noDisponible: true, nombre: p.nombre, codigo: unidad.codigo };
+      }
+      if (depositoId && unidad.deposito_id && Number(unidad.deposito_id) !== Number(depositoId)) {
+        return { otroDeposito: true, nombre: p.nombre, codigo: unidad.codigo };
+      }
+      return { ...p, stock_disponible: calcularStock(p), unidad_encontrada: { id: unidad.id, codigo: unidad.codigo } };
+    }
   }
-  return { ...p, stock_disponible };
+
+  // 3) Nombre / descripcion del producto
+  p = db.prepare('SELECT * FROM products WHERE nombre = ? COLLATE NOCASE').get(c);
+  if (p) return { ...p, stock_disponible: calcularStock(p) };
+
+  const coincidencias = db.prepare('SELECT * FROM products WHERE nombre LIKE ? COLLATE NOCASE').all(`%${c}%`);
+  if (coincidencias.length === 1) {
+    return { ...coincidencias[0], stock_disponible: calcularStock(coincidencias[0]) };
+  }
+  if (coincidencias.length > 1) {
+    return { multiplesCoincidencias: true, cantidad: coincidencias.length };
+  }
+
+  return null;
 });
 
 ipcMain.handle('products:names', (event, { tipo, categoria } = {}) => {
