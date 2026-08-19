@@ -307,13 +307,49 @@ export default function Facturacion({ currentUser }) {
   };
 
   const confirmarQuitarDelCarrito = () => {
-    setCarrito(carrito.filter((item) => item.key !== keyPendienteQuitar));
+    // keyPendienteQuitar puede ser la key de un solo item, o (cuando se quita un grupo entero
+    // de la tabla ya agrupada) un array con varias keys.
+    const keys = Array.isArray(keyPendienteQuitar) ? keyPendienteQuitar : [keyPendienteQuitar];
+    setCarrito(carrito.filter((item) => !keys.includes(item.key)));
     setKeyPendienteQuitar(null);
   };
 
   const cancelarQuitarDelCarrito = () => {
     setKeyPendienteQuitar(null);
   };
+
+  // Agrupa el carrito por producto (y precio unitario) para mostrar una sola fila por producto
+  // en la tabla, con la cantidad total y -si tiene IMEI/codigos individuales- todos ellos
+  // listados debajo de la descripcion, en vez de una fila por cada unidad.
+  const gruposCarrito = (() => {
+    const mapa = new Map();
+    const orden = [];
+    for (const item of carrito) {
+      const groupKey = `${item.product_id}-${item.precio_unitario}`;
+      if (!mapa.has(groupKey)) {
+        mapa.set(groupKey, {
+          groupKey,
+          producto_codigo: item.producto_codigo || item.codigo || '—',
+          descripcion: item.descripcion,
+          tipo: item.tipo,
+          codigosIndividuales: [],
+          cantidad: 0,
+          precio_unitario: item.precio_unitario,
+          keys: []
+        });
+        orden.push(groupKey);
+      }
+      const g = mapa.get(groupKey);
+      g.cantidad += item.cantidad;
+      g.keys.push(item.key);
+      if (item.tipo !== 'accesorio' && item.codigo) g.codigosIndividuales.push(item.codigo);
+    }
+    return orden.map((k) => {
+      const g = mapa.get(k);
+      g.codigosIndividuales.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      return g;
+    });
+  })();
 
   const subtotal = carrito.reduce((acc, i) => acc + i.precio_unitario * i.cantidad, 0);
   const ivaPorcentaje = settings ? parseFloat(settings.iva_porcentaje) : 0;
@@ -629,22 +665,31 @@ export default function Facturacion({ currentUser }) {
                 </td>
               </tr>
             ) : (
-              carrito.map((item) => (
-                <tr key={item.key}>
-                  <td>{item.codigo || '—'}</td>
-                  <td>{item.descripcion}</td>
-                  <td>{item.cantidad}</td>
-                  <td>UND</td>
-                  <td className="text-right">{fmt(item.precio_unitario)}</td>
-                  <td className="text-right">{fmt(item.precio_unitario * item.cantidad)}</td>
+              gruposCarrito.map((g) => (
+                <tr key={g.groupKey}>
+                  <td>{g.producto_codigo}</td>
                   <td>
-                    {keyPendienteQuitar === item.key ? (
+                    <div>{g.descripcion}</div>
+                    {g.codigosIndividuales.length > 0 && (
+                      <div style={codigosListStyle}>
+                        {g.codigosIndividuales.map((cod) => (
+                          <div key={cod} style={codigoLineStyle}>{cod}</div>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td>{g.cantidad}</td>
+                  <td>UND</td>
+                  <td className="text-right">{fmt(g.precio_unitario)}</td>
+                  <td className="text-right">{fmt(g.precio_unitario * g.cantidad)}</td>
+                  <td>
+                    {Array.isArray(keyPendienteQuitar) && keyPendienteQuitar[0] === g.keys[0] ? (
                       <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
                         <button type="button" className="pos-confirm-btn yes" onClick={confirmarQuitarDelCarrito}>Si</button>
                         <button type="button" className="pos-confirm-btn no" onClick={cancelarQuitarDelCarrito}>No</button>
                       </span>
                     ) : (
-                      <button type="button" className="pos-remove-btn" onClick={() => quitarDelCarrito(item.key)}>×</button>
+                      <button type="button" className="pos-remove-btn" onClick={() => quitarDelCarrito(g.keys)}>×</button>
                     )}
                   </td>
                 </tr>
@@ -683,3 +728,20 @@ export default function Facturacion({ currentUser }) {
     </div>
   );
 }
+
+const codigosListStyle = {
+  marginTop: '4px',
+  maxHeight: '110px',
+  overflowY: 'auto',
+  border: '1px solid #eef0f3',
+  borderRadius: '4px',
+  padding: '4px 6px',
+  background: '#fafbfc'
+};
+
+const codigoLineStyle = {
+  fontFamily: 'monospace',
+  fontSize: '0.78rem',
+  color: '#475467',
+  lineHeight: '1.5'
+};
