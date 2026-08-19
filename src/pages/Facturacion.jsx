@@ -34,13 +34,11 @@ export default function Facturacion({ currentUser }) {
   const [buscandoCodigo, setBuscandoCodigo] = useState(false);
   const [filaProducto, setFilaProducto] = useState(null);
   const [filaCantidad, setFilaCantidad] = useState(1);
-  const [filaImei, setFilaImei] = useState('');
   const [filaUnidadesDisponibles, setFilaUnidadesDisponibles] = useState([]);
   const [errorFila, setErrorFila] = useState('');
 
   const codigoRef = useRef(null);
   const cantidadRef = useRef(null);
-  const imeiRef = useRef(null);
 
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
@@ -135,7 +133,6 @@ export default function Facturacion({ currentUser }) {
     setFilaCodigo('');
     setFilaProducto(null);
     setFilaCantidad(1);
-    setFilaImei('');
     setFilaUnidadesDisponibles([]);
     setErrorFila('');
   };
@@ -163,17 +160,20 @@ export default function Facturacion({ currentUser }) {
         return;
       }
       setFilaProducto(p);
+      setFilaCantidad(1);
       if (p.tipo === 'accesorio') {
-        setFilaCantidad(1);
-        setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
+        setFilaUnidadesDisponibles([]);
       } else {
+        // Para equipos/SIM/USIM se traen las unidades disponibles (con IMEI/ICCID propio) para
+        // poder asignarlas automaticamente segun la cantidad que se pida, sin que el usuario
+        // tenga que escribir cada codigo individual a mano.
         const unidades = await window.api.listUnits(p.id, Number(depositoId));
         const usados = codigosEnCarritoSet();
         setFilaUnidadesDisponibles(
           unidades.filter((u) => u.estado === 'disponible' && !usados.has(u.codigo.toLowerCase()))
         );
-        setTimeout(() => imeiRef.current?.focus(), 0);
       }
+      setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
     } finally {
       setBuscandoCodigo(false);
     }
@@ -187,52 +187,48 @@ export default function Facturacion({ currentUser }) {
 
   const totalFila = () => {
     if (!filaProducto) return 0;
-    if (filaProducto.tipo === 'accesorio') {
-      return precioFila() * (parseInt(filaCantidad, 10) || 0);
-    }
-    return precioFila();
+    return precioFila() * (parseInt(filaCantidad, 10) || 0);
   };
 
-  // Confirma la fila de un accesorio (Enter en Cantidad) y la agrega a la factura.
-  const confirmarFilaAccesorio = () => {
+  // Cantidad maxima que se puede pedir en la fila actual: el stock del deposito para
+  // accesorios, o la cantidad de unidades (IMEI/ICCID) disponibles para equipos/SIM/USIM.
+  const maxDisponibleFila = () => {
+    if (!filaProducto) return 0;
+    return filaProducto.tipo === 'accesorio'
+      ? (filaProducto.stock_disponible || 0)
+      : filaUnidadesDisponibles.length;
+  };
+
+  // Confirma la fila (Enter en Cantidad) y agrega el producto a la factura. Sirve tanto para
+  // accesorios (se descuenta del stock general del deposito) como para equipos/SIM/USIM (se
+  // asignan automaticamente esa cantidad de unidades disponibles, una por cada IMEI/ICCID en
+  // stock, sin que el usuario tenga que escribirlos a mano uno por uno).
+  const confirmarFila = () => {
     setErrorFila('');
     const c = parseInt(filaCantidad, 10);
     if (!c || c <= 0) { setErrorFila('Cantidad invalida'); return; }
-    if (c > filaProducto.stock_disponible) { setErrorFila('No hay suficiente stock disponible'); return; }
-    setCarrito((prev) => [
-      ...prev,
-      {
-        key: `${filaProducto.id}-${Date.now()}`,
-        product_id: filaProducto.id,
-        tipo: 'accesorio',
-        descripcion: filaProducto.nombre,
-        codigo: filaProducto.codigo_producto || null,
-        cantidad: c,
-        precio_unitario: precioFila()
-      }
-    ]);
-    limpiarFila();
-    setTimeout(() => codigoRef.current?.focus(), 0);
-  };
 
-  // Confirma la fila de un equipo/SIM/USIM (Enter en el codigo IMEI/ICCID individual).
-  const confirmarFilaImei = () => {
-    setErrorFila('');
-    const texto = filaImei.trim();
-    if (!texto) return;
-    const textoLower = texto.toLowerCase();
-    if (carrito.some((it) => it.codigo && it.codigo.toLowerCase() === textoLower)) {
-      setErrorFila('Ese codigo ya esta agregado en la factura');
-      return;
-    }
-    const unidad = filaUnidadesDisponibles.find((u) => u.codigo.toLowerCase() === textoLower);
-    if (!unidad) {
-      setErrorFila('Codigo no encontrado entre las unidades disponibles de este producto');
-      return;
-    }
-    setCarrito((prev) => [
-      ...prev,
-      {
+    if (filaProducto.tipo === 'accesorio') {
+      if (c > maxDisponibleFila()) { setErrorFila('No hay suficiente stock disponible'); return; }
+      setCarrito((prev) => [
+        ...prev,
+        {
+          key: `${filaProducto.id}-${Date.now()}`,
+          product_id: filaProducto.id,
+          tipo: 'accesorio',
+          descripcion: filaProducto.nombre,
+          codigo: filaProducto.codigo_producto || null,
+          cantidad: c,
+          precio_unitario: precioFila()
+        }
+      ]);
+    } else {
+      if (c > maxDisponibleFila()) {
+        setErrorFila(`Solo hay ${maxDisponibleFila()} unidad(es) disponible(s) de "${filaProducto.nombre}" en este deposito`);
+        return;
+      }
+      const unidadesAUsar = filaUnidadesDisponibles.slice(0, c);
+      const nuevosItems = unidadesAUsar.map((unidad) => ({
         key: `${filaProducto.id}-${unidad.id}`,
         product_id: filaProducto.id,
         unit_id: unidad.id,
@@ -241,8 +237,10 @@ export default function Facturacion({ currentUser }) {
         codigo: unidad.codigo,
         cantidad: 1,
         precio_unitario: precioFila()
-      }
-    ]);
+      }));
+      setCarrito((prev) => [...prev, ...nuevosItems]);
+    }
+
     limpiarFila();
     setTimeout(() => codigoRef.current?.focus(), 0);
   };
@@ -539,35 +537,27 @@ export default function Facturacion({ currentUser }) {
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarProductoPorCodigoEnter(); } }}
                     disabled={buscandoCodigo}
                   />
-                ) : filaProducto.tipo === 'accesorio' ? (
-                  <span>{filaProducto.codigo_producto || '—'}</span>
                 ) : (
-                  <input
-                    ref={imeiRef}
-                    type="text"
-                    placeholder="IMEI / código + Enter"
-                    value={filaImei}
-                    onChange={(e) => setFilaImei(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); confirmarFilaImei(); }
-                      if (e.key === 'Escape') { e.preventDefault(); limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }
-                    }}
-                  />
+                  <span>{filaProducto.codigo_producto || '—'}</span>
                 )}
               </td>
               <td>{filaProducto ? filaProducto.nombre : <span style={{ color: '#98a2b3' }}>—</span>}</td>
               <td>
-                {filaProducto && filaProducto.tipo === 'accesorio' ? (
+                {filaProducto ? (
                   <input
                     ref={cantidadRef}
                     type="number"
                     min="1"
+                    max={maxDisponibleFila()}
                     value={filaCantidad}
                     onChange={(e) => setFilaCantidad(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarFilaAccesorio(); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); }
+                      if (e.key === 'Escape') { e.preventDefault(); limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }
+                    }}
                   />
                 ) : (
-                  <span>{filaProducto ? 1 : ''}</span>
+                  <span></span>
                 )}
               </td>
               <td>{filaProducto ? 'UND' : ''}</td>
