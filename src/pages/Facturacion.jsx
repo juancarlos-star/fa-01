@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { fmt } from '../utils/format.js';
+import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
 
 const TIPOS = [
   { key: 'equipo', label: 'Equipo (IMEI)' },
@@ -12,12 +13,12 @@ const TIPOS = [
 export default function Facturacion({ currentUser }) {
   const [settings, setSettings] = useState(null);
 
-  // Cliente (el filtrado y registro se hacen por cedula/RIF)
+  // Cliente: se busca EXACTO por cedula/RIF al presionar Enter. Si existe, se trae de una vez;
+  // si no existe, se abre la ventana modal para registrarlo (ClienteNuevoModal).
   const [cedula, setCedula] = useState('');
-  const [resultadosCliente, setResultadosCliente] = useState([]);
+  const [buscandoCliente, setBuscandoCliente] = useState(false);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
-  const [clienteNuevo, setClienteNuevo] = useState({ nombre: '', telefono: '', direccion: '', email: '' });
-  const [mostrarRegistroNuevo, setMostrarRegistroNuevo] = useState(false);
+  const [mostrarModalClienteNuevo, setMostrarModalClienteNuevo] = useState(false);
   const [editandoCliente, setEditandoCliente] = useState(false);
   const [clienteEdicion, setClienteEdicion] = useState({ nombre: '', rif_cedula: '', telefono: '', direccion: '', email: '' });
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
@@ -84,39 +85,37 @@ export default function Facturacion({ currentUser }) {
     }
   }, [productoId, productos, tipoSeleccionado]);
 
-  const buscarPorCedula = async (texto) => {
-    setCedula(texto);
-    setClienteSeleccionado(null);
-    setEditandoCliente(false);
-    setMostrarRegistroNuevo(false);
-    setClienteNuevo({ nombre: '', telefono: '', direccion: '', email: '' });
-    if (texto.trim().length < 2) {
-      setResultadosCliente([]);
-      return;
+  // Al escribir la cedula/RIF y presionar Enter, se busca EXACTO. Si el cliente ya existe, se
+  // trae de una vez (queda seleccionado). Si no existe, se abre la ventana modal para
+  // registrarlo, con la cedula ya escrita.
+  const buscarClientePorEnter = async () => {
+    const texto = cedula.trim();
+    if (!texto) return;
+    setBuscandoCliente(true);
+    try {
+      const encontrado = await window.api.buscarClientePorCedula(texto);
+      if (encontrado) {
+        setClienteSeleccionado(encontrado);
+        setCedula(encontrado.rif_cedula || texto);
+      } else {
+        setMostrarModalClienteNuevo(true);
+      }
+    } finally {
+      setBuscandoCliente(false);
     }
-    const data = await window.api.searchClientes(texto);
-    setResultadosCliente(data);
   };
 
-  const abrirRegistroNuevo = () => {
-    setMostrarRegistroNuevo(true);
-  };
-
-  const seleccionarCliente = (c) => {
-    setClienteSeleccionado(c);
-    setCedula(c.rif_cedula || '');
-    setResultadosCliente([]);
-    setEditandoCliente(false);
-    setMostrarRegistroNuevo(false);
+  const handleClienteCreado = (cliente) => {
+    setClienteSeleccionado(cliente);
+    setCedula(cliente.rif_cedula || '');
+    setMostrarModalClienteNuevo(false);
   };
 
   const quitarCliente = () => {
     setClienteSeleccionado(null);
     setEditandoCliente(false);
-    setMostrarRegistroNuevo(false);
+    setMostrarModalClienteNuevo(false);
     setCedula('');
-    setResultadosCliente([]);
-    setClienteNuevo({ nombre: '', telefono: '', direccion: '', email: '' });
   };
 
   const abrirEdicionCliente = () => {
@@ -275,15 +274,11 @@ export default function Facturacion({ currentUser }) {
       return;
     }
 
-    let cliente = null;
-    if (clienteSeleccionado) {
-      cliente = { id: clienteSeleccionado.id };
-    } else if (cedula.trim() && clienteNuevo.nombre.trim()) {
-      cliente = { ...clienteNuevo, rif_cedula: cedula.trim() };
-    } else {
-      setError('Escribe la cedula del cliente y su nombre para continuar');
+    if (!clienteSeleccionado) {
+      setError('Escribe la cedula del cliente y presiona Enter para buscarlo o registrarlo');
       return;
     }
+    const cliente = { id: clienteSeleccionado.id };
 
     try {
       const res = await window.api.crearFactura({
@@ -342,17 +337,20 @@ export default function Facturacion({ currentUser }) {
       <div className="form-box" style={{ maxWidth: '520px' }}>
         <h3>Cliente</h3>
 
-        <label>Cedula</label>
+        <label>Cedula o RIF</label>
         <input
-          placeholder="Escribe la cedula del cliente"
+          placeholder="Escribe la cedula/RIF y presiona Enter"
           value={cedula}
-          onChange={(e) => buscarPorCedula(e.target.value)}
-          disabled={!!clienteSeleccionado}
+          onChange={(e) => { setCedula(e.target.value); if (clienteSeleccionado) setClienteSeleccionado(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarClientePorEnter(); } }}
+          disabled={!!clienteSeleccionado || buscandoCliente}
         />
+        {buscandoCliente && <p style={{ fontSize: '0.85rem', color: '#666' }}>Buscando cliente...</p>}
 
         {clienteSeleccionado && !editandoCliente && (
           <p style={{ fontSize: '0.9rem', color: '#027a48', marginTop: '6px' }}>
-            ✓ {clienteSeleccionado.nombre} {clienteSeleccionado.rif_cedula ? `(${clienteSeleccionado.rif_cedula})` : ''}{' '}
+            ✓ {clienteSeleccionado.nombre} {clienteSeleccionado.rif_cedula ? `(${clienteSeleccionado.rif_cedula})` : ''}
+            {clienteSeleccionado.telefono ? ` — ${clienteSeleccionado.telefono}` : ''}{' '}
             <button type="button" onClick={quitarCliente}>Cambiar</button>{' '}
             <button type="button" onClick={abrirEdicionCliente}>Editar datos</button>
           </p>
@@ -382,43 +380,15 @@ export default function Facturacion({ currentUser }) {
             <button type="button" onClick={() => setEditandoCliente(false)}>Cancelar</button>
           </div>
         )}
-
-        {!clienteSeleccionado && resultadosCliente.length > 0 && (
-          <ul style={{ listStyle: 'none', padding: 0, border: '1px solid #ddd', borderRadius: '6px', marginTop: '4px' }}>
-            {resultadosCliente.map((c) => (
-              <li key={c.id} onClick={() => seleccionarCliente(c)}
-                style={{ padding: '6px 8px', cursor: 'pointer', borderBottom: '1px solid #eee' }}>
-                {c.nombre} {c.rif_cedula ? `(${c.rif_cedula})` : ''}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {!clienteSeleccionado && cedula.trim().length >= 2 && resultadosCliente.length === 0 && !mostrarRegistroNuevo && (
-          <p style={{ fontSize: '0.85rem', color: '#b42318', marginTop: '6px' }}>
-            No se encontro ningun cliente con esa cedula.{' '}
-            <button type="button" onClick={abrirRegistroNuevo}>Registrar cliente</button>
-          </p>
-        )}
-
-        {!clienteSeleccionado && mostrarRegistroNuevo && (
-          <div style={{ marginTop: '6px' }}>
-            <p style={{ fontSize: '0.85rem', color: '#666' }}>Registrando cliente nuevo:</p>
-            <label>Nombre y apellido</label>
-            <input placeholder="Nombre y apellido / Razon social" value={clienteNuevo.nombre}
-              onChange={(e) => setClienteNuevo({ ...clienteNuevo, nombre: e.target.value })} />
-            <label>Telefono</label>
-            <input placeholder="Telefono" value={clienteNuevo.telefono}
-              onChange={(e) => setClienteNuevo({ ...clienteNuevo, telefono: e.target.value })} />
-            <label>Direccion</label>
-            <input placeholder="Direccion" value={clienteNuevo.direccion}
-              onChange={(e) => setClienteNuevo({ ...clienteNuevo, direccion: e.target.value })} />
-            <label>Email (opcional)</label>
-            <input placeholder="Email" value={clienteNuevo.email}
-              onChange={(e) => setClienteNuevo({ ...clienteNuevo, email: e.target.value })} />
-          </div>
-        )}
       </div>
+
+      {mostrarModalClienteNuevo && (
+        <ClienteNuevoModal
+          cedulaInicial={cedula}
+          onConfirm={handleClienteCreado}
+          onCancel={() => setMostrarModalClienteNuevo(false)}
+        />
+      )}
 
       <div className="form-box" style={{ maxWidth: '600px' }}>
         <h3>Agregar producto</h3>
