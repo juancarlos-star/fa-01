@@ -57,9 +57,32 @@ export default function CargosDescargos({ currentUser }) {
   const [comprobanteAbierto, setComprobanteAbierto] = useState(null); // una linea del documento ya emitido
   const [generandoPDF, setGenerandoPDF] = useState(false);
 
+  // Deposito de esta operacion: TODO el documento (cargo o descargo) aplica a un solo
+  // deposito. Se elige aqui arriba, antes de agregar articulos, e igual que en Facturacion y
+  // Compras, cambiarlo a mitad de documento vacia lo que ya se habia agregado (pertenece al
+  // deposito anterior).
+  const [depositos, setDepositos] = useState([]);
+  const [depositoId, setDepositoId] = useState('');
+
   useEffect(() => { window.api.getSettings().then(setSettings); }, []);
 
+  useEffect(() => {
+    window.api.listDepositos(true).then((data) => {
+      setDepositos(data);
+      if (data.length > 0) setDepositoId(String(data[0].id));
+    });
+  }, []);
+
   const hayItems = itemsDocumento.length > 0;
+
+  const cambiarDeposito = (nuevoId) => {
+    if (hayItems && !window.confirm('Cambiar de deposito vacia los articulos que ya agregaste a este documento (pertenecen al deposito anterior). ¿Deseas continuar?')) {
+      return;
+    }
+    setDepositoId(nuevoId);
+    setItemsDocumento([]);
+    setError('');
+  };
 
   const cambiarTipoDocumento = (valor) => {
     if (valor === tipoDocumento) return;
@@ -111,12 +134,17 @@ export default function CargosDescargos({ currentUser }) {
       setError('Indica el motivo del descargo (aplica a todo el documento)');
       return;
     }
+    if (!depositoId) {
+      setError('Selecciona el deposito de esta operacion');
+      return;
+    }
     setEnviando(true);
     try {
       const payload = {
         tipoDocumento,
         motivo: motivoDocumento.trim(),
         usuario: currentUser?.username,
+        depositoId: Number(depositoId),
         items: itemsDocumento.map((it) => ({
           productId: it.productId,
           esAccesorio: it.esAccesorio,
@@ -213,6 +241,14 @@ export default function CargosDescargos({ currentUser }) {
       </p>
 
       <div className="form-box" style={{ maxWidth: '500px' }}>
+        <label>Deposito de esta operacion</label>
+        <select value={depositoId} onChange={(e) => cambiarDeposito(e.target.value)} style={{ display: 'block', marginBottom: '0.75rem' }}>
+          {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
+          {depositos.map((d) => (
+            <option key={d.id} value={d.id}>{d.codigo} - {d.nombre}</option>
+          ))}
+        </select>
+
         <label>Tipo de documento</label>
         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
           <button
@@ -239,9 +275,9 @@ export default function CargosDescargos({ currentUser }) {
       </div>
 
       {tipoDocumento === 'cargo' ? (
-        <AgregarItemsCargo onAgregar={agregarItem} itemsDocumento={itemsDocumento} />
+        <AgregarItemsCargo onAgregar={agregarItem} itemsDocumento={itemsDocumento} depositoId={depositoId} />
       ) : (
-        <AgregarItemsDescargo onAgregar={agregarItem} itemsDocumento={itemsDocumento} />
+        <AgregarItemsDescargo onAgregar={agregarItem} itemsDocumento={itemsDocumento} depositoId={depositoId} />
       )}
 
       <DocumentoDraft
@@ -330,7 +366,7 @@ function DocumentoDraft({ tipoDocumento, items, onQuitar, totalUsd }) {
 
 // ---------------- Agregar items: CARGO (equipo/simcard/usim/accesorio) ----------------
 
-function AgregarItemsCargo({ onAgregar, itemsDocumento }) {
+function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
   const [tipoActivo, setTipoActivo] = useState('equipo');
   const [productos, setProductos] = useState([]);
   const [productoId, setProductoId] = useState('');
@@ -352,10 +388,10 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento }) {
   const producto = productos.find((p) => p.id === Number(productoId));
 
   const cargarProductos = useCallback(async () => {
-    const data = await window.api.listProducts(tipoActivo);
+    const data = await window.api.listProducts(tipoActivo, undefined, depositoId ? Number(depositoId) : undefined);
     setProductos(data);
     setProductoId('');
-  }, [tipoActivo]);
+  }, [tipoActivo, depositoId]);
 
   useEffect(() => { cargarProductos(); }, [cargarProductos]);
 
@@ -555,7 +591,7 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento }) {
 
 // ---------------- Agregar items: DESCARGO (equipo/simcard/usim por escaneo global + accesorio por cantidad) ----------------
 
-function AgregarItemsDescargo({ onAgregar, itemsDocumento }) {
+function AgregarItemsDescargo({ onAgregar, itemsDocumento, depositoId }) {
   const [scanTexto, setScanTexto] = useState('');
   const [buscando, setBuscando] = useState(false);
   const [errorScan, setErrorScan] = useState('');
@@ -579,17 +615,17 @@ function AgregarItemsDescargo({ onAgregar, itemsDocumento }) {
   useEffect(() => { scanRef.current?.focus(); }, []);
 
   const cargarProductosAccesorio = useCallback(async () => {
-    const data = await window.api.listProducts('accesorio');
+    const data = await window.api.listProducts('accesorio', undefined, depositoId ? Number(depositoId) : undefined);
     setProductos(data);
     setProductoId('');
-  }, []);
+  }, [depositoId]);
   useEffect(() => { cargarProductosAccesorio(); }, [cargarProductosAccesorio]);
 
   const cargarProductosRango = useCallback(async () => {
-    const data = await window.api.listProducts(tipoRango);
+    const data = await window.api.listProducts(tipoRango, undefined, depositoId ? Number(depositoId) : undefined);
     setProductosRango(data);
     setProductoRangoId('');
-  }, [tipoRango]);
+  }, [tipoRango, depositoId]);
   useEffect(() => { if (mostrarRango) cargarProductosRango(); }, [mostrarRango, cargarProductosRango]);
 
   // Escaneo/escritura de un solo codigo (IMEI, ICCID, codigo USIM o codigo de barras de
@@ -612,6 +648,11 @@ function AgregarItemsDescargo({ onAgregar, itemsDocumento }) {
       if (res.tipoResultado === 'unidad') {
         if (res.unit.estado !== 'disponible') {
           setErrorScan(`El codigo "${res.unit.codigo}" no esta disponible (estado actual: ${res.unit.estado})`);
+          setScanTexto('');
+          return;
+        }
+        if (depositoId && res.unit.deposito_id && res.unit.deposito_id !== Number(depositoId)) {
+          setErrorScan(`El codigo "${res.unit.codigo}" no pertenece al deposito seleccionado`);
           setScanTexto('');
           return;
         }
@@ -673,7 +714,7 @@ function AgregarItemsDescargo({ onAgregar, itemsDocumento }) {
     setProcesandoRango(true);
     try {
       const producto = productosRango.find((p) => p.id === Number(productoRangoId));
-      const unidades = await window.api.listUnits(producto.id);
+      const unidades = await window.api.listUnits(producto.id, depositoId ? Number(depositoId) : undefined);
       const disponiblesPorCodigo = new Map(
         unidades.filter((u) => u.estado === 'disponible').map((u) => [u.codigo.toLowerCase(), u])
       );

@@ -19,6 +19,10 @@ export default function Compras({ currentUser }) {
   // muestra como vista previa antes de registrar; el numero real se confirma al guardar.
   const [proximoNumeroCompra, setProximoNumeroCompra] = useState(null);
 
+  // Deposito que recibe la mercancia de esta compra: toda la compra entra a UN solo deposito.
+  const [depositos, setDepositos] = useState([]);
+  const [depositoId, setDepositoId] = useState('');
+
   const [tipoSeleccionado, setTipoSeleccionado] = useState('equipo');
   const [productos, setProductos] = useState([]);
   const [productoId, setProductoId] = useState('');
@@ -76,11 +80,20 @@ export default function Compras({ currentUser }) {
   };
 
   useEffect(() => {
-    window.api.listProducts(tipoSeleccionado).then((data) => {
+    window.api.listProducts(tipoSeleccionado, undefined, depositoId ? Number(depositoId) : undefined).then((data) => {
       setProductos(data);
       resetearFormularioProducto();
     });
-  }, [tipoSeleccionado]);
+  }, [tipoSeleccionado, depositoId]);
+
+  // Carga los depositos activos al entrar a Compras y deja el primero seleccionado por
+  // defecto, igual que en Facturacion.
+  useEffect(() => {
+    window.api.listDepositos(true).then((data) => {
+      setDepositos(data);
+      if (data.length > 0) setDepositoId(String(data[0].id));
+    });
+  }, []);
 
   const cargarProximoNumeroCompra = () => {
     window.api.proximoNumeroCompra().then((res) => setProximoNumeroCompra(res.proximoNumero));
@@ -281,6 +294,7 @@ export default function Compras({ currentUser }) {
     setError('');
     if (!proveedor.trim()) { setError('Indica el nombre del proveedor'); return; }
     if (!numeroFacturaCompra.trim()) { setError('Indica el numero de factura de compra'); return; }
+    if (!depositoId) { setError('Selecciona el deposito que recibe la mercancia'); return; }
     if (carrito.length === 0) { setError('Agrega al menos un producto'); return; }
 
     const items = carrito.map((i) => ({
@@ -296,7 +310,8 @@ export default function Compras({ currentUser }) {
         proveedor: proveedor.trim(),
         numeroFacturaCompra: numeroFacturaCompra.trim(),
         items,
-        usuario: currentUser?.username
+        usuario: currentUser?.username,
+        depositoId: Number(depositoId)
       });
       if (!res.ok) { setError(res.message); return; }
       setConfirmacion(res);
@@ -365,6 +380,13 @@ export default function Compras({ currentUser }) {
         <input value={proveedor} onChange={(e) => setProveedor(e.target.value)} placeholder="Ej: Distribuidora XYZ" />
         <label>N° de factura de compra</label>
         <input value={numeroFacturaCompra} onChange={(e) => setNumeroFacturaCompra(e.target.value)} placeholder="Ej: 00458" />
+        <label>Deposito que recibe la mercancia</label>
+        <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
+          {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
+          {depositos.map((d) => (
+            <option key={d.id} value={d.id}>{d.codigo} - {d.nombre}</option>
+          ))}
+        </select>
       </div>
 
       <div className="form-box" style={{ maxWidth: '600px' }}>
