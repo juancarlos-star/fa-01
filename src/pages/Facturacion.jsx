@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { fmt } from '../utils/format.js';
 import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
+import SeleccionUnidadesModal from '../components/SeleccionUnidadesModal.jsx';
 
 export default function Facturacion({ currentUser }) {
   const [settings, setSettings] = useState(null);
@@ -36,6 +37,9 @@ export default function Facturacion({ currentUser }) {
   const [filaCantidad, setFilaCantidad] = useState(1);
   const [filaUnidadesDisponibles, setFilaUnidadesDisponibles] = useState([]);
   const [errorFila, setErrorFila] = useState('');
+  // Cuando se lee el IMEI/codigo individual directamente con la pistola, ya se sabe la unidad
+  // exacta a facturar: se salta el paso de Cantidad y el modal de seleccion.
+  const [mostrarModalUnidades, setMostrarModalUnidades] = useState(false);
 
   const codigoRef = useRef(null);
   const cantidadRef = useRef(null);
@@ -135,6 +139,7 @@ export default function Facturacion({ currentUser }) {
     setFilaCantidad(1);
     setFilaUnidadesDisponibles([]);
     setErrorFila('');
+    setMostrarModalUnidades(false);
   };
 
   const codigosEnCarritoSet = () =>
@@ -152,21 +157,57 @@ export default function Facturacion({ currentUser }) {
     try {
       const p = await window.api.buscarProductoPorCodigo(texto, Number(depositoId));
       if (!p) {
-        setErrorFila(`No se encontro ningun producto con el codigo "${texto}"`);
+        setErrorFila(`No se encontro ningun producto con el codigo, IMEI o nombre "${texto}"`);
+        return;
+      }
+      if (p.noDisponible) {
+        setErrorFila(`El codigo "${p.codigo}" (${p.nombre}) ya fue vendido o no esta disponible`);
+        return;
+      }
+      if (p.otroDeposito) {
+        setErrorFila(`El codigo "${p.codigo}" (${p.nombre}) pertenece a otro deposito`);
+        return;
+      }
+      if (p.multiplesCoincidencias) {
+        setErrorFila(`Hay ${p.cantidad} productos que coinciden con "${texto}". Se mas especifico o usa el codigo exacto.`);
         return;
       }
       if ((p.stock_disponible || 0) <= 0) {
         setErrorFila(`"${p.nombre}" no tiene stock disponible en este deposito`);
         return;
       }
+
+      // Se leyo (con pistola o a mano) el codigo individual exacto de una unidad: ya se sabe
+      // cual pieza fisica es, asi que se agrega directo a la factura sin pedir cantidad ni
+      // abrir el selector de unidades.
+      if (p.unidad_encontrada) {
+        const precioUnit = parseFloat((tipoPrecio === 'precio2' ? p.precio2 : p.precio)) || 0;
+        setCarrito((prev) => [
+          ...prev,
+          {
+            key: `${p.id}-${p.unidad_encontrada.id}`,
+            product_id: p.id,
+            unit_id: p.unidad_encontrada.id,
+            tipo: p.tipo,
+            descripcion: p.nombre,
+            producto_codigo: p.codigo_producto || null,
+            codigo: p.unidad_encontrada.codigo,
+            cantidad: 1,
+            precio_unitario: precioUnit
+          }
+        ]);
+        setFilaCodigo('');
+        setTimeout(() => codigoRef.current?.focus(), 0);
+        return;
+      }
+
       setFilaProducto(p);
       setFilaCantidad(1);
       if (p.tipo === 'accesorio') {
         setFilaUnidadesDisponibles([]);
       } else {
         // Para equipos/SIM/USIM se traen las unidades disponibles (con IMEI/ICCID propio) para
-        // poder asignarlas automaticamente segun la cantidad que se pida, sin que el usuario
-        // tenga que escribir cada codigo individual a mano.
+        // luego poder elegirlas en el selector de unidades segun la cantidad pedida.
         const unidades = await window.api.listUnits(p.id, Number(depositoId));
         const usados = codigosEnCarritoSet();
         setFilaUnidadesDisponibles(
@@ -199,17 +240,21 @@ export default function Facturacion({ currentUser }) {
       : filaUnidadesDisponibles.length;
   };
 
-  // Confirma la fila (Enter en Cantidad) y agrega el producto a la factura. Sirve tanto para
-  // accesorios (se descuenta del stock general del deposito) como para equipos/SIM/USIM (se
-  // asignan automaticamente esa cantidad de unidades disponibles, una por cada IMEI/ICCID en
-  // stock, sin que el usuario tenga que escribirlos a mano uno por uno).
+  // Confirma la cantidad (Enter en Cantidad). Para accesorios se agrega directo a la factura
+  // (se descuenta del stock general del deposito). Para equipos/SIM/USIM se abre el selector de
+  // unidades para escoger cuales IMEI/codigos puntuales se van a facturar.
   const confirmarFila = () => {
     setErrorFila('');
     const c = parseInt(filaCantidad, 10);
     if (!c || c <= 0) { setErrorFila('Cantidad invalida'); return; }
+    if (c > maxDisponibleFila()) {
+      setErrorFila(filaProducto.tipo === 'accesorio'
+        ? 'No hay suficiente stock disponible'
+        : `Solo hay ${maxDisponibleFila()} unidad(es) disponible(s) de "${filaProducto.nombre}" en este deposito`);
+      return;
+    }
 
     if (filaProducto.tipo === 'accesorio') {
-      if (c > maxDisponibleFila()) { setErrorFila('No hay suficiente stock disponible'); return; }
       setCarrito((prev) => [
         ...prev,
         {
@@ -217,30 +262,40 @@ export default function Facturacion({ currentUser }) {
           product_id: filaProducto.id,
           tipo: 'accesorio',
           descripcion: filaProducto.nombre,
+          producto_codigo: filaProducto.codigo_producto || null,
           codigo: filaProducto.codigo_producto || null,
           cantidad: c,
           precio_unitario: precioFila()
         }
       ]);
+      limpiarFila();
+      setTimeout(() => codigoRef.current?.focus(), 0);
     } else {
-      if (c > maxDisponibleFila()) {
-        setErrorFila(`Solo hay ${maxDisponibleFila()} unidad(es) disponible(s) de "${filaProducto.nombre}" en este deposito`);
-        return;
-      }
-      const unidadesAUsar = filaUnidadesDisponibles.slice(0, c);
-      const nuevosItems = unidadesAUsar.map((unidad) => ({
-        key: `${filaProducto.id}-${unidad.id}`,
-        product_id: filaProducto.id,
-        unit_id: unidad.id,
-        tipo: filaProducto.tipo,
-        descripcion: filaProducto.nombre,
-        codigo: unidad.codigo,
-        cantidad: 1,
-        precio_unitario: precioFila()
-      }));
-      setCarrito((prev) => [...prev, ...nuevosItems]);
+      setMostrarModalUnidades(true);
     }
+  };
 
+  // Se llama cuando en el selector de unidades ya se escogieron todos los IMEI/codigos
+  // pedidos: se agregan a la factura (uno por renglon, cada uno con su codigo real) y el foco
+  // vuelve a Codigo para seguir cargando articulos.
+  const confirmarSeleccionUnidades = (unidadesSeleccionadas) => {
+    const nuevosItems = unidadesSeleccionadas.map((unidad) => ({
+      key: `${filaProducto.id}-${unidad.id}`,
+      product_id: filaProducto.id,
+      unit_id: unidad.id,
+      tipo: filaProducto.tipo,
+      descripcion: filaProducto.nombre,
+      producto_codigo: filaProducto.codigo_producto || null,
+      codigo: unidad.codigo,
+      cantidad: 1,
+      precio_unitario: precioFila()
+    }));
+    setCarrito((prev) => [...prev, ...nuevosItems]);
+    limpiarFila();
+    setTimeout(() => codigoRef.current?.focus(), 0);
+  };
+
+  const cancelarSeleccionUnidades = () => {
     limpiarFila();
     setTimeout(() => codigoRef.current?.focus(), 0);
   };
@@ -613,6 +668,16 @@ export default function Facturacion({ currentUser }) {
           cedulaInicial={cedula}
           onConfirm={handleClienteCreado}
           onCancel={() => setMostrarModalClienteNuevo(false)}
+        />
+      )}
+
+      {mostrarModalUnidades && filaProducto && (
+        <SeleccionUnidadesModal
+          nombreProducto={filaProducto.nombre}
+          cantidadNecesaria={parseInt(filaCantidad, 10) || 1}
+          unidadesDisponibles={filaUnidadesDisponibles}
+          onConfirm={confirmarSeleccionUnidades}
+          onCancel={cancelarSeleccionUnidades}
         />
       )}
     </div>
