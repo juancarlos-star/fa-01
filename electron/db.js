@@ -230,6 +230,32 @@ function migrarCargosDescargosEncabezadoSiHaceFalta(database) {
   }
 }
 
+// Campos adicionales del cliente, para que la ventana de "Cliente nuevo" en Facturacion
+// (identica a la del modulo de Clientes del software Saint) pueda guardar Tipo de Cliente,
+// Movil, las 3 Redes Sociales y Notas, ademas de los campos que ya existian.
+function migrarClientesCamposSiHaceFalta(database) {
+  const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='clientes'").get();
+  if (!existe) return;
+  if (!tieneColumna(database, 'clientes', 'tipo_cliente')) {
+    database.exec("ALTER TABLE clientes ADD COLUMN tipo_cliente TEXT NOT NULL DEFAULT 'Natural'");
+  }
+  if (!tieneColumna(database, 'clientes', 'movil')) {
+    database.exec('ALTER TABLE clientes ADD COLUMN movil TEXT');
+  }
+  if (!tieneColumna(database, 'clientes', 'red_social1')) {
+    database.exec('ALTER TABLE clientes ADD COLUMN red_social1 TEXT');
+  }
+  if (!tieneColumna(database, 'clientes', 'red_social2')) {
+    database.exec('ALTER TABLE clientes ADD COLUMN red_social2 TEXT');
+  }
+  if (!tieneColumna(database, 'clientes', 'red_social3')) {
+    database.exec('ALTER TABLE clientes ADD COLUMN red_social3 TEXT');
+  }
+  if (!tieneColumna(database, 'clientes', 'notas')) {
+    database.exec('ALTER TABLE clientes ADD COLUMN notas TEXT');
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -373,6 +399,7 @@ function initDb() {
   migrarCargosDescargosEncabezadoSiHaceFalta(database);
   migrarDepositosSiHaceFalta(database);
   migrarPreciosYCodigoProductoSiHaceFalta(database);
+  migrarClientesCamposSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');
