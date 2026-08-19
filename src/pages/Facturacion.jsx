@@ -13,6 +13,16 @@ const TIPOS = [
 export default function Facturacion({ currentUser }) {
   const [settings, setSettings] = useState(null);
 
+  // Deposito: toda la factura se hace contra UN solo deposito (de ahi sale el stock y las
+  // unidades disponibles que se muestran). Se elige aqui arriba, antes de agregar productos.
+  const [depositos, setDepositos] = useState([]);
+  const [depositoId, setDepositoId] = useState('');
+
+  // Precio 1 / Precio 2: identifica si el cliente paga en Bs o en Dolares (o el criterio que
+  // el usuario le quiera dar a cada precio). Al elegir un producto, el precio unitario se toma
+  // de "precio" (Precio 1) o "precio2" (Precio 2) segun lo que este seleccionado aqui.
+  const [tipoPrecio, setTipoPrecio] = useState('precio'); // 'precio' | 'precio2'
+
   // Cliente: se busca EXACTO por cedula/RIF al presionar Enter. Si existe, se trae de una vez;
   // si no existe, se abre la ventana modal para registrarlo (ClienteNuevoModal).
   const [cedula, setCedula] = useState('');
@@ -42,8 +52,19 @@ export default function Facturacion({ currentUser }) {
     window.api.getSettings().then(setSettings);
   }, []);
 
+  // Carga los depositos activos al entrar a Facturacion y deja el primero seleccionado por
+  // defecto (normalmente "Principal"), para que el usuario pueda empezar a facturar de una
+  // vez sin tener que elegir deposito manualmente si solo hay uno.
   useEffect(() => {
-    window.api.listProducts(tipoSeleccionado).then((data) => {
+    window.api.listDepositos(true).then((data) => {
+      setDepositos(data);
+      if (data.length > 0) setDepositoId(String(data[0].id));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!depositoId) return;
+    window.api.listProducts(tipoSeleccionado, undefined, Number(depositoId)).then((data) => {
       setProductos(data);
       setProductoId('');
       setUnidadesDisponibles([]);
@@ -52,7 +73,7 @@ export default function Facturacion({ currentUser }) {
       setPrecioUnitario('');
       setCantidad(1);
     });
-  }, [tipoSeleccionado]);
+  }, [tipoSeleccionado, depositoId]);
 
   // Referencia siempre actualizada al carrito, para poder filtrar codigos ya usados sin tener
   // que agregar "carrito" a las dependencias del efecto de abajo (eso lo haria recargar y
@@ -67,9 +88,9 @@ export default function Facturacion({ currentUser }) {
     setCodigosPendientes([]);
     if (!productoId) return;
     const p = productos.find((x) => x.id === Number(productoId));
-    if (p) setPrecioUnitario(p.precio);
-    if (tipoSeleccionado !== 'accesorio' && productoId) {
-      window.api.listUnits(Number(productoId)).then((data) => {
+    if (p) setPrecioUnitario(tipoPrecio === 'precio2' ? p.precio2 : p.precio);
+    if (tipoSeleccionado !== 'accesorio' && productoId && depositoId) {
+      window.api.listUnits(Number(productoId), Number(depositoId)).then((data) => {
         // Un codigo/IMEI que ya esta agregado a la factura actual (carrito) no debe volver a
         // aparecer como "disponible", aunque en la base de datos siga marcado 'disponible'
         // (todavia no se marca 'vendido' hasta que se emite la factura). Sin este filtro, al
@@ -83,7 +104,7 @@ export default function Facturacion({ currentUser }) {
         );
       });
     }
-  }, [productoId, productos, tipoSeleccionado]);
+  }, [productoId, productos, tipoSeleccionado, tipoPrecio, depositoId]);
 
   // Al escribir la cedula/RIF y presionar Enter, se busca EXACTO. Si el cliente ya existe, se
   // trae de una vez (queda seleccionado). Si no existe, se abre la ventana modal para
@@ -185,6 +206,10 @@ export default function Facturacion({ currentUser }) {
 
   const agregarAlCarrito = () => {
     setError('');
+    if (!depositoId) {
+      setError('Selecciona el deposito antes de agregar productos');
+      return;
+    }
     if (!productoId) {
       setError('Selecciona un producto');
       return;
@@ -278,13 +303,18 @@ export default function Facturacion({ currentUser }) {
       setError('Escribe la cedula del cliente y presiona Enter para buscarlo o registrarlo');
       return;
     }
+    if (!depositoId) {
+      setError('Selecciona el deposito del cual se factura');
+      return;
+    }
     const cliente = { id: clienteSeleccionado.id };
 
     try {
       const res = await window.api.crearFactura({
         cliente,
         items: carrito,
-        usuario: currentUser?.username
+        usuario: currentUser?.username,
+        depositoId: Number(depositoId)
       });
 
       if (!res.ok) {
@@ -330,9 +360,43 @@ export default function Facturacion({ currentUser }) {
     );
   }
 
+  const cambiarDeposito = (nuevoId) => {
+    // Cambiar de deposito a mitad de una factura invalida los codigos/unidades que ya estaban
+    // en el carrito (pertenecen al deposito anterior), asi que se avisa y se vacia el carrito
+    // para no mezclar stock de dos depositos distintos en la misma factura.
+    if (carrito.length > 0 && !window.confirm('Cambiar de deposito vacia los productos que ya agregaste a esta factura (pertenecen al deposito anterior). ¿Deseas continuar?')) {
+      return;
+    }
+    setDepositoId(nuevoId);
+    setCarrito([]);
+    setProductoId('');
+  };
+
   return (
     <div>
       <h1>Facturacion</h1>
+
+      <div className="form-box" style={{ maxWidth: '520px' }}>
+        <h3>Deposito y precio</h3>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <div>
+            <label>Deposito</label>
+            <select value={depositoId} onChange={(e) => cambiarDeposito(e.target.value)}>
+              {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
+              {depositos.map((d) => (
+                <option key={d.id} value={d.id}>{d.codigo} - {d.nombre}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>Precio</label>
+            <select value={tipoPrecio} onChange={(e) => setTipoPrecio(e.target.value)}>
+              <option value="precio">Bs.</option>
+              <option value="precio2">Dolares</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <div className="form-box" style={{ maxWidth: '520px' }}>
         <h3>Cliente</h3>
@@ -465,7 +529,7 @@ export default function Facturacion({ currentUser }) {
           </>
         )}
 
-        <label>Precio unitario (USD)</label>
+        <label>Precio unitario ({tipoPrecio === 'precio2' ? 'Dolares' : 'Bs.'})</label>
         <input type="number" step="0.01" value={precioUnitario} readOnly disabled />
 
         <button type="button" onClick={agregarAlCarrito}>+ Agregar a la factura</button>
