@@ -307,6 +307,17 @@ export default function Facturacion({ currentUser }) {
       setCarrito([]);
       quitarCliente();
       window.api.getSettings().then(setSettings);
+
+      // La factura se imprime automaticamente al totalizar, sin que el usuario tenga que
+      // pedirlo aparte (igual que ya ocurre en Cargos y Descargos). El boton "Imprimir PDF" de
+      // la pantalla de confirmacion queda disponible por si hace falta reimprimir.
+      if (detalle.ok) {
+        try {
+          await generarFacturaPDF(detalle.factura, detalle.items, { imprimir: true });
+        } catch (errImpresion) {
+          console.error('Error al imprimir la factura automaticamente:', errImpresion);
+        }
+      }
     } catch (err) {
       console.error('Error al emitir factura:', err);
       setError('Ocurrio un error inesperado al emitir la factura: ' + (err?.message || String(err)));
@@ -347,8 +358,9 @@ export default function Facturacion({ currentUser }) {
         <div className="form-box" style={{ maxWidth: '400px' }}>
           <p><strong>N° de factura:</strong> {confirmacion.numero}</p>
           <p><strong>Total:</strong> ${fmt(confirmacion.totalUsd)} USD (Bs {fmt(confirmacion.totalBs)})</p>
+          <p style={{ fontSize: '0.85rem', color: '#666' }}>La factura ya se envio a imprimir automaticamente.</p>
           <button onClick={handleImprimir} disabled={imprimiendoFactura} style={{ marginRight: '8px' }}>
-            {imprimiendoFactura ? 'Imprimiendo...' : 'Imprimir PDF'}
+            {imprimiendoFactura ? 'Imprimiendo...' : 'Reimprimir PDF'}
           </button>
           <button onClick={() => setConfirmacion(null)}>Hacer otra factura</button>
         </div>

@@ -51,7 +51,7 @@ export default function Inventario({ currentUser }) {
   // ---- Edicion completa de un producto (nombre, categoria, precio, stock minimo, codigo de barras) ----
   const [editandoProductoId, setEditandoProductoId] = useState(null);
   const [formEdicionProducto, setFormEdicionProducto] = useState({
-    nombre: '', categoria: '', precio: '', stock_minimo: '', codigo_barras: ''
+    nombre: '', categoria: '', precio: '', precio2: '', stock_minimo: '', codigo_barras: '', codigo_producto: ''
   });
   const [errorEdicionProducto, setErrorEdicionProducto] = useState('');
   const [guardandoEdicionProducto, setGuardandoEdicionProducto] = useState(false);
@@ -60,8 +60,10 @@ export default function Inventario({ currentUser }) {
     nombre: '',
     categoria: '',
     precio: '',
+    precio2: '',
     stock_minimo: '',
     codigo_barras: '',
+    codigo_producto: '',
     costo_inicial: ''
   });
 
@@ -129,13 +131,22 @@ export default function Inventario({ currentUser }) {
       setError('El nombre es obligatorio');
       return;
     }
+    // El codigo de producto (el filtro corto que se usa en el renglon "Codigo" de Facturacion)
+    // es obligatorio para equipos, SIM y USIM. Para accesorios sigue siendo opcional, ya que
+    // para ellos existe el codigo de barras.
+    if (!esAccesorio && !form.codigo_producto.trim()) {
+      setError('El codigo de producto es obligatorio para este tipo (se usa para ubicarlo en Facturacion)');
+      return;
+    }
     const res = await window.api.createProduct({
       tipo: tab.tipo,
       nombre: form.nombre.trim(),
       categoria: form.categoria.trim(),
       precio: parseFloat(form.precio) || 0,
+      precio2: parseFloat(form.precio2) || 0,
       stock_minimo: parseInt(form.stock_minimo, 10) || 0,
       codigo_barras: form.codigo_barras.trim(),
+      codigo_producto: form.codigo_producto.trim(),
       costo_inicial: parseFloat(form.costo_inicial) || 0,
       usuario: currentUser?.username
     });
@@ -143,7 +154,10 @@ export default function Inventario({ currentUser }) {
       setError(res.message);
       return;
     }
-    setForm({ nombre: '', categoria: esAccesorio ? tab.categoria || '' : '', precio: '', stock_minimo: '', codigo_barras: '', costo_inicial: '' });
+    setForm({
+      nombre: '', categoria: esAccesorio ? tab.categoria || '' : '', precio: '', precio2: '',
+      stock_minimo: '', codigo_barras: '', codigo_producto: '', costo_inicial: ''
+    });
     cargarProductos();
     cargarNombresSugeridos();
   };
@@ -198,8 +212,10 @@ export default function Inventario({ currentUser }) {
       nombre: p.nombre || '',
       categoria: p.categoria || '',
       precio: String(p.precio ?? ''),
+      precio2: String(p.precio2 ?? ''),
       stock_minimo: String(p.stock_minimo ?? ''),
-      codigo_barras: p.codigo_barras || ''
+      codigo_barras: p.codigo_barras || '',
+      codigo_producto: p.codigo_producto || ''
     });
   };
 
@@ -214,14 +230,20 @@ export default function Inventario({ currentUser }) {
       setErrorEdicionProducto('El nombre es obligatorio');
       return;
     }
+    if (!esAccesorio && !formEdicionProducto.codigo_producto.trim()) {
+      setErrorEdicionProducto('El codigo de producto es obligatorio para este tipo (se usa para ubicarlo en Facturacion)');
+      return;
+    }
     setGuardandoEdicionProducto(true);
     try {
       const res = await window.api.updateProduct(id, {
         nombre: formEdicionProducto.nombre.trim(),
         categoria: formEdicionProducto.categoria.trim(),
         precio: parseFloat(formEdicionProducto.precio) || 0,
+        precio2: parseFloat(formEdicionProducto.precio2) || 0,
         stock_minimo: parseInt(formEdicionProducto.stock_minimo, 10) || 0,
-        codigo_barras: formEdicionProducto.codigo_barras.trim()
+        codigo_barras: formEdicionProducto.codigo_barras.trim(),
+        codigo_producto: formEdicionProducto.codigo_producto.trim()
       });
       if (!res.ok) {
         setErrorEdicionProducto(res.message);
@@ -240,6 +262,10 @@ export default function Inventario({ currentUser }) {
   const productosFiltrados = products.filter((p) =>
     p.nombre.toLowerCase().includes(busqueda.trim().toLowerCase())
   );
+
+  // Columnas siempre presentes: Nombre, Categoria, Precio 1, Precio 2, Codigo, Stock, Acciones.
+  // Mas las condicionales de accesorios (Cod. barras y, si es admin, Costo prom.).
+  const totalColumnas = 7 + (esAccesorio ? 1 : 0) + (esAccesorio && esAdmin ? 1 : 0);
 
   return (
     <div>
@@ -308,12 +334,31 @@ export default function Inventario({ currentUser }) {
           </div>
         )}
         <div>
-          <label>Precio de venta (USD)</label><br />
+          <label>Precio 1 - Bs. (USD)</label><br />
           <input
             type="number"
             step="0.01"
             value={form.precio}
             onChange={(e) => setForm({ ...form, precio: e.target.value })}
+          />
+        </div>
+        <div>
+          <label>Precio 2 - Dolares (USD)</label><br />
+          <input
+            type="number"
+            step="0.01"
+            value={form.precio2}
+            onChange={(e) => setForm({ ...form, precio2: e.target.value })}
+          />
+        </div>
+        <div>
+          <label>
+            Codigo de producto (filtro Facturacion){!esAccesorio && <span style={{ color: '#d92d20' }}> *</span>}
+          </label><br />
+          <input
+            value={form.codigo_producto}
+            onChange={(e) => setForm({ ...form, codigo_producto: e.target.value })}
+            placeholder={esAccesorio ? 'Opcional, ej: aud01' : 'Obligatorio, ej: ss24'}
           />
         </div>
         <div>
@@ -380,7 +425,9 @@ export default function Inventario({ currentUser }) {
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
               <th style={{ padding: '0.5rem' }}>Nombre</th>
               <th>Categoria</th>
-              <th>Precio venta</th>
+              <th>Precio 1 (Bs.)</th>
+              <th>Precio 2 (Dolares)</th>
+              <th>Código</th>
               {esAccesorio && <th>Cod. barras</th>}
               {esAccesorio && esAdmin && <th>Costo prom.</th>}
               <th>Stock</th>
@@ -394,7 +441,7 @@ export default function Inventario({ currentUser }) {
                 <React.Fragment key={p.id}>
                   {editandoProductoId === p.id ? (
                     <tr style={{ borderBottom: '1px solid #eee' }}>
-                      <td colSpan={esAccesorio ? (esAdmin ? 6 : 5) : 5} style={{ background: '#f8fafc', padding: '0.75rem' }}>
+                      <td colSpan={totalColumnas} style={{ background: '#f8fafc', padding: '0.75rem' }}>
                         {errorEdicionProducto && <p style={{ color: 'red', margin: '0 0 0.5rem' }}>{errorEdicionProducto}</p>}
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                           <div>
@@ -419,13 +466,33 @@ export default function Inventario({ currentUser }) {
                             </div>
                           )}
                           <div>
-                            <label>Precio de venta (USD)</label><br />
+                            <label>Precio 1 - Bs. (USD)</label><br />
                             <input
                               type="number"
                               step="0.01"
                               value={formEdicionProducto.precio}
                               onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, precio: e.target.value })}
                               style={{ width: '110px' }}
+                            />
+                          </div>
+                          <div>
+                            <label>Precio 2 - Dolares (USD)</label><br />
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={formEdicionProducto.precio2}
+                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, precio2: e.target.value })}
+                              style={{ width: '110px' }}
+                            />
+                          </div>
+                          <div>
+                            <label>
+                              Codigo de producto{!esAccesorio && <span style={{ color: '#d92d20' }}> *</span>}
+                            </label><br />
+                            <input
+                              value={formEdicionProducto.codigo_producto}
+                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, codigo_producto: e.target.value })}
+                              style={{ width: '120px' }}
                             />
                           </div>
                           <div>
@@ -458,6 +525,8 @@ export default function Inventario({ currentUser }) {
                     <td style={{ padding: '0.5rem' }}>{p.nombre}</td>
                     <td>{p.categoria}</td>
                     <td>${fmt(Number(p.precio))}</td>
+                    <td>${fmt(Number(p.precio2 || 0))}</td>
+                    <td>{p.codigo_producto || '—'}</td>
                     {esAccesorio && <td>{p.codigo_barras}</td>}
                     {esAccesorio && esAdmin && (
                       <td>
@@ -502,7 +571,7 @@ export default function Inventario({ currentUser }) {
                   )}
                   {expandedId === p.id && !esAccesorio && (
                     <tr>
-                      <td colSpan={6} style={{ background: '#f8fafc', padding: '0.75rem' }}>
+                      <td colSpan={totalColumnas} style={{ background: '#f8fafc', padding: '0.75rem' }}>
                         <UnidadesProducto
                           productId={p.id}
                           tipo={tab.tipo}
