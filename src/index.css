@@ -166,6 +166,219 @@ th {
   cursor: pointer;
 }
 
+/* ---------- Facturacion: layout tipo POS (estilo Saint) ---------- */
+.pos-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0b4f9e;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px 8px 0 0;
+  font-weight: 600;
+}
+
+.pos-topbar-center {
+  font-size: 1.05rem;
+  letter-spacing: 0.5px;
+}
+
+.pos-topbar-side {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+.pos-panels {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-top: none;
+  padding: 16px;
+}
+
+.pos-left {
+  flex: 0 0 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pos-field label {
+  display: block;
+  font-size: 0.78rem;
+  color: #475467;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.pos-field .required-mark {
+  color: #d92d20;
+}
+
+.pos-field input,
+.pos-field select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.pos-field input:disabled {
+  background: #f2f4f7;
+  color: #667085;
+}
+
+.pos-mid {
+  flex: 1 1 260px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pos-stripe {
+  background: #dbeafe;
+  color: #0b3a6b;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.pos-stripe.placeholder {
+  color: #7ea3cf;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+.pos-right {
+  flex: 0 0 280px;
+  background: #0b4f9e;
+  border-radius: 6px;
+  color: #fff;
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.pos-right-header {
+  background: #083b78;
+  padding: 9px 14px;
+  font-size: 0.85rem;
+  text-align: right;
+  font-weight: 600;
+}
+
+.pos-right-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 14px;
+  font-size: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.pos-right-row.total-final {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.pos-right-footer {
+  background: #083b78;
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+}
+
+.pos-error-banner {
+  background: #fee4e2;
+  color: #b42318;
+  padding: 8px 14px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-size: 0.85rem;
+}
+
+.pos-table-wrap {
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-top: none;
+  overflow-x: auto;
+}
+
+.pos-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 0;
+}
+
+.pos-table th {
+  background: #0b4f9e;
+  color: #fff;
+  font-size: 0.78rem;
+  padding: 8px;
+  text-align: left;
+  border-bottom: none;
+}
+
+.pos-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eaecf0;
+  font-size: 0.88rem;
+  vertical-align: middle;
+}
+
+.pos-table td.text-right {
+  text-align: right;
+}
+
+.pos-table input {
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.pos-table tr.fila-entrada td {
+  background: #fffbe6;
+}
+
+.pos-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
+.pos-btn-totalizar {
+  background: #0b4f9e;
+  color: #fff;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pos-btn-totalizar:hover {
+  background: #083b78;
+}
+
+.pos-btn-totalizar:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Impresion: al imprimir una pantalla que contenga un elemento .print-area (ej: la factura
    de una compra), se oculta todo lo demas (menu lateral, botones, filtros) y solo se imprime
    ese contenido. Los elementos con .no-print (botones de accion) tampoco se imprimen. */
