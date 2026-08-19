@@ -3,13 +3,6 @@ import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { fmt } from '../utils/format.js';
 import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
 
-const TIPOS = [
-  { key: 'equipo', label: 'Equipo (IMEI)' },
-  { key: 'simcard', label: 'SIM Card' },
-  { key: 'usim', label: 'USIM' },
-  { key: 'accesorio', label: 'Accesorio' }
-];
-
 export default function Facturacion({ currentUser }) {
   const [settings, setSettings] = useState(null);
 
@@ -18,13 +11,12 @@ export default function Facturacion({ currentUser }) {
   const [depositos, setDepositos] = useState([]);
   const [depositoId, setDepositoId] = useState('');
 
-  // Precio 1 / Precio 2: identifica si el cliente paga en Bs o en Dolares (o el criterio que
-  // el usuario le quiera dar a cada precio). Al elegir un producto, el precio unitario se toma
-  // de "precio" (Precio 1) o "precio2" (Precio 2) segun lo que este seleccionado aqui.
+  // Precio 1 / Precio 2 -> Bs. / Dolares. Al buscar un producto por su codigo, el precio
+  // unitario se toma de "precio" (Bs.) o "precio2" (Dolares) segun lo que este seleccionado aqui.
   const [tipoPrecio, setTipoPrecio] = useState('precio'); // 'precio' | 'precio2'
 
-  // Cliente: se busca EXACTO por cedula/RIF al presionar Enter. Si existe, se trae de una vez;
-  // si no existe, se abre la ventana modal para registrarlo (ClienteNuevoModal).
+  // Cliente: se busca EXACTO por cedula/RIF al presionar Enter. Si existe, se trae de una vez
+  // (se muestra en las franjas azules); si no existe, se abre la ventana modal para registrarlo.
   const [cedula, setCedula] = useState('');
   const [buscandoCliente, setBuscandoCliente] = useState(false);
   const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
@@ -33,28 +25,35 @@ export default function Facturacion({ currentUser }) {
   const [clienteEdicion, setClienteEdicion] = useState({ nombre: '', rif_cedula: '', telefono: '', direccion: '', email: '' });
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
-  // Agregar item
-  const [tipoSeleccionado, setTipoSeleccionado] = useState('equipo');
-  const [productos, setProductos] = useState([]);
-  const [productoId, setProductoId] = useState('');
-  const [unidadesDisponibles, setUnidadesDisponibles] = useState([]);
-  const [codigoInput, setCodigoInput] = useState('');
-  const [codigosPendientes, setCodigosPendientes] = useState([]);
-  const [cantidad, setCantidad] = useState(1);
-  const [precioUnitario, setPrecioUnitario] = useState('');
+  // ---- Renglon de entrada (fila superior de la tabla) ----
+  // Se escribe el "codigo de producto" (el codigo corto, ej. "ss24") y se presiona Enter: si se
+  // encuentra, se muestran Descripcion/Precio/Total y el foco pasa a Cantidad (accesorios) o al
+  // codigo individual IMEI/ICCID (equipos, SIM, USIM), ya que esos si necesitan un codigo unico
+  // por unidad para poder facturarse.
+  const [filaCodigo, setFilaCodigo] = useState('');
+  const [buscandoCodigo, setBuscandoCodigo] = useState(false);
+  const [filaProducto, setFilaProducto] = useState(null);
+  const [filaCantidad, setFilaCantidad] = useState(1);
+  const [filaImei, setFilaImei] = useState('');
+  const [filaUnidadesDisponibles, setFilaUnidadesDisponibles] = useState([]);
+  const [errorFila, setErrorFila] = useState('');
+
+  const codigoRef = useRef(null);
+  const cantidadRef = useRef(null);
+  const imeiRef = useRef(null);
 
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
   const [keyPendienteQuitar, setKeyPendienteQuitar] = useState(null);
+  const [emitiendo, setEmitiendo] = useState(false);
 
   useEffect(() => {
     window.api.getSettings().then(setSettings);
   }, []);
 
   // Carga los depositos activos al entrar a Facturacion y deja el primero seleccionado por
-  // defecto (normalmente "Principal"), para que el usuario pueda empezar a facturar de una
-  // vez sin tener que elegir deposito manualmente si solo hay uno.
+  // defecto (normalmente "Principal").
   useEffect(() => {
     window.api.listDepositos(true).then((data) => {
       setDepositos(data);
@@ -63,52 +62,10 @@ export default function Facturacion({ currentUser }) {
   }, []);
 
   useEffect(() => {
-    if (!depositoId) return;
-    window.api.listProducts(tipoSeleccionado, undefined, Number(depositoId)).then((data) => {
-      setProductos(data);
-      setProductoId('');
-      setUnidadesDisponibles([]);
-      setCodigoInput('');
-      setCodigosPendientes([]);
-      setPrecioUnitario('');
-      setCantidad(1);
-    });
-  }, [tipoSeleccionado, depositoId]);
+    setTimeout(() => codigoRef.current?.focus(), 0);
+  }, []);
 
-  // Referencia siempre actualizada al carrito, para poder filtrar codigos ya usados sin tener
-  // que agregar "carrito" a las dependencias del efecto de abajo (eso lo haria recargar y
-  // limpiar los codigos pendientes cada vez que se quita o agrega algo al carrito).
-  const carritoRef = useRef(carrito);
-  useEffect(() => {
-    carritoRef.current = carrito;
-  }, [carrito]);
-
-  useEffect(() => {
-    setCodigoInput('');
-    setCodigosPendientes([]);
-    if (!productoId) return;
-    const p = productos.find((x) => x.id === Number(productoId));
-    if (p) setPrecioUnitario(tipoPrecio === 'precio2' ? p.precio2 : p.precio);
-    if (tipoSeleccionado !== 'accesorio' && productoId && depositoId) {
-      window.api.listUnits(Number(productoId), Number(depositoId)).then((data) => {
-        // Un codigo/IMEI que ya esta agregado a la factura actual (carrito) no debe volver a
-        // aparecer como "disponible", aunque en la base de datos siga marcado 'disponible'
-        // (todavia no se marca 'vendido' hasta que se emite la factura). Sin este filtro, al
-        // cambiar de producto y volver a seleccionar el mismo, el codigo ya agregado
-        // reaparecia y se podia agregar dos veces a la misma factura.
-        const codigosEnCarrito = new Set(
-          carritoRef.current.filter((i) => i.codigo).map((i) => i.codigo.toLowerCase())
-        );
-        setUnidadesDisponibles(
-          data.filter((u) => u.estado === 'disponible' && !codigosEnCarrito.has(u.codigo.toLowerCase()))
-        );
-      });
-    }
-  }, [productoId, productos, tipoSeleccionado, tipoPrecio, depositoId]);
-
-  // Al escribir la cedula/RIF y presionar Enter, se busca EXACTO. Si el cliente ya existe, se
-  // trae de una vez (queda seleccionado). Si no existe, se abre la ventana modal para
-  // registrarlo, con la cedula ya escrita.
+  // ---- Cliente: buscar por cedula/RIF al presionar Enter ----
   const buscarClientePorEnter = async () => {
     const texto = cedula.trim();
     if (!texto) return;
@@ -130,6 +87,7 @@ export default function Facturacion({ currentUser }) {
     setClienteSeleccionado(cliente);
     setCedula(cliente.rif_cedula || '');
     setMostrarModalClienteNuevo(false);
+    setTimeout(() => codigoRef.current?.focus(), 0);
   };
 
   const quitarCliente = () => {
@@ -172,107 +130,126 @@ export default function Facturacion({ currentUser }) {
     }
   };
 
-  const agregarCodigoUnidad = () => {
-    setError('');
-    const texto = codigoInput.trim();
+  // ---- Renglon de entrada: buscar producto por codigo ----
+  const limpiarFila = () => {
+    setFilaCodigo('');
+    setFilaProducto(null);
+    setFilaCantidad(1);
+    setFilaImei('');
+    setFilaUnidadesDisponibles([]);
+    setErrorFila('');
+  };
+
+  const codigosEnCarritoSet = () =>
+    new Set(carrito.filter((i) => i.codigo).map((i) => i.codigo.toLowerCase()));
+
+  const buscarProductoPorCodigoEnter = async () => {
+    setErrorFila('');
+    const texto = filaCodigo.trim();
+    if (!texto) return;
+    if (!depositoId) {
+      setErrorFila('Selecciona primero el deposito');
+      return;
+    }
+    setBuscandoCodigo(true);
+    try {
+      const p = await window.api.buscarProductoPorCodigo(texto, Number(depositoId));
+      if (!p) {
+        setErrorFila(`No se encontro ningun producto con el codigo "${texto}"`);
+        return;
+      }
+      if ((p.stock_disponible || 0) <= 0) {
+        setErrorFila(`"${p.nombre}" no tiene stock disponible en este deposito`);
+        return;
+      }
+      setFilaProducto(p);
+      if (p.tipo === 'accesorio') {
+        setFilaCantidad(1);
+        setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
+      } else {
+        const unidades = await window.api.listUnits(p.id, Number(depositoId));
+        const usados = codigosEnCarritoSet();
+        setFilaUnidadesDisponibles(
+          unidades.filter((u) => u.estado === 'disponible' && !usados.has(u.codigo.toLowerCase()))
+        );
+        setTimeout(() => imeiRef.current?.focus(), 0);
+      }
+    } finally {
+      setBuscandoCodigo(false);
+    }
+  };
+
+  const precioFila = () => {
+    if (!filaProducto) return 0;
+    const p = tipoPrecio === 'precio2' ? filaProducto.precio2 : filaProducto.precio;
+    return parseFloat(p) || 0;
+  };
+
+  const totalFila = () => {
+    if (!filaProducto) return 0;
+    if (filaProducto.tipo === 'accesorio') {
+      return precioFila() * (parseInt(filaCantidad, 10) || 0);
+    }
+    return precioFila();
+  };
+
+  // Confirma la fila de un accesorio (Enter en Cantidad) y la agrega a la factura.
+  const confirmarFilaAccesorio = () => {
+    setErrorFila('');
+    const c = parseInt(filaCantidad, 10);
+    if (!c || c <= 0) { setErrorFila('Cantidad invalida'); return; }
+    if (c > filaProducto.stock_disponible) { setErrorFila('No hay suficiente stock disponible'); return; }
+    setCarrito((prev) => [
+      ...prev,
+      {
+        key: `${filaProducto.id}-${Date.now()}`,
+        product_id: filaProducto.id,
+        tipo: 'accesorio',
+        descripcion: filaProducto.nombre,
+        codigo: filaProducto.codigo_producto || null,
+        cantidad: c,
+        precio_unitario: precioFila()
+      }
+    ]);
+    limpiarFila();
+    setTimeout(() => codigoRef.current?.focus(), 0);
+  };
+
+  // Confirma la fila de un equipo/SIM/USIM (Enter en el codigo IMEI/ICCID individual).
+  const confirmarFilaImei = () => {
+    setErrorFila('');
+    const texto = filaImei.trim();
     if (!texto) return;
     const textoLower = texto.toLowerCase();
-
-    // Verificacion en tiempo real, antes de agregar: el codigo/IMEI no puede repetirse ni con
-    // los que ya estan en la lista de items de la factura (carrito) ni con los que estan por
-    // agregar (codigosPendientes de este mismo producto).
-    if (codigosPendientes.some((u) => u.codigo.toLowerCase() === textoLower)) {
-      setError('Ese codigo ya fue agregado a la lista de items por agregar');
-      setCodigoInput('');
-      return;
-    }
     if (carrito.some((it) => it.codigo && it.codigo.toLowerCase() === textoLower)) {
-      setError('Ese codigo ya esta agregado en la factura');
-      setCodigoInput('');
+      setErrorFila('Ese codigo ya esta agregado en la factura');
       return;
     }
-    const unidad = unidadesDisponibles.find((u) => u.codigo.toLowerCase() === textoLower);
+    const unidad = filaUnidadesDisponibles.find((u) => u.codigo.toLowerCase() === textoLower);
     if (!unidad) {
-      setError('Codigo no encontrado entre las unidades disponibles de este producto');
+      setErrorFila('Codigo no encontrado entre las unidades disponibles de este producto');
       return;
     }
-    setCodigosPendientes([...codigosPendientes, unidad]);
-    setCodigoInput('');
-  };
-
-  const quitarCodigoPendiente = (id) => {
-    setCodigosPendientes(codigosPendientes.filter((u) => u.id !== id));
-  };
-
-  const agregarAlCarrito = () => {
-    setError('');
-    if (!depositoId) {
-      setError('Selecciona el deposito antes de agregar productos');
-      return;
-    }
-    if (!productoId) {
-      setError('Selecciona un producto');
-      return;
-    }
-    const producto = productos.find((p) => p.id === Number(productoId));
-
-    if (tipoSeleccionado === 'accesorio') {
-      const c = parseInt(cantidad, 10);
-      if (!c || c <= 0) { setError('Cantidad invalida'); return; }
-      if (c > producto.stock_disponible) { setError('No hay suficiente stock disponible'); return; }
-      setCarrito([
-        ...carrito,
-        {
-          key: `${producto.id}-${Date.now()}`,
-          product_id: producto.id,
-          tipo: producto.tipo,
-          descripcion: producto.nombre,
-          codigo: null,
-          cantidad: c,
-          precio_unitario: parseFloat(precioUnitario) || 0
-        }
-      ]);
-    } else {
-      if (codigosPendientes.length === 0) {
-        setError('Escanea o escribe al menos un codigo (IMEI/ICCID) antes de agregar');
-        return;
-      }
-      // Ultima verificacion antes de confirmar el "+ Agregar a la factura": por si algun
-      // codigo pendiente quedo repetido con uno ya presente en el carrito.
-      const codigosCarritoActual = new Set(
-        carrito.filter((it) => it.codigo).map((it) => it.codigo.toLowerCase())
-      );
-      const duplicado = codigosPendientes.find((u) => codigosCarritoActual.has(u.codigo.toLowerCase()));
-      if (duplicado) {
-        setError(`El codigo ${duplicado.codigo} ya esta agregado en la factura`);
-        return;
-      }
-      const nuevosItems = codigosPendientes.map((unidad) => ({
-        key: `${producto.id}-${unidad.id}`,
-        product_id: producto.id,
+    setCarrito((prev) => [
+      ...prev,
+      {
+        key: `${filaProducto.id}-${unidad.id}`,
+        product_id: filaProducto.id,
         unit_id: unidad.id,
-        tipo: producto.tipo,
-        descripcion: producto.nombre,
+        tipo: filaProducto.tipo,
+        descripcion: filaProducto.nombre,
         codigo: unidad.codigo,
         cantidad: 1,
-        precio_unitario: parseFloat(precioUnitario) || 0
-      }));
-      setCarrito([...carrito, ...nuevosItems]);
-      const idsAgregados = new Set(codigosPendientes.map((u) => u.id));
-      setUnidadesDisponibles(unidadesDisponibles.filter((u) => !idsAgregados.has(u.id)));
-      setCodigosPendientes([]);
-      setCodigoInput('');
-    }
-
-    // Limpiar los campos de "Agregar producto" tras agregarlo a la factura
-    setProductoId('');
-    setPrecioUnitario('');
-    setCantidad(1);
+        precio_unitario: precioFila()
+      }
+    ]);
+    limpiarFila();
+    setTimeout(() => codigoRef.current?.focus(), 0);
   };
 
   const quitarDelCarrito = (key) => {
     // Confirmacion dentro de la propia app (no window.confirm) para evitar que el
-    // dialogo nativo de Electron deje los campos de "Agregar producto" sin responder.
+    // dialogo nativo de Electron deje los campos de la fila de entrada sin responder.
     setKeyPendienteQuitar(key);
   };
 
@@ -291,14 +268,17 @@ export default function Facturacion({ currentUser }) {
   const iva = subtotal * (ivaPorcentaje / 100);
   const total = subtotal + iva;
   const totalBs = total * tasaCambio;
+  const totalPiezas = carrito.reduce((acc, i) => acc + (parseInt(i.cantidad, 10) || 0), 0);
+  const numeroFacturaPreview = settings && settings.numero_factura_siguiente
+    ? String(settings.numero_factura_siguiente).padStart(6, '0')
+    : '------';
 
-  const handleEmitirFactura = async () => {
+  const handleTotalizar = async () => {
     setError('');
     if (carrito.length === 0) {
       setError('Agrega al menos un producto a la factura');
       return;
     }
-
     if (!clienteSeleccionado) {
       setError('Escribe la cedula del cliente y presiona Enter para buscarlo o registrarlo');
       return;
@@ -308,7 +288,7 @@ export default function Facturacion({ currentUser }) {
       return;
     }
     const cliente = { id: clienteSeleccionado.id };
-
+    setEmitiendo(true);
     try {
       const res = await window.api.crearFactura({
         cliente,
@@ -326,11 +306,27 @@ export default function Facturacion({ currentUser }) {
       setConfirmacion({ ...res, detalle: detalle.ok ? detalle : null });
       setCarrito([]);
       quitarCliente();
+      window.api.getSettings().then(setSettings);
     } catch (err) {
       console.error('Error al emitir factura:', err);
       setError('Ocurrio un error inesperado al emitir la factura: ' + (err?.message || String(err)));
+    } finally {
+      setEmitiendo(false);
     }
   };
+
+  // Atajo de teclado F10 = Totalizar, disponible en toda la pantalla de Facturacion (no solo
+  // con el boton), igual que en el sistema de referencia.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'F10') {
+        e.preventDefault();
+        handleTotalizar();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 
   const [imprimiendoFactura, setImprimiendoFactura] = useState(false);
 
@@ -362,25 +358,43 @@ export default function Facturacion({ currentUser }) {
 
   const cambiarDeposito = (nuevoId) => {
     // Cambiar de deposito a mitad de una factura invalida los codigos/unidades que ya estaban
-    // en el carrito (pertenecen al deposito anterior), asi que se avisa y se vacia el carrito
-    // para no mezclar stock de dos depositos distintos en la misma factura.
+    // en el carrito (pertenecen al deposito anterior), asi que se avisa y se vacia el carrito.
     if (carrito.length > 0 && !window.confirm('Cambiar de deposito vacia los productos que ya agregaste a esta factura (pertenecen al deposito anterior). ¿Deseas continuar?')) {
       return;
     }
     setDepositoId(nuevoId);
     setCarrito([]);
-    setProductoId('');
+    limpiarFila();
   };
 
   return (
-    <div>
-      <h1>Facturacion</h1>
+    <div className="pos-page">
+      <div className="pos-topbar">
+        <span className="pos-topbar-side">MODULO DE VENTAS</span>
+        <span className="pos-topbar-center">FACTURACIÓN</span>
+        <span className="pos-topbar-side">MODO: NORMAL</span>
+      </div>
 
-      <div className="form-box" style={{ maxWidth: '520px' }}>
-        <h3>Deposito y precio</h3>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <div>
-            <label>Deposito</label>
+      <div className="pos-panels">
+        <div className="pos-left">
+          <div className="pos-field">
+            <label>Cliente <span className="required-mark">*</span></label>
+            <input
+              placeholder="Cedula o RIF + Enter"
+              value={cedula}
+              onChange={(e) => { setCedula(e.target.value); if (clienteSeleccionado) setClienteSeleccionado(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarClientePorEnter(); } }}
+              disabled={!!clienteSeleccionado || buscandoCliente}
+            />
+          </div>
+
+          <div className="pos-field">
+            <label>Vendedor <span className="required-mark">*</span></label>
+            <input value={currentUser?.username || ''} disabled />
+          </div>
+
+          <div className="pos-field">
+            <label>Depósito <span className="required-mark">*</span></label>
             <select value={depositoId} onChange={(e) => cambiarDeposito(e.target.value)}>
               {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
               {depositos.map((d) => (
@@ -388,62 +402,199 @@ export default function Facturacion({ currentUser }) {
               ))}
             </select>
           </div>
-          <div>
+
+          <div className="pos-field">
             <label>Precio</label>
             <select value={tipoPrecio} onChange={(e) => setTipoPrecio(e.target.value)}>
               <option value="precio">Bs.</option>
-              <option value="precio2">Dolares</option>
+              <option value="precio2">Dólares</option>
             </select>
+          </div>
+
+          {clienteSeleccionado && !editandoCliente && (
+            <div style={{ display: 'flex', gap: '10px', fontSize: '0.8rem' }}>
+              <button type="button" onClick={quitarCliente}>Cambiar cliente</button>
+              <button type="button" onClick={abrirEdicionCliente}>Editar datos</button>
+            </div>
+          )}
+
+          {clienteSeleccionado && editandoCliente && (
+            <div style={{ marginTop: '4px', background: '#f2f4f7', padding: '8px', borderRadius: '6px' }}>
+              <p style={{ fontSize: '0.8rem', color: '#666', margin: '0 0 6px' }}>Editando datos del cliente:</p>
+              <input placeholder="Cedula o RIF" value={clienteEdicion.rif_cedula}
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, rif_cedula: e.target.value })}
+                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
+              <input placeholder="Nombre y apellido" value={clienteEdicion.nombre}
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, nombre: e.target.value })}
+                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
+              <input placeholder="Telefono" value={clienteEdicion.telefono}
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, telefono: e.target.value })}
+                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
+              <input placeholder="Direccion" value={clienteEdicion.direccion}
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, direccion: e.target.value })}
+                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
+              <input placeholder="Email (opcional)" value={clienteEdicion.email}
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, email: e.target.value })}
+                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
+              <button type="button" onClick={guardarEdicionCliente} disabled={guardandoEdicion} style={{ marginRight: '8px' }}>
+                {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+              <button type="button" onClick={() => setEditandoCliente(false)}>Cancelar</button>
+            </div>
+          )}
+        </div>
+
+        <div className="pos-mid">
+          {buscandoCliente ? (
+            <div className="pos-stripe placeholder">Buscando cliente...</div>
+          ) : clienteSeleccionado ? (
+            <>
+              <div className="pos-stripe">{clienteSeleccionado.nombre}</div>
+              <div className="pos-stripe">{clienteSeleccionado.rif_cedula || '—'}</div>
+              <div className="pos-stripe">{clienteSeleccionado.telefono || '—'}</div>
+            </>
+          ) : (
+            <>
+              <div className="pos-stripe placeholder">Escribe la cedula o RIF y presiona Enter</div>
+              <div className="pos-stripe placeholder">—</div>
+              <div className="pos-stripe placeholder">—</div>
+            </>
+          )}
+        </div>
+
+        <div className="pos-right">
+          <div className="pos-right-header">Factura N° {numeroFacturaPreview}</div>
+          <div className="pos-right-row">
+            <span>Total renglones</span>
+            <span>{fmt(subtotal)}</span>
+          </div>
+          <div className="pos-right-row">
+            <span>Impuestos</span>
+            <span>{fmt(iva)}</span>
+          </div>
+          <div className="pos-right-row total-final">
+            <span>Total</span>
+            <span>{fmt(total)}</span>
+          </div>
+          <div className="pos-right-row">
+            <span>Vuelto</span>
+            <span>{fmt(0)}</span>
+          </div>
+          <div className="pos-right-footer">
+            <span>Total cantidad o piezas</span>
+            <span>{carrito.length}&nbsp;&nbsp;{totalPiezas}</span>
           </div>
         </div>
       </div>
 
-      <div className="form-box" style={{ maxWidth: '520px' }}>
-        <h3>Cliente</h3>
+      {(error || errorFila) && <div className="pos-error-banner">{error || errorFila}</div>}
 
-        <label>Cedula o RIF</label>
-        <input
-          placeholder="Escribe la cedula/RIF y presiona Enter"
-          value={cedula}
-          onChange={(e) => { setCedula(e.target.value); if (clienteSeleccionado) setClienteSeleccionado(null); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarClientePorEnter(); } }}
-          disabled={!!clienteSeleccionado || buscandoCliente}
-        />
-        {buscandoCliente && <p style={{ fontSize: '0.85rem', color: '#666' }}>Buscando cliente...</p>}
+      <div className="pos-table-wrap">
+        <table className="pos-table">
+          <thead>
+            <tr>
+              <th style={{ width: '16%' }}>Código</th>
+              <th>Descripción</th>
+              <th style={{ width: '10%' }}>Cantidad</th>
+              <th style={{ width: '8%' }}>Und</th>
+              <th style={{ width: '13%' }}>Precio</th>
+              <th style={{ width: '13%' }}>Total</th>
+              <th style={{ width: '6%' }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="fila-entrada">
+              <td>
+                {!filaProducto ? (
+                  <input
+                    ref={codigoRef}
+                    type="text"
+                    placeholder="Código + Enter"
+                    value={filaCodigo}
+                    onChange={(e) => setFilaCodigo(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarProductoPorCodigoEnter(); } }}
+                    disabled={buscandoCodigo}
+                  />
+                ) : filaProducto.tipo === 'accesorio' ? (
+                  <span>{filaProducto.codigo_producto || '—'}</span>
+                ) : (
+                  <input
+                    ref={imeiRef}
+                    type="text"
+                    placeholder="IMEI / código + Enter"
+                    value={filaImei}
+                    onChange={(e) => setFilaImei(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); confirmarFilaImei(); }
+                      if (e.key === 'Escape') { e.preventDefault(); limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }
+                    }}
+                  />
+                )}
+              </td>
+              <td>{filaProducto ? filaProducto.nombre : <span style={{ color: '#98a2b3' }}>—</span>}</td>
+              <td>
+                {filaProducto && filaProducto.tipo === 'accesorio' ? (
+                  <input
+                    ref={cantidadRef}
+                    type="number"
+                    min="1"
+                    value={filaCantidad}
+                    onChange={(e) => setFilaCantidad(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarFilaAccesorio(); } }}
+                  />
+                ) : (
+                  <span>{filaProducto ? 1 : ''}</span>
+                )}
+              </td>
+              <td>{filaProducto ? 'UND' : ''}</td>
+              <td className="text-right">{filaProducto ? fmt(precioFila()) : ''}</td>
+              <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
+              <td>
+                {filaProducto && (
+                  <button type="button" onClick={() => { limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }}>×</button>
+                )}
+              </td>
+            </tr>
 
-        {clienteSeleccionado && !editandoCliente && (
-          <p style={{ fontSize: '0.9rem', color: '#027a48', marginTop: '6px' }}>
-            ✓ {clienteSeleccionado.nombre} {clienteSeleccionado.rif_cedula ? `(${clienteSeleccionado.rif_cedula})` : ''}
-            {clienteSeleccionado.telefono ? ` — ${clienteSeleccionado.telefono}` : ''}{' '}
-            <button type="button" onClick={quitarCliente}>Cambiar</button>{' '}
-            <button type="button" onClick={abrirEdicionCliente}>Editar datos</button>
-          </p>
-        )}
+            {carrito.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', color: '#98a2b3', padding: '18px' }}>
+                  Aun no has agregado productos.
+                </td>
+              </tr>
+            ) : (
+              carrito.map((item) => (
+                <tr key={item.key}>
+                  <td>{item.codigo || '—'}</td>
+                  <td>{item.descripcion}</td>
+                  <td>{item.cantidad}</td>
+                  <td>UND</td>
+                  <td className="text-right">{fmt(item.precio_unitario)}</td>
+                  <td className="text-right">{fmt(item.precio_unitario * item.cantidad)}</td>
+                  <td>
+                    {keyPendienteQuitar === item.key ? (
+                      <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center', fontSize: '0.75rem' }}>
+                        <button type="button" onClick={confirmarQuitarDelCarrito} style={{ color: '#b42318' }}>Si</button>
+                        <button type="button" onClick={cancelarQuitarDelCarrito}>No</button>
+                      </span>
+                    ) : (
+                      <button type="button" onClick={() => quitarDelCarrito(item.key)}>×</button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
-        {clienteSeleccionado && editandoCliente && (
-          <div style={{ marginTop: '6px' }}>
-            <p style={{ fontSize: '0.85rem', color: '#666' }}>Editando datos del cliente:</p>
-            <label>Cedula</label>
-            <input placeholder="Cedula o RIF (ej: V-12345678)" value={clienteEdicion.rif_cedula}
-              onChange={(e) => setClienteEdicion({ ...clienteEdicion, rif_cedula: e.target.value })} />
-            <label>Nombre y apellido</label>
-            <input placeholder="Nombre y apellido / Razon social" value={clienteEdicion.nombre}
-              onChange={(e) => setClienteEdicion({ ...clienteEdicion, nombre: e.target.value })} />
-            <label>Telefono</label>
-            <input placeholder="Telefono" value={clienteEdicion.telefono}
-              onChange={(e) => setClienteEdicion({ ...clienteEdicion, telefono: e.target.value })} />
-            <label>Direccion</label>
-            <input placeholder="Direccion" value={clienteEdicion.direccion}
-              onChange={(e) => setClienteEdicion({ ...clienteEdicion, direccion: e.target.value })} />
-            <label>Email (opcional)</label>
-            <input placeholder="Email" value={clienteEdicion.email}
-              onChange={(e) => setClienteEdicion({ ...clienteEdicion, email: e.target.value })} />
-            <button type="button" onClick={guardarEdicionCliente} disabled={guardandoEdicion} style={{ marginRight: '8px' }}>
-              {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
-            </button>
-            <button type="button" onClick={() => setEditandoCliente(false)}>Cancelar</button>
-          </div>
-        )}
+      <div className="pos-footer-actions">
+        <span style={{ marginRight: '16px', color: '#667085', fontSize: '0.85rem', alignSelf: 'center' }}>
+          Tasa: {tasaCambio} Bs/USD — Total en Bs: <strong>Bs {fmt(totalBs)}</strong>
+        </span>
+        <button type="button" className="pos-btn-totalizar" onClick={handleTotalizar} disabled={emitiendo}>
+          {emitiendo ? 'Totalizando...' : 'F10 Totalizar'}
+        </button>
       </div>
 
       {mostrarModalClienteNuevo && (
@@ -453,144 +604,6 @@ export default function Facturacion({ currentUser }) {
           onCancel={() => setMostrarModalClienteNuevo(false)}
         />
       )}
-
-      <div className="form-box" style={{ maxWidth: '600px' }}>
-        <h3>Agregar producto</h3>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-          {TIPOS.map((t) => (
-            <button key={t.key} type="button" onClick={() => setTipoSeleccionado(t.key)}
-              style={{
-                padding: '0.4rem 0.8rem',
-                backgroundColor: tipoSeleccionado === t.key ? '#0b4f9e' : '#e2e8f0',
-                color: tipoSeleccionado === t.key ? '#fff' : '#111',
-                border: 'none', borderRadius: '4px', cursor: 'pointer'
-              }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <label>Producto</label>
-        <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
-          <option value="">-- Selecciona --</option>
-          {productos.map((p) => (
-            <option key={p.id} value={p.id}>{p.nombre} (disponible: {p.stock_disponible})</option>
-          ))}
-        </select>
-
-        {tipoSeleccionado !== 'accesorio' && productoId && (
-          <>
-            <label>Codigo (IMEI / ICCID)</label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <input
-                type="text"
-                placeholder="Escanea con la pistola o escribe el codigo y presiona Enter"
-                value={codigoInput}
-                onChange={(e) => setCodigoInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarCodigoUnidad(); } }}
-                style={{ flex: 1 }}
-              />
-              <button type="button" onClick={agregarCodigoUnidad} style={{ whiteSpace: 'nowrap', height: 'fit-content' }}>
-                + Agregar codigo
-              </button>
-            </div>
-
-            {codigosPendientes.length > 0 && (
-              <div style={{ marginTop: '0.5rem', marginBottom: '10px' }}>
-                <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '4px' }}>
-                  Cantidad detectada: <strong>{codigosPendientes.length}</strong>
-                </p>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {codigosPendientes.map((u) => (
-                    <li key={u.id} style={{
-                      background: '#e2e8f0', padding: '4px 8px', borderRadius: '4px', fontSize: '0.85rem',
-                      display: 'flex', alignItems: 'center', gap: '6px'
-                    }}>
-                      {u.codigo}
-                      <button
-                        type="button"
-                        onClick={() => quitarCodigoPendiente(u.id)}
-                        style={{ background: 'none', border: 'none', color: '#b42318', cursor: 'pointer', padding: 0, fontWeight: 'bold' }}
-                      >
-                        ×
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </>
-        )}
-
-        {tipoSeleccionado === 'accesorio' && (
-          <>
-            <label>Cantidad</label>
-            <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-          </>
-        )}
-
-        <label>Precio unitario ({tipoPrecio === 'precio2' ? 'Dolares' : 'Bs.'})</label>
-        <input type="number" step="0.01" value={precioUnitario} readOnly disabled />
-
-        <button type="button" onClick={agregarAlCarrito}>+ Agregar a la factura</button>
-      </div>
-
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-
-      <h3>Detalle de la factura</h3>
-      <div>
-        {carrito.length === 0 ? (
-          <p>Aun no has agregado productos.</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1rem' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-                <th style={{ padding: '0.5rem' }}>Producto</th>
-                <th>Codigo</th>
-                <th>Cant.</th>
-                <th>Precio unit.</th>
-                <th>Subtotal</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {carrito.map((item) => (
-                <tr key={item.key} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.5rem' }}>{item.descripcion}</td>
-                  <td>{item.codigo || '—'}</td>
-                  <td>{item.cantidad}</td>
-                  <td>${fmt(item.precio_unitario)}</td>
-                  <td>${fmt((item.precio_unitario * item.cantidad))}</td>
-                  <td>
-                    {keyPendienteQuitar === item.key ? (
-                      <span style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.8rem', color: '#b42318' }}>¿Quitar?</span>
-                        <button type="button" onClick={confirmarQuitarDelCarrito} style={{ color: '#b42318' }}>Si</button>
-                        <button type="button" onClick={cancelarQuitarDelCarrito}>No</button>
-                      </span>
-                    ) : (
-                      <button type="button" onClick={() => quitarDelCarrito(item.key)}>Quitar</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {/* El cuadro de totales siempre se ubica debajo de todos los items agregados,
-            alineado a la derecha, para que nunca quede montado sobre otra informacion. */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <div className="form-box" style={{ width: '340px', flex: '0 0 auto', margin: 0 }}>
-            <p>Subtotal: <strong>${fmt(subtotal)}</strong></p>
-            <p>IVA ({ivaPorcentaje}%): <strong>${fmt(iva)}</strong></p>
-            <p>Total: <strong>${fmt(total)}</strong></p>
-            <p style={{ color: '#666' }}>Tasa: {tasaCambio} Bs/USD</p>
-            <p>Total en Bs: <strong>Bs {fmt(totalBs)}</strong></p>
-            <button onClick={handleEmitirFactura} style={{ marginTop: '8px' }}>Emitir factura</button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
