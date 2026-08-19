@@ -379,6 +379,257 @@ th {
   cursor: default;
 }
 
+/* Foco: resalta el campo activo con el mismo azul del resto del modulo, en vez del
+   contorno azul generico del navegador, para que se sienta parte del mismo diseno. */
+.pos-field input:focus,
+.pos-field select:focus,
+.pos-table input:focus {
+  outline: none;
+  border-color: #0b4f9e;
+  box-shadow: 0 0 0 3px rgba(11, 79, 158, 0.15);
+}
+
+.pos-field select:disabled {
+  background: #f2f4f7;
+  color: #667085;
+  cursor: not-allowed;
+}
+
+/* Botones secundarios de la franja de cliente ("Cambiar cliente" / "Editar datos") */
+.pos-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.pos-btn-link {
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  color: #344054;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.pos-btn-link:hover {
+  background: #f2f4f7;
+  border-color: #98a2b3;
+}
+
+/* Panel de edicion rapida de los datos del cliente, dentro de la misma franja izquierda */
+.pos-edit-box {
+  margin-top: 4px;
+  background: #f8fafc;
+  border: 1px solid #e4e7ec;
+  padding: 10px;
+  border-radius: 6px;
+}
+
+.pos-edit-box p {
+  font-size: 0.78rem;
+  color: #667085;
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.pos-edit-box input {
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.pos-edit-box input:focus {
+  outline: none;
+  border-color: #0b4f9e;
+  box-shadow: 0 0 0 3px rgba(11, 79, 158, 0.15);
+}
+
+.pos-edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pos-edit-actions .btn-primary {
+  background: #0b4f9e;
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.pos-edit-actions .btn-primary:hover {
+  background: #083b78;
+}
+
+.pos-edit-actions .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pos-edit-actions .btn-ghost {
+  background: #fff;
+  color: #344054;
+  border: 1px solid #d0d5dd;
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.pos-edit-actions .btn-ghost:hover {
+  background: #f2f4f7;
+}
+
+/* Filas de la tabla: resaltar la fila bajo el cursor y estilizar el boton "x" de quitar */
+.pos-table tbody tr:not(.fila-entrada):hover {
+  background: #f8fafc;
+}
+
+.pos-remove-btn {
+  width: 22px;
+  height: 22px;
+  line-height: 20px;
+  text-align: center;
+  padding: 0;
+  border: 1px solid #fda29b;
+  color: #b42318;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.pos-remove-btn:hover {
+  background: #fee4e2;
+}
+
+.pos-confirm-btn {
+  padding: 4px 9px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border: none;
+}
+
+.pos-confirm-btn.yes {
+  background: #b42318;
+  color: #fff;
+}
+
+.pos-confirm-btn.no {
+  background: #e4e7ec;
+  color: #344054;
+}
+
+/* Pantalla de "Factura emitida": estilo tipo recibo, en tonos del modulo de ventas */
+.pos-receipt {
+  max-width: 380px;
+  margin: 24px auto 0;
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(16, 24, 40, 0.08);
+}
+
+.pos-receipt-header {
+  background: #0b4f9e;
+  color: #fff;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.pos-receipt-header .check {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 8px;
+  font-size: 1.2rem;
+}
+
+.pos-receipt-header h1 {
+  font-size: 1.05rem;
+  margin: 0;
+  font-weight: 700;
+}
+
+.pos-receipt-body {
+  padding: 18px 20px;
+}
+
+.pos-receipt-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #eaecf0;
+  font-size: 0.92rem;
+  color: #344054;
+}
+
+.pos-receipt-row:last-of-type {
+  border-bottom: none;
+}
+
+.pos-receipt-row strong {
+  color: #0b3a6b;
+}
+
+.pos-receipt-note {
+  font-size: 0.78rem;
+  color: #667085;
+  margin: 10px 0 0;
+}
+
+.pos-receipt-actions {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid #eaecf0;
+}
+
+.pos-receipt-actions button {
+  flex: 1;
+  padding: 9px 0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: none;
+}
+
+.pos-receipt-actions .btn-primary {
+  background: #0b4f9e;
+  color: #fff;
+}
+
+.pos-receipt-actions .btn-primary:hover {
+  background: #083b78;
+}
+
+.pos-receipt-actions .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pos-receipt-actions .btn-ghost {
+  background: #f2f4f7;
+  color: #344054;
+}
+
+.pos-receipt-actions .btn-ghost:hover {
+  background: #e4e7ec;
+}
+
 /* Impresion: al imprimir una pantalla que contenga un elemento .print-area (ej: la factura
    de una compra), se oculta todo lo demas (menu lateral, botones, filtros) y solo se imprime
    ese contenido. Los elementos con .no-print (botones de accion) tampoco se imprimen. */
