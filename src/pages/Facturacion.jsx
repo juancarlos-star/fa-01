@@ -353,16 +353,31 @@ export default function Facturacion({ currentUser }) {
 
   if (confirmacion) {
     return (
-      <div>
-        <h1>Factura emitida</h1>
-        <div className="form-box" style={{ maxWidth: '400px' }}>
-          <p><strong>N° de factura:</strong> {confirmacion.numero}</p>
-          <p><strong>Total:</strong> ${fmt(confirmacion.totalUsd)} USD (Bs {fmt(confirmacion.totalBs)})</p>
-          <p style={{ fontSize: '0.85rem', color: '#666' }}>La factura ya se envio a imprimir automaticamente.</p>
-          <button onClick={handleImprimir} disabled={imprimiendoFactura} style={{ marginRight: '8px' }}>
+      <div className="pos-receipt">
+        <div className="pos-receipt-header">
+          <div className="check">✓</div>
+          <h1>Factura emitida</h1>
+        </div>
+        <div className="pos-receipt-body">
+          <div className="pos-receipt-row">
+            <span>N° de factura</span>
+            <strong>{confirmacion.numero}</strong>
+          </div>
+          <div className="pos-receipt-row">
+            <span>Total USD</span>
+            <strong>${fmt(confirmacion.totalUsd)}</strong>
+          </div>
+          <div className="pos-receipt-row">
+            <span>Total Bs</span>
+            <strong>Bs {fmt(confirmacion.totalBs)}</strong>
+          </div>
+          <p className="pos-receipt-note">La factura ya se envio a imprimir automaticamente.</p>
+        </div>
+        <div className="pos-receipt-actions">
+          <button className="btn-ghost" onClick={handleImprimir} disabled={imprimiendoFactura}>
             {imprimiendoFactura ? 'Imprimiendo...' : 'Reimprimir PDF'}
           </button>
-          <button onClick={() => setConfirmacion(null)}>Hacer otra factura</button>
+          <button className="btn-primary" onClick={() => setConfirmacion(null)}>Hacer otra factura</button>
         </div>
       </div>
     );
@@ -424,34 +439,31 @@ export default function Facturacion({ currentUser }) {
           </div>
 
           {clienteSeleccionado && !editandoCliente && (
-            <div style={{ display: 'flex', gap: '10px', fontSize: '0.8rem' }}>
-              <button type="button" onClick={quitarCliente}>Cambiar cliente</button>
-              <button type="button" onClick={abrirEdicionCliente}>Editar datos</button>
+            <div className="pos-actions-row">
+              <button type="button" className="pos-btn-link" onClick={quitarCliente}>Cambiar cliente</button>
+              <button type="button" className="pos-btn-link" onClick={abrirEdicionCliente}>Editar datos</button>
             </div>
           )}
 
           {clienteSeleccionado && editandoCliente && (
-            <div style={{ marginTop: '4px', background: '#f2f4f7', padding: '8px', borderRadius: '6px' }}>
-              <p style={{ fontSize: '0.8rem', color: '#666', margin: '0 0 6px' }}>Editando datos del cliente:</p>
+            <div className="pos-edit-box">
+              <p>Editando datos del cliente:</p>
               <input placeholder="Cedula o RIF" value={clienteEdicion.rif_cedula}
-                onChange={(e) => setClienteEdicion({ ...clienteEdicion, rif_cedula: e.target.value })}
-                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, rif_cedula: e.target.value })} />
               <input placeholder="Nombre y apellido" value={clienteEdicion.nombre}
-                onChange={(e) => setClienteEdicion({ ...clienteEdicion, nombre: e.target.value })}
-                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, nombre: e.target.value })} />
               <input placeholder="Telefono" value={clienteEdicion.telefono}
-                onChange={(e) => setClienteEdicion({ ...clienteEdicion, telefono: e.target.value })}
-                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, telefono: e.target.value })} />
               <input placeholder="Direccion" value={clienteEdicion.direccion}
-                onChange={(e) => setClienteEdicion({ ...clienteEdicion, direccion: e.target.value })}
-                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, direccion: e.target.value })} />
               <input placeholder="Email (opcional)" value={clienteEdicion.email}
-                onChange={(e) => setClienteEdicion({ ...clienteEdicion, email: e.target.value })}
-                style={{ width: '100%', marginBottom: '6px', padding: '5px' }} />
-              <button type="button" onClick={guardarEdicionCliente} disabled={guardandoEdicion} style={{ marginRight: '8px' }}>
-                {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
-              </button>
-              <button type="button" onClick={() => setEditandoCliente(false)}>Cancelar</button>
+                onChange={(e) => setClienteEdicion({ ...clienteEdicion, email: e.target.value })} />
+              <div className="pos-edit-actions">
+                <button type="button" className="btn-primary" onClick={guardarEdicionCliente} disabled={guardandoEdicion}>
+                  {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+                <button type="button" className="btn-ghost" onClick={() => setEditandoCliente(false)}>Cancelar</button>
+              </div>
             </div>
           )}
         </div>
@@ -563,7 +575,8 @@ export default function Facturacion({ currentUser }) {
               <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
               <td>
                 {filaProducto && (
-                  <button type="button" onClick={() => { limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }}>×</button>
+                  <button type="button" className="pos-remove-btn"
+                    onClick={() => { limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }}>×</button>
                 )}
               </td>
             </tr>
@@ -585,12 +598,12 @@ export default function Facturacion({ currentUser }) {
                   <td className="text-right">{fmt(item.precio_unitario * item.cantidad)}</td>
                   <td>
                     {keyPendienteQuitar === item.key ? (
-                      <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center', fontSize: '0.75rem' }}>
-                        <button type="button" onClick={confirmarQuitarDelCarrito} style={{ color: '#b42318' }}>Si</button>
-                        <button type="button" onClick={cancelarQuitarDelCarrito}>No</button>
+                      <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+                        <button type="button" className="pos-confirm-btn yes" onClick={confirmarQuitarDelCarrito}>Si</button>
+                        <button type="button" className="pos-confirm-btn no" onClick={cancelarQuitarDelCarrito}>No</button>
                       </span>
                     ) : (
-                      <button type="button" onClick={() => quitarDelCarrito(item.key)}>×</button>
+                      <button type="button" className="pos-remove-btn" onClick={() => quitarDelCarrito(item.key)}>×</button>
                     )}
                   </td>
                 </tr>
