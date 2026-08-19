@@ -471,9 +471,13 @@ ipcMain.handle('products:create', (event, data) => {
     }
   }
 
-  // El codigo de producto (filtro usado en Facturacion) es opcional, pero si se indica no
-  // puede repetirse con el de otro producto.
+  // El codigo de producto (filtro usado en Facturacion) es OBLIGATORIO para equipos, SIM y
+  // USIM, ya que sin el no hay forma de ubicarlos rapido en el renglon "Codigo" de Facturacion.
+  // Para accesorios sigue siendo opcional (para eso ya existe el codigo de barras).
   const codigoProductoLimpio = (codigo_producto || '').trim();
+  if (tipo !== 'accesorio' && !codigoProductoLimpio) {
+    return { ok: false, message: 'El codigo de producto es obligatorio para equipos, SIM y USIM' };
+  }
   if (codigoProductoLimpio) {
     const existenteCodigo = db.prepare('SELECT id FROM products WHERE codigo_producto = ? COLLATE NOCASE').get(codigoProductoLimpio);
     if (existenteCodigo) return { ok: false, message: 'Ese codigo de producto ya esta en uso' };
@@ -542,15 +546,21 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
   }
 
   // codigo_producto: si el campo viene en el payload (aunque sea vacio) se actualiza; si no
-  // viene (undefined), se conserva el que ya tenia el producto.
+  // viene (undefined), se conserva el que ya tenia el producto. Obligatorio para equipos, SIM
+  // y USIM (para accesorios sigue siendo opcional, ya que tienen codigo de barras).
   let codigoProducto = product.codigo_producto;
   if (codigo_producto !== undefined) {
     const codigoProductoLimpio = (codigo_producto || '').trim();
+    if (product.tipo !== 'accesorio' && !codigoProductoLimpio) {
+      return { ok: false, message: 'El codigo de producto es obligatorio para equipos, SIM y USIM' };
+    }
     if (codigoProductoLimpio) {
       const existenteCodigo = db.prepare('SELECT id FROM products WHERE codigo_producto = ? COLLATE NOCASE AND id != ?').get(codigoProductoLimpio, id);
       if (existenteCodigo) return { ok: false, message: 'Ese codigo de producto ya esta en uso' };
     }
     codigoProducto = codigoProductoLimpio || null;
+  } else if (product.tipo !== 'accesorio' && !codigoProducto) {
+    return { ok: false, message: 'El codigo de producto es obligatorio para equipos, SIM y USIM' };
   }
 
   db.prepare(
