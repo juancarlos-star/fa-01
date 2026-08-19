@@ -131,6 +131,94 @@ function migrarComprasSiHaceFalta(database) {
 // Permite agrupar varios renglones de cargo o descargo (incluso de productos distintos:
 // equipos, simcards, usim y accesorios mezclados) bajo un mismo "documento", para poder
 // imprimir un solo comprobante consolidado y llevar la operacion como un unico procedimiento.
+// Depositos (almacenes): cada deposito lleva su propio stock, separado del resto. Se agrega la
+// tabla de depositos, la tabla de stock de accesorios por deposito (los accesorios no tienen
+// unidad individual, asi que su stock por deposito se lleva aparte, sumando/restando cantidad)
+// y la columna deposito_id en las tablas que registran movimiento de inventario (unidades,
+// compras, descargos y facturas), para saber de que deposito entro o salio cada cosa.
+function migrarDepositosSiHaceFalta(database) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS depositos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      codigo TEXT UNIQUE NOT NULL,
+      nombre TEXT NOT NULL,
+      activo INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS product_stock_deposito (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      deposito_id INTEGER NOT NULL,
+      cantidad INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (product_id) REFERENCES products(id),
+      FOREIGN KEY (deposito_id) REFERENCES depositos(id),
+      UNIQUE(product_id, deposito_id)
+    );
+  `);
+
+  const totalDepositos = database.prepare('SELECT COUNT(*) AS c FROM depositos').get().c;
+  let principalId;
+  if (totalDepositos === 0) {
+    principalId = database.prepare(
+      "INSERT INTO depositos (codigo, nombre, activo, created_at) VALUES ('01', 'Principal', 1, datetime('now','localtime'))"
+    ).run().lastInsertRowid;
+  } else {
+    principalId = database.prepare('SELECT id FROM depositos ORDER BY id ASC LIMIT 1').get().id;
+  }
+
+  if (!tieneColumna(database, 'inventory_units', 'deposito_id')) {
+    database.exec('ALTER TABLE inventory_units ADD COLUMN deposito_id INTEGER');
+    database.prepare('UPDATE inventory_units SET deposito_id = ? WHERE deposito_id IS NULL').run(principalId);
+  }
+  if (!tieneColumna(database, 'compras', 'deposito_id')) {
+    database.exec('ALTER TABLE compras ADD COLUMN deposito_id INTEGER');
+    database.prepare('UPDATE compras SET deposito_id = ? WHERE deposito_id IS NULL').run(principalId);
+  }
+  if (!tieneColumna(database, 'descargos', 'deposito_id')) {
+    database.exec('ALTER TABLE descargos ADD COLUMN deposito_id INTEGER');
+    database.prepare('UPDATE descargos SET deposito_id = ? WHERE deposito_id IS NULL').run(principalId);
+  }
+  if (!tieneColumna(database, 'facturas', 'deposito_id')) {
+    database.exec('ALTER TABLE facturas ADD COLUMN deposito_id INTEGER');
+    database.prepare('UPDATE facturas SET deposito_id = ? WHERE deposito_id IS NULL').run(principalId);
+  }
+
+  // Backfill: todo el stock actual de accesorios (que hasta ahora era un solo numero agregado
+  // en products.stock_cantidad) se asigna al deposito principal, para que la suma por deposito
+  // siga cuadrando con el total que ya tenia cada producto.
+  const existeProducts = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products'").get();
+  if (existeProducts) {
+    const accesorios = database.prepare("SELECT id, stock_cantidad FROM products WHERE tipo = 'accesorio'").all();
+    const upsert = database.prepare(
+      `INSERT INTO product_stock_deposito (product_id, deposito_id, cantidad) VALUES (?, ?, ?)
+       ON CONFLICT(product_id, deposito_id) DO NOTHING`
+    );
+    for (const p of accesorios) upsert.run(p.id, principalId, p.stock_cantidad || 0);
+  }
+}
+
+// "codigo_producto": codigo corto que el usuario asigna al crear el producto (ej. "ss24"), usado
+// como filtro rapido en Facturacion para ubicar el producto al escribirlo y presionar Enter.
+// "precio2": segundo precio de venta (ademas del ya existente "precio", que pasa a ser el
+// Precio 1). Permite manejar, por ejemplo, un precio en Bs y otro en Dolares para el mismo
+// producto.
+function migrarPreciosYCodigoProductoSiHaceFalta(database) {
+  const existeProducts = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products'").get();
+  if (!existeProducts) return;
+  if (!tieneColumna(database, 'products', 'codigo_producto')) {
+    database.exec('ALTER TABLE products ADD COLUMN codigo_producto TEXT');
+  }
+  if (!tieneColumna(database, 'products', 'precio2')) {
+    database.exec('ALTER TABLE products ADD COLUMN precio2 REAL NOT NULL DEFAULT 0');
+  }
+  // Indice unico parcial: dos productos no pueden compartir el mismo codigo_producto, pero se
+  // permite que muchos productos no tengan ninguno (NULL), asi los productos ya existentes que
+  // nunca reciban un codigo no chocan entre si.
+  database.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_products_codigo_producto ON products(codigo_producto) WHERE codigo_producto IS NOT NULL'
+  );
+}
+
 function migrarCargosDescargosEncabezadoSiHaceFalta(database) {
   const existeCompras = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras'").get();
   if (existeCompras && !tieneColumna(database, 'compras', 'encabezado_id')) {
@@ -283,6 +371,8 @@ function initDb() {
   migrarComprasSiHaceFalta(database);
   migrarUsersSiHaceFalta(database);
   migrarCargosDescargosEncabezadoSiHaceFalta(database);
+  migrarDepositosSiHaceFalta(database);
+  migrarPreciosYCodigoProductoSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');

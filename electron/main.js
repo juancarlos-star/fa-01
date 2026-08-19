@@ -388,6 +388,26 @@ ipcMain.handle('products:list', (event, { tipo, categoria } = {}) => {
   });
 });
 
+// Busqueda EXACTA por codigo_producto: usada en el renglon "Codigo" de Facturacion, donde al
+// escribir el codigo corto del producto (ej. "ss24") y presionar Enter se debe traer ese
+// producto puntual con su stock disponible, para autocompletar descripcion y precio.
+ipcMain.handle('products:buscarPorCodigo', (event, { codigo }) => {
+  const db = getDb();
+  const c = (codigo || '').trim();
+  if (!c) return null;
+  const p = db.prepare('SELECT * FROM products WHERE codigo_producto = ? COLLATE NOCASE').get(c);
+  if (!p) return null;
+  let stock_disponible;
+  if (p.tipo === 'accesorio') {
+    stock_disponible = p.stock_cantidad;
+  } else {
+    stock_disponible = db.prepare(
+      "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'"
+    ).get(p.id).c;
+  }
+  return { ...p, stock_disponible };
+});
+
 ipcMain.handle('products:names', (event, { tipo, categoria } = {}) => {
   const db = getDb();
   let rows;
@@ -403,7 +423,7 @@ ipcMain.handle('products:names', (event, { tipo, categoria } = {}) => {
 
 ipcMain.handle('products:create', (event, data) => {
   const db = getDb();
-  const { tipo, nombre, categoria, precio, stock_minimo, codigo_barras, costo_inicial } = data;
+  const { tipo, nombre, categoria, precio, precio2, stock_minimo, codigo_barras, costo_inicial, codigo_producto } = data;
   if (!tipo || !nombre) return { ok: false, message: 'Tipo y nombre son obligatorios' };
 
   if (categoria && categoria.trim()) {
@@ -413,6 +433,14 @@ ipcMain.handle('products:create', (event, data) => {
     }
   }
 
+  // El codigo de producto (filtro usado en Facturacion) es opcional, pero si se indica no
+  // puede repetirse con el de otro producto.
+  const codigoProductoLimpio = (codigo_producto || '').trim();
+  if (codigoProductoLimpio) {
+    const existenteCodigo = db.prepare('SELECT id FROM products WHERE codigo_producto = ? COLLATE NOCASE').get(codigoProductoLimpio);
+    if (existenteCodigo) return { ok: false, message: 'Ese codigo de producto ya esta en uso' };
+  }
+
   // Ya no se admite "stock inicial" al crear el producto: todo el stock debe entrar por el
   // modulo de Compras o por Cargos y Descargos, para que quede su registro correspondiente.
   // El costo indicado aqui solo se guarda como costo promedio de referencia inicial (en 0 stock).
@@ -420,13 +448,14 @@ ipcMain.handle('products:create', (event, data) => {
 
   const info = db
     .prepare(
-      `INSERT INTO products (tipo, nombre, categoria, precio, stock_minimo, stock_cantidad, costo_promedio_usd, codigo_barras, created_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, datetime('now','localtime'))`
+      `INSERT INTO products (tipo, nombre, categoria, precio, precio2, stock_minimo, stock_cantidad, costo_promedio_usd, codigo_barras, codigo_producto, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, datetime('now','localtime'))`
     )
     .run(
-      tipo, nombre, categoria || '', precio || 0, stock_minimo || 0,
+      tipo, nombre, categoria || '', precio || 0, precio2 || 0, stock_minimo || 0,
       costo,
-      tipo === 'accesorio' ? (codigo_barras || '') : null
+      tipo === 'accesorio' ? (codigo_barras || '') : null,
+      codigoProductoLimpio || null
     );
 
   const productId = info.lastInsertRowid;
@@ -436,7 +465,7 @@ ipcMain.handle('products:create', (event, data) => {
 
 // Permite editar nombre, categoria, precio, stock minimo y (para accesorios) el codigo de
 // barras de un producto ya existente, desde la propia pantalla de Inventario.
-ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, stock_minimo, codigo_barras }) => {
+ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, precio2, stock_minimo, codigo_barras, codigo_producto }) => {
   const db = getDb();
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
   if (!product) return { ok: false, message: 'Producto no encontrado' };
@@ -455,6 +484,13 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, stock
   const precioNum = parseFloat(precio);
   if (isNaN(precioNum) || precioNum < 0) return { ok: false, message: 'Precio invalido' };
 
+  // precio2 es opcional: si no se indica, se conserva el valor que ya tenia el producto.
+  let precio2Num = product.precio2 || 0;
+  if (precio2 !== undefined && precio2 !== null && precio2 !== '') {
+    precio2Num = parseFloat(precio2);
+    if (isNaN(precio2Num) || precio2Num < 0) return { ok: false, message: 'Precio 2 invalido' };
+  }
+
   const stockMinNum = parseInt(stock_minimo, 10);
   if (isNaN(stockMinNum) || stockMinNum < 0) return { ok: false, message: 'Stock minimo invalido' };
 
@@ -467,9 +503,21 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, stock
     }
   }
 
+  // codigo_producto: si el campo viene en el payload (aunque sea vacio) se actualiza; si no
+  // viene (undefined), se conserva el que ya tenia el producto.
+  let codigoProducto = product.codigo_producto;
+  if (codigo_producto !== undefined) {
+    const codigoProductoLimpio = (codigo_producto || '').trim();
+    if (codigoProductoLimpio) {
+      const existenteCodigo = db.prepare('SELECT id FROM products WHERE codigo_producto = ? COLLATE NOCASE AND id != ?').get(codigoProductoLimpio, id);
+      if (existenteCodigo) return { ok: false, message: 'Ese codigo de producto ya esta en uso' };
+    }
+    codigoProducto = codigoProductoLimpio || null;
+  }
+
   db.prepare(
-    'UPDATE products SET nombre = ?, categoria = ?, precio = ?, stock_minimo = ?, codigo_barras = ? WHERE id = ?'
-  ).run(nombreLimpio, categoriaLimpia, precioNum, stockMinNum, codigoBarras, id);
+    'UPDATE products SET nombre = ?, categoria = ?, precio = ?, precio2 = ?, stock_minimo = ?, codigo_barras = ?, codigo_producto = ? WHERE id = ?'
+  ).run(nombreLimpio, categoriaLimpia, precioNum, precio2Num, stockMinNum, codigoBarras, codigoProducto, id);
 
   return { ok: true };
 });
@@ -1057,6 +1105,51 @@ ipcMain.handle('settings:update', (event, values) => {
 });
 
 // ---------- IPC: Clientes ----------
+// ---------- IPC: Depositos (almacenes) ----------
+ipcMain.handle('depositos:list', (event, { soloActivos } = {}) => {
+  const db = getDb();
+  if (soloActivos) return db.prepare('SELECT * FROM depositos WHERE activo = 1 ORDER BY nombre').all();
+  return db.prepare('SELECT * FROM depositos ORDER BY nombre').all();
+});
+
+ipcMain.handle('depositos:create', (event, { codigo, nombre }) => {
+  const db = getDb();
+  const codigoLimpio = (codigo || '').trim();
+  const nombreLimpio = (nombre || '').trim();
+  if (!codigoLimpio || !nombreLimpio) return { ok: false, message: 'Codigo y nombre son obligatorios' };
+  const existente = db.prepare('SELECT id FROM depositos WHERE codigo = ? COLLATE NOCASE').get(codigoLimpio);
+  if (existente) return { ok: false, message: 'Ya existe un deposito con ese codigo' };
+  const info = db.prepare(
+    `INSERT INTO depositos (codigo, nombre, activo, created_at) VALUES (?, ?, 1, datetime('now','localtime'))`
+  ).run(codigoLimpio, nombreLimpio);
+  return { ok: true, id: info.lastInsertRowid };
+});
+
+ipcMain.handle('depositos:update', (event, { id, codigo, nombre }) => {
+  const db = getDb();
+  const codigoLimpio = (codigo || '').trim();
+  const nombreLimpio = (nombre || '').trim();
+  if (!codigoLimpio || !nombreLimpio) return { ok: false, message: 'Codigo y nombre son obligatorios' };
+  const existente = db.prepare('SELECT id FROM depositos WHERE codigo = ? COLLATE NOCASE AND id != ?').get(codigoLimpio, id);
+  if (existente) return { ok: false, message: 'Ya existe un deposito con ese codigo' };
+  db.prepare('UPDATE depositos SET codigo = ?, nombre = ? WHERE id = ?').run(codigoLimpio, nombreLimpio, id);
+  return { ok: true };
+});
+
+// No se permite desactivar el ultimo deposito activo: siempre debe quedar al menos uno
+// disponible para poder facturar, comprar y hacer cargos/descargos.
+ipcMain.handle('depositos:toggleActive', (event, { id }) => {
+  const db = getDb();
+  const deposito = db.prepare('SELECT * FROM depositos WHERE id = ?').get(id);
+  if (!deposito) return { ok: false, message: 'Deposito no encontrado' };
+  if (deposito.activo) {
+    const activos = db.prepare('SELECT COUNT(*) AS c FROM depositos WHERE activo = 1').get().c;
+    if (activos <= 1) return { ok: false, message: 'Debe quedar al menos un deposito activo' };
+  }
+  db.prepare('UPDATE depositos SET activo = ? WHERE id = ?').run(deposito.activo ? 0 : 1, id);
+  return { ok: true };
+});
+
 ipcMain.handle('clientes:list', () => {
   const db = getDb();
   return db.prepare('SELECT * FROM clientes ORDER BY nombre').all();
@@ -1069,6 +1162,17 @@ ipcMain.handle('clientes:search', (event, { query }) => {
   return db
     .prepare('SELECT * FROM clientes WHERE rif_cedula LIKE ? ORDER BY nombre LIMIT 20')
     .all(q);
+});
+
+// Busqueda EXACTA (no parcial) por cedula/RIF: usada en el renglon "Cliente" de Facturacion,
+// donde al escribir la cedula completa y presionar Enter se debe traer ese cliente puntual (o
+// indicar que no existe, para ofrecer crearlo), a diferencia de clientes:search que es un
+// filtro parcial usado en otras pantallas.
+ipcMain.handle('clientes:buscarPorCedula', (event, { cedula }) => {
+  const db = getDb();
+  const c = (cedula || '').trim();
+  if (!c) return null;
+  return db.prepare('SELECT * FROM clientes WHERE rif_cedula = ? COLLATE NOCASE').get(c) || null;
 });
 
 ipcMain.handle('clientes:create', (event, data) => {

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   createProduct: (data) => ipcRenderer.invoke('products:create', data),
   updateProduct: (id, data) => ipcRenderer.invoke('products:update', { id, ...data }),
   deleteProduct: (id) => ipcRenderer.invoke('products:delete', { id }),
+  buscarProductoPorCodigo: (codigo) => ipcRenderer.invoke('products:buscarPorCodigo', { codigo }),
   addProductStock: (id, cantidad, costoUnitario, usuario) =>
     ipcRenderer.invoke('products:addStock', { id, cantidad, costoUnitario, usuario }),
   writeOffProductStock: (id, cantidad, motivo, usuario) =>
@@ -46,8 +47,14 @@ contextBridge.exposeInMainWorld('api', {
   // Clientes
   listClientes: () => ipcRenderer.invoke('clientes:list'),
   searchClientes: (query) => ipcRenderer.invoke('clientes:search', { query }),
+  buscarClientePorCedula: (cedula) => ipcRenderer.invoke('clientes:buscarPorCedula', { cedula }),
   createCliente: (data) => ipcRenderer.invoke('clientes:create', data),
   updateCliente: (id, data) => ipcRenderer.invoke('clientes:update', { id, ...data }),
+  // Depositos (almacenes)
+  listDepositos: (soloActivos) => ipcRenderer.invoke('depositos:list', { soloActivos }),
+  createDeposito: (data) => ipcRenderer.invoke('depositos:create', data),
+  updateDeposito: (id, data) => ipcRenderer.invoke('depositos:update', { id, ...data }),
+  toggleDepositoActive: (id) => ipcRenderer.invoke('depositos:toggleActive', { id }),
   // Facturacion
   crearFactura: (payload) => ipcRenderer.invoke('facturas:crear', payload),
   listFacturas: () => ipcRenderer.invoke('facturas:list'),
