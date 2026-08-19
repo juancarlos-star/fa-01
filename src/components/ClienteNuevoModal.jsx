@@ -13,6 +13,7 @@ export default function ClienteNuevoModal({ cedulaInicial, onConfirm, onCancel }
     nombre: '',
     telefono: '',
     movil: '',
+    direccion: '',
     email: '',
     red_social1: '',
     red_social2: '',
@@ -84,6 +85,11 @@ export default function ClienteNuevoModal({ cedulaInicial, onConfirm, onCancel }
               </Campo>
             </div>
           </div>
+
+          <Campo label="Direccion">
+            <input value={form.direccion} onChange={set('direccion')}
+              placeholder="Direccion del cliente" style={inputStyle} />
+          </Campo>
 
           <Campo label="Correo Electronico">
             <input type="email" value={form.email} onChange={set('email')}
