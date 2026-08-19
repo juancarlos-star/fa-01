@@ -4,6 +4,30 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { getDb, initDb, cerrarDb, getDbPath } = require('./db');
 
+// ---------- Helpers de STOCK POR DEPOSITO (accesorios) ----------
+// Los accesorios no tienen unidad individual (IMEI/codigo), asi que su stock por deposito se
+// lleva como una cantidad en la tabla product_stock_deposito. products.stock_cantidad se sigue
+// manteniendo como el TOTAL sumado de todos los depositos (por eso siempre se ajusta junto con
+// el stock del deposito puntual), para no romper ninguna pantalla que todavia use el total.
+function obtenerStockDeposito(db, productId, depositoId) {
+  if (!depositoId) return null;
+  const row = db.prepare('SELECT cantidad FROM product_stock_deposito WHERE product_id = ? AND deposito_id = ?').get(productId, depositoId);
+  return row ? row.cantidad : 0;
+}
+
+function ajustarStockDeposito(db, productId, depositoId, delta) {
+  db.prepare(
+    `INSERT INTO product_stock_deposito (product_id, deposito_id, cantidad) VALUES (?, ?, ?)
+     ON CONFLICT(product_id, deposito_id) DO UPDATE SET cantidad = cantidad + excluded.cantidad`
+  ).run(productId, depositoId, delta);
+  db.prepare('UPDATE products SET stock_cantidad = stock_cantidad + ? WHERE id = ?').run(delta, productId);
+}
+
+function depositoValido(db, depositoId) {
+  if (!depositoId) return null;
+  return db.prepare('SELECT * FROM depositos WHERE id = ? AND activo = 1').get(depositoId);
+}
+
 // Envoltorio de seguridad para TODOS los canales IPC: si un handler lanza una excepcion no
 // controlada (por ejemplo, por un desajuste de esquema en la base de datos), electron rechaza
 // la promesa en el renderer. Cuando esa promesa no tiene un .catch(), el error se pierde en
@@ -366,7 +390,11 @@ ipcMain.handle('categories:delete', (event, { id }) => {
 });
 
 // ---------- IPC: Inventario - productos ----------
-ipcMain.handle('products:list', (event, { tipo, categoria } = {}) => {
+// depositoId es OPCIONAL: si se indica, "stock_disponible" se calcula SOLO con lo que hay en
+// ese deposito puntual (usado en Facturacion, Compras y Cargos/Descargos, donde cada operacion
+// ocurre en un deposito especifico). Si no se indica, se sigue devolviendo el total general
+// (usado en Inventario y Reportes, donde se quiere ver todo el stock junto).
+ipcMain.handle('products:list', (event, { tipo, categoria, depositoId } = {}) => {
   const db = getDb();
   let rows;
   if (tipo && categoria) {
@@ -381,9 +409,15 @@ ipcMain.handle('products:list', (event, { tipo, categoria } = {}) => {
   const countStmt = db.prepare(
     "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'"
   );
+  const countStmtDeposito = db.prepare(
+    "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
+  );
   return rows.map((p) => {
-    if (p.tipo === 'accesorio') return { ...p, stock_disponible: p.stock_cantidad };
-    const c = countStmt.get(p.id).c;
+    if (p.tipo === 'accesorio') {
+      const stock = depositoId ? (obtenerStockDeposito(db, p.id, depositoId) || 0) : p.stock_cantidad;
+      return { ...p, stock_disponible: stock };
+    }
+    const c = depositoId ? countStmtDeposito.get(p.id, depositoId).c : countStmt.get(p.id).c;
     return { ...p, stock_disponible: c };
   });
 });
@@ -391,7 +425,7 @@ ipcMain.handle('products:list', (event, { tipo, categoria } = {}) => {
 // Busqueda EXACTA por codigo_producto: usada en el renglon "Codigo" de Facturacion, donde al
 // escribir el codigo corto del producto (ej. "ss24") y presionar Enter se debe traer ese
 // producto puntual con su stock disponible, para autocompletar descripcion y precio.
-ipcMain.handle('products:buscarPorCodigo', (event, { codigo }) => {
+ipcMain.handle('products:buscarPorCodigo', (event, { codigo, depositoId }) => {
   const db = getDb();
   const c = (codigo || '').trim();
   if (!c) return null;
@@ -399,7 +433,11 @@ ipcMain.handle('products:buscarPorCodigo', (event, { codigo }) => {
   if (!p) return null;
   let stock_disponible;
   if (p.tipo === 'accesorio') {
-    stock_disponible = p.stock_cantidad;
+    stock_disponible = depositoId ? (obtenerStockDeposito(db, p.id, depositoId) || 0) : p.stock_cantidad;
+  } else if (depositoId) {
+    stock_disponible = db.prepare(
+      "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
+    ).get(p.id, depositoId).c;
   } else {
     stock_disponible = db.prepare(
       "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'"
@@ -611,8 +649,14 @@ ipcMain.handle('products:writeOffStock', (event, { id, cantidad, motivo, usuario
 });
 
 // ---------- IPC: Inventario - unidades (IMEI / SIM / USIM) ----------
-ipcMain.handle('units:list', (event, { product_id }) => {
+// depositoId es OPCIONAL: si se indica, solo devuelve las unidades de ese deposito puntual
+// (usado en Facturacion y en Cargos/Descargos, para no vender ni descargar unidades que en
+// realidad estan fisicamente en otro almacen). Sin depositoId se devuelven todas (Inventario).
+ipcMain.handle('units:list', (event, { product_id, depositoId }) => {
   const db = getDb();
+  if (depositoId) {
+    return db.prepare('SELECT * FROM inventory_units WHERE product_id = ? AND deposito_id = ? ORDER BY created_at DESC').all(product_id, depositoId);
+  }
   return db.prepare('SELECT * FROM inventory_units WHERE product_id = ? ORDER BY created_at DESC').all(product_id);
 });
 
@@ -924,11 +968,14 @@ ipcMain.handle('units:writeOffBatch', (event, { ids, motivo, usuario }) => {
 //     { productId, esAccesorio: false, codigo, costoUnitario }
 //   Para equipo/simcard/usim en un DESCARGO (unidad ya existente que se va a dar de baja):
 //     { productId, esAccesorio: false, unitId, codigo (solo para mensajes de error) }
-ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo, usuario, items }) => {
+ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo, usuario, items, depositoId }) => {
   const db = getDb();
   if (!['cargo', 'descargo'].includes(tipoDocumento)) return { ok: false, message: 'Tipo de documento invalido' };
   if (!Array.isArray(items) || items.length === 0) return { ok: false, message: 'El documento no tiene ningun item agregado' };
   if (tipoDocumento === 'descargo' && !(motivo || '').trim()) return { ok: false, message: 'Indica el motivo del descargo' };
+  if (!depositoId) return { ok: false, message: 'Selecciona el deposito de esta operacion' };
+  const deposito = depositoValido(db, depositoId);
+  if (!deposito) return { ok: false, message: 'El deposito seleccionado no es valido o esta inactivo' };
 
   // ---- Validaciones previas (antes de tocar la base de datos) ----
   const productosCache = new Map();
@@ -956,9 +1003,15 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
       if (product.tipo === 'accesorio') {
         const n = parseInt(it.cantidad, 10);
         if (!n || n <= 0) return { ok: false, message: `Cantidad invalida para "${product.nombre}"` };
-        if (n > product.stock_cantidad) return { ok: false, message: `No hay suficiente stock de "${product.nombre}" (disponible: ${product.stock_cantidad})` };
+        const stockEnDeposito = obtenerStockDeposito(db, product.id, depositoId) || 0;
+        if (n > stockEnDeposito) return { ok: false, message: `No hay suficiente stock de "${product.nombre}" en el deposito "${deposito.nombre}" (disponible: ${stockEnDeposito})` };
       } else if (!it.unitId) {
         return { ok: false, message: `Falta la unidad a descargar de "${product.nombre}"` };
+      } else {
+        const u = db.prepare('SELECT deposito_id FROM inventory_units WHERE id = ?').get(it.unitId);
+        if (u && u.deposito_id !== depositoId) {
+          return { ok: false, message: `El codigo "${it.codigo || ''}" no pertenece al deposito "${deposito.nombre}"` };
+        }
       }
     }
   }
@@ -1005,13 +1058,13 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
           const costoActual = product.costo_promedio_usd || 0;
           const nuevoStock = stockActual + n;
           const nuevoPromedio = nuevoStock > 0 ? ((stockActual * costoActual) + (n * costo)) / nuevoStock : costo;
-          db.prepare('UPDATE products SET stock_cantidad = ?, costo_promedio_usd = ? WHERE id = ?').run(nuevoStock, nuevoPromedio, product.id);
-          product.stock_cantidad = nuevoStock;
+          db.prepare('UPDATE products SET costo_promedio_usd = ? WHERE id = ?').run(nuevoPromedio, product.id);
+          ajustarStockDeposito(db, product.id, depositoId, n);
           product.costo_promedio_usd = nuevoPromedio;
           const compraId = db.prepare(
-            `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, encabezado_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?)`
-          ).run(product.id, product.tipo, product.nombre, costo, n, costo * n, usuario || '', encabezadoId).lastInsertRowid;
+            `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, encabezado_id, deposito_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?)`
+          ).run(product.id, product.tipo, product.nombre, costo, n, costo * n, usuario || '', encabezadoId, depositoId).lastInsertRowid;
           registros.push(
             db.prepare(`SELECT c.*, p.nombre AS producto_nombre FROM compras c LEFT JOIN products p ON p.id = c.product_id WHERE c.id = ?`).get(compraId)
           );
@@ -1019,12 +1072,12 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
           const codigo = it.codigo.trim();
           const costo = parseFloat(it.costoUnitario);
           const unitInfo = db.prepare(
-            `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, created_at) VALUES (?, ?, 'disponible', ?, datetime('now','localtime'))`
-          ).run(product.id, codigo, costo);
+            `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, deposito_id, created_at) VALUES (?, ?, 'disponible', ?, ?, datetime('now','localtime'))`
+          ).run(product.id, codigo, costo, depositoId);
           const compraId = db.prepare(
-            `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, unit_id, encabezado_id)
-             VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now','localtime'), ?, ?)`
-          ).run(product.id, product.tipo, product.nombre, costo, costo, usuario || '', unitInfo.lastInsertRowid, encabezadoId).lastInsertRowid;
+            `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, unit_id, encabezado_id, deposito_id)
+             VALUES (?, ?, ?, ?, 1, ?, ?, datetime('now','localtime'), ?, ?, ?)`
+          ).run(product.id, product.tipo, product.nombre, costo, costo, usuario || '', unitInfo.lastInsertRowid, encabezadoId, depositoId).lastInsertRowid;
           registros.push(
             db.prepare(
               `SELECT c.*, p.nombre AS producto_nombre, u.codigo AS unidad_codigo
@@ -1036,13 +1089,11 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
       } else {
         if (product.tipo === 'accesorio') {
           const n = parseInt(it.cantidad, 10);
-          const nuevoStock = product.stock_cantidad - n;
-          db.prepare('UPDATE products SET stock_cantidad = ? WHERE id = ?').run(nuevoStock, product.id);
-          product.stock_cantidad = nuevoStock;
+          ajustarStockDeposito(db, product.id, depositoId, -n);
           const descargoId = db.prepare(
-            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id)
-             VALUES (?, NULL, ?, ?, ?, datetime('now','localtime'), ?)`
-          ).run(product.id, n, (motivo || '').trim(), usuario || '', encabezadoId).lastInsertRowid;
+            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id, deposito_id)
+             VALUES (?, NULL, ?, ?, ?, datetime('now','localtime'), ?, ?)`
+          ).run(product.id, n, (motivo || '').trim(), usuario || '', encabezadoId, depositoId).lastInsertRowid;
           registros.push(
             db.prepare(
               `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo FROM descargos d LEFT JOIN products p ON p.id = d.product_id WHERE d.id = ?`
@@ -1052,9 +1103,9 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
           const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(it.unitId);
           db.prepare("UPDATE inventory_units SET estado = 'de_baja' WHERE id = ?").run(unit.id);
           const descargoId = db.prepare(
-            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id)
-             VALUES (?, ?, 1, ?, ?, datetime('now','localtime'), ?)`
-          ).run(product.id, unit.id, (motivo || '').trim(), usuario || '', encabezadoId).lastInsertRowid;
+            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id, deposito_id)
+             VALUES (?, ?, 1, ?, ?, datetime('now','localtime'), ?, ?)`
+          ).run(product.id, unit.id, (motivo || '').trim(), usuario || '', encabezadoId, depositoId).lastInsertRowid;
           registros.push(
             db.prepare(
               `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo
@@ -1217,7 +1268,7 @@ ipcMain.handle('clientes:update', (event, { id, nombre, rif_cedula, telefono, di
 // ---------- IPC: Facturacion ----------
 ipcMain.handle('facturas:crear', (event, payload) => {
   const db = getDb();
-  const { cliente, items, usuario, sinCliente } = payload;
+  const { cliente, items, usuario, sinCliente, depositoId } = payload;
 
   if (!items || items.length === 0) {
     return { ok: false, message: 'La factura debe tener al menos un producto' };
@@ -1225,6 +1276,9 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   if (!sinCliente && !(cliente && (cliente.id || (cliente.nombre && cliente.nombre.trim())))) {
     return { ok: false, message: 'Selecciona un cliente registrado, crea uno nuevo, o marca "Consumidor final"' };
   }
+  if (!depositoId) return { ok: false, message: 'Selecciona el deposito del cual se factura' };
+  const deposito = depositoValido(db, depositoId);
+  if (!deposito) return { ok: false, message: 'El deposito seleccionado no es valido o esta inactivo' };
 
   const settingsRows = db.prepare('SELECT key, value FROM settings').all();
   const settings = {};
@@ -1239,14 +1293,18 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
     if (!product) return { ok: false, message: `Producto no encontrado (id ${item.product_id})` };
     if (product.tipo === 'accesorio') {
-      if (item.cantidad > product.stock_cantidad) {
-        return { ok: false, message: `Stock insuficiente de "${product.nombre}"` };
+      const stockEnDeposito = obtenerStockDeposito(db, product.id, depositoId) || 0;
+      if ((parseInt(item.cantidad, 10) || 0) > stockEnDeposito) {
+        return { ok: false, message: `Stock insuficiente de "${product.nombre}" en el deposito "${deposito.nombre}" (disponible: ${stockEnDeposito})` };
       }
     } else {
       if (!item.unit_id) return { ok: false, message: `Falta seleccionar el codigo (IMEI/SIM/USIM) de "${product.nombre}"` };
       const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(item.unit_id);
       if (!unit || unit.estado !== 'disponible') {
         return { ok: false, message: `El codigo seleccionado de "${product.nombre}" ya no esta disponible` };
+      }
+      if (unit.deposito_id !== depositoId) {
+        return { ok: false, message: `El codigo "${unit.codigo}" no pertenece al deposito "${deposito.nombre}"` };
       }
     }
   }
@@ -1293,10 +1351,10 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     const facturaInfo = db
       .prepare(
         `INSERT INTO facturas
-         (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
+         (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, deposito_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
       )
-      .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '');
+      .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '', depositoId);
 
     const facturaId = facturaInfo.lastInsertRowid;
 
@@ -1314,7 +1372,7 @@ ipcMain.handle('facturas:crear', (event, payload) => {
       let costoUnitario = 0;
 
       if (product.tipo === 'accesorio') {
-        db.prepare('UPDATE products SET stock_cantidad = stock_cantidad - ? WHERE id = ?').run(cantidad, product.id);
+        ajustarStockDeposito(db, product.id, depositoId, -cantidad);
         costoUnitario = product.costo_promedio_usd || 0;
       } else {
         db.prepare("UPDATE inventory_units SET estado = 'vendido' WHERE id = ?").run(item.unit_id);
@@ -1517,7 +1575,7 @@ ipcMain.handle('inventario:buscarPorCodigo', (event, { codigo }) => {
       product_id: unidad.product_id,
       tipo: unidad.producto_tipo,
       producto_nombre: unidad.producto_nombre,
-      unit: { id: unidad.id, codigo: unidad.codigo, estado: unidad.estado }
+      unit: { id: unidad.id, codigo: unidad.codigo, estado: unidad.estado, deposito_id: unidad.deposito_id }
     };
   }
 
@@ -1541,11 +1599,13 @@ ipcMain.handle('inventario:buscarPorCodigo', (event, { codigo }) => {
 ipcMain.handle('compras:crearLote', (event, payload) => {
   const db = getDb();
   try {
-    const { proveedor, numeroFacturaCompra, items, usuario } = payload;
+    const { proveedor, numeroFacturaCompra, items, usuario, depositoId } = payload;
 
     if (!proveedor || !proveedor.trim()) return { ok: false, message: 'El nombre del proveedor es obligatorio' };
     if (!numeroFacturaCompra || !numeroFacturaCompra.trim()) return { ok: false, message: 'El numero de factura de compra es obligatorio' };
     if (!items || items.length === 0) return { ok: false, message: 'Agrega al menos un producto a la compra' };
+    if (!depositoId) return { ok: false, message: 'Selecciona el deposito que recibe la mercancia' };
+    if (!depositoValido(db, depositoId)) return { ok: false, message: 'El deposito seleccionado no es valido o esta inactivo' };
 
     const codigosVistosEnEsteLote = new Set();
 
@@ -1586,11 +1646,11 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
       const encabezadoId = encabezadoInfo.lastInsertRowid;
 
       const insertCompra = db.prepare(
-        `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, compra_encabezado_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?)`
+        `INSERT INTO compras (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at, compra_encabezado_id, deposito_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?)`
       );
       const insertUnit = db.prepare(
-        `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, compra_encabezado_id, created_at) VALUES (?, ?, 'disponible', ?, ?, datetime('now','localtime'))`
+        `INSERT INTO inventory_units (product_id, codigo, estado, costo_unitario_usd, compra_encabezado_id, deposito_id, created_at) VALUES (?, ?, 'disponible', ?, ?, ?, datetime('now','localtime'))`
       );
 
       for (const item of items) {
@@ -1603,13 +1663,14 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
           const costoActual = product.costo_promedio_usd || 0;
           const nuevoStock = stockActual + cantidad;
           const nuevoPromedio = nuevoStock > 0 ? ((stockActual * costoActual) + (cantidad * costo)) / nuevoStock : costo;
-          db.prepare('UPDATE products SET stock_cantidad = ?, costo_promedio_usd = ? WHERE id = ?').run(nuevoStock, nuevoPromedio, product.id);
-          insertCompra.run(product.id, product.tipo, product.nombre, costo, cantidad, costo * cantidad, usuario || '', encabezadoId);
+          db.prepare('UPDATE products SET costo_promedio_usd = ? WHERE id = ?').run(nuevoPromedio, product.id);
+          ajustarStockDeposito(db, product.id, depositoId, cantidad);
+          insertCompra.run(product.id, product.tipo, product.nombre, costo, cantidad, costo * cantidad, usuario || '', encabezadoId, depositoId);
           totalUsd += costo * cantidad;
         } else {
           const codigos = item.codigos.map((c) => c.trim());
-          codigos.forEach((codigo) => insertUnit.run(product.id, codigo, costo, encabezadoId));
-          insertCompra.run(product.id, product.tipo, product.nombre, costo, codigos.length, costo * codigos.length, usuario || '', encabezadoId);
+          codigos.forEach((codigo) => insertUnit.run(product.id, codigo, costo, encabezadoId, depositoId));
+          insertCompra.run(product.id, product.tipo, product.nombre, costo, codigos.length, costo * codigos.length, usuario || '', encabezadoId, depositoId);
           totalUsd += costo * codigos.length;
         }
       }

@@ -14,18 +14,23 @@ contextBridge.exposeInMainWorld('api', {
   deleteCategory: (id) => ipcRenderer.invoke('categories:delete', { id }),
   getCategoryImpact: (id) => ipcRenderer.invoke('categories:impacto', { id }),
   // Inventario - productos
-  listProducts: (tipo, categoria) => ipcRenderer.invoke('products:list', { tipo, categoria }),
+  // depositoId es opcional en listProducts y buscarProductoPorCodigo: cuando se indica, el
+  // stock_disponible que devuelven es SOLO el de ese deposito (usado en Facturacion, Compras
+  // y Cargos/Descargos). Sin depositoId, se sigue devolviendo el total (Inventario/Reportes).
+  listProducts: (tipo, categoria, depositoId) => ipcRenderer.invoke('products:list', { tipo, categoria, depositoId }),
   listProductNames: (tipo, categoria) => ipcRenderer.invoke('products:names', { tipo, categoria }),
   createProduct: (data) => ipcRenderer.invoke('products:create', data),
   updateProduct: (id, data) => ipcRenderer.invoke('products:update', { id, ...data }),
   deleteProduct: (id) => ipcRenderer.invoke('products:delete', { id }),
-  buscarProductoPorCodigo: (codigo) => ipcRenderer.invoke('products:buscarPorCodigo', { codigo }),
+  buscarProductoPorCodigo: (codigo, depositoId) => ipcRenderer.invoke('products:buscarPorCodigo', { codigo, depositoId }),
   addProductStock: (id, cantidad, costoUnitario, usuario) =>
     ipcRenderer.invoke('products:addStock', { id, cantidad, costoUnitario, usuario }),
   writeOffProductStock: (id, cantidad, motivo, usuario) =>
     ipcRenderer.invoke('products:writeOffStock', { id, cantidad, motivo, usuario }),
   // Inventario - unidades
-  listUnits: (productId) => ipcRenderer.invoke('units:list', { product_id: productId }),
+  // depositoId es opcional: si se indica, solo trae las unidades de ese deposito (Facturacion,
+  // Cargos/Descargos). Sin depositoId trae todas (Inventario).
+  listUnits: (productId, depositoId) => ipcRenderer.invoke('units:list', { product_id: productId, depositoId }),
   addUnit: (productId, codigo, costoUnitario, usuario) =>
     ipcRenderer.invoke('units:add', { product_id: productId, codigo, costoUnitario, usuario }),
   addUnitsRange: (productId, codigoInicio, codigoFin, costoUnitario, usuario) =>
