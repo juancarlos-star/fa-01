@@ -5,7 +5,12 @@ import { fmt } from './format.js';
 import { agruparItemsPorProducto } from './agruparFacturaItems.js';
 
 export async function generarFacturaPDF(factura, items, opciones = {}) {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  // compress:true genera un PDF con streams comprimidos (mas chico y con una estructura
+  // mas estandar). Junto con la actualizacion de jsPDF/jspdf-autotable a una version mas
+  // reciente, esto corrige que la factura se viera "toda negra" al abrirla con Adobe
+  // Acrobat (el PDF se veia bien en Chrome/otros lectores, pero Acrobat es mas estricto
+  // leyendo la estructura interna que generaban las versiones viejas de jsPDF).
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
