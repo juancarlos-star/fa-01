@@ -159,13 +159,23 @@ export default function CargosDescargos({ currentUser }) {
         setError(res.message);
         return;
       }
-      setConfirmacion({ encabezadoId: res.encabezadoId, registros: res.registros, tipoDocumento });
       setItemsDocumento([]);
       setMotivoDocumento('');
       // El comprobante consolidado (con todos los articulos del documento, aunque sean de
       // productos distintos) se genera e imprime automaticamente, sin que el usuario tenga
-      // que pedirlo aparte.
-      await generarCargoDescargoDocumentoPDF(res.encabezadoId, res.registros, tipoDocumento, settings, { imprimir: true });
+      // que pedirlo aparte. Esto se hace ANTES de mostrar la pantalla de "Documento
+      // registrado" (setConfirmacion) a proposito: esa pantalla tiene el boton "Descargar PDF
+      // del documento" habilitado de inmediato, y si se mostrara antes de que termine esta
+      // impresion automatica, el usuario podia alcanzar a presionar ese boton pensando que no
+      // se habia generado, creando el PDF DOS VECES para el mismo documento (con el mismo
+      // problema de archivos duplicados " (1)" y visor de PDF confundido que se corrigio en
+      // Facturacion).
+      try {
+        await generarCargoDescargoDocumentoPDF(res.encabezadoId, res.registros, tipoDocumento, settings, { imprimir: true });
+      } catch (errImpresion) {
+        console.error('Error al imprimir el documento automaticamente:', errImpresion);
+      }
+      setConfirmacion({ encabezadoId: res.encabezadoId, registros: res.registros, tipoDocumento });
     } catch (err) {
       setError('Ocurrio un error inesperado al registrar el documento: ' + (err?.message || String(err)));
     } finally {

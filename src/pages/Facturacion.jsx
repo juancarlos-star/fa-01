@@ -381,7 +381,15 @@ export default function Facturacion({ currentUser }) {
     ? String(settings.numero_factura_siguiente).padStart(6, '0')
     : '------';
 
+  // Guarda ademas del estado "emitiendo" (que solo controla el disabled visual del boton, y
+  // tarda un instante en re-renderizar) una referencia que se activa de forma INMEDIATA y
+  // sincronica. Esto evita que la factura se pueda emitir/imprimir dos veces si, por ejemplo,
+  // se mantiene presionada la tecla F10 (el teclado repite el evento keydown) o se hace doble
+  // clic muy rapido, justo en la ventana de tiempo antes de que el boton alcance a deshabilitarse.
+  const totalizandoRef = useRef(false);
+
   const handleTotalizar = async () => {
+    if (totalizandoRef.current) return;
     setError('');
     if (carrito.length === 0) {
       setError('Agrega al menos un producto a la factura');
@@ -396,6 +404,7 @@ export default function Facturacion({ currentUser }) {
       return;
     }
     const cliente = { id: clienteSeleccionado.id };
+    totalizandoRef.current = true;
     setEmitiendo(true);
     try {
       const res = await window.api.crearFactura({
@@ -411,14 +420,20 @@ export default function Facturacion({ currentUser }) {
       }
 
       const detalle = await window.api.detalleFactura(res.facturaId);
-      setConfirmacion({ ...res, detalle: detalle.ok ? detalle : null });
       setCarrito([]);
       quitarCliente();
       window.api.getSettings().then(setSettings);
 
       // La factura se imprime automaticamente al totalizar, sin que el usuario tenga que
-      // pedirlo aparte (igual que ya ocurre en Cargos y Descargos). El boton "Imprimir PDF" de
-      // la pantalla de confirmacion queda disponible por si hace falta reimprimir.
+      // pedirlo aparte (igual que ya ocurre en Cargos y Descargos). Esto se hace ANTES de
+      // mostrar la pantalla de "Factura emitida" (setConfirmacion) a proposito: esa pantalla
+      // dice "la factura ya se envio a imprimir" y tiene el boton "Reimprimir PDF" habilitado
+      // de inmediato. Si se mostrara esa pantalla antes de que termine esta impresion
+      // automatica, el usuario podia alcanzar a presionar "Reimprimir PDF" pensando que no se
+      // habia impreso, generando el PDF DOS VECES para la misma factura (Windows guarda la
+      // segunda copia con el sufijo " (1)" porque la primera ya esta abierta/bloqueada por el
+      // visor de PDF, y al abrir el mismo archivo dos veces casi al mismo tiempo el visor a
+      // veces muestra una de las dos copias en blanco/negro).
       if (detalle.ok) {
         try {
           await generarFacturaPDF(detalle.factura, detalle.items, { imprimir: true });
@@ -426,19 +441,24 @@ export default function Facturacion({ currentUser }) {
           console.error('Error al imprimir la factura automaticamente:', errImpresion);
         }
       }
+
+      setConfirmacion({ ...res, detalle: detalle.ok ? detalle : null });
     } catch (err) {
       console.error('Error al emitir factura:', err);
       setError('Ocurrio un error inesperado al emitir la factura: ' + (err?.message || String(err)));
     } finally {
       setEmitiendo(false);
+      totalizandoRef.current = false;
     }
   };
 
   // Atajo de teclado F10 = Totalizar, disponible en toda la pantalla de Facturacion (no solo
-  // con el boton), igual que en el sistema de referencia.
+  // con el boton), igual que en el sistema de referencia. e.repeat evita que, si se mantiene
+  // presionada la tecla, el sistema operativo repita el evento keydown y se dispare la
+  // totalizacion varias veces (ademas del guard totalizandoRef de arriba).
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.key === 'F10') {
+      if (e.key === 'F10' && !e.repeat) {
         e.preventDefault();
         handleTotalizar();
       }
