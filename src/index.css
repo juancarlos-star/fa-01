@@ -308,6 +308,11 @@ th {
   border: 1px solid #d0d5dd;
   border-top: none;
   overflow-x: auto;
+  /* Alto maximo con scroll interno: para que la pantalla de venta no crezca sin limite
+     hacia abajo cuando hay muchos productos o codigos IMEI/ICCID listados. El encabezado
+     queda fijo (sticky) arriba del area con scroll, siempre alineado con su columna. */
+  max-height: 340px;
+  overflow-y: auto;
 }
 
 .pos-table {
@@ -323,13 +328,23 @@ th {
   padding: 8px;
   text-align: left;
   border-bottom: none;
+  /* Encabezado fijo mientras se hace scroll dentro de .pos-table-wrap, para que cada
+     titulo (Codigo, Descripcion, Cantidad, Und, Precio, Total) se mantenga siempre
+     visible justo arriba de su columna. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
 }
 
 .pos-table td {
   padding: 6px 8px;
   border-bottom: 1px solid #eaecf0;
   font-size: 0.88rem;
-  vertical-align: middle;
+  /* Alineado arriba (no centrado) para que Cantidad/Und/Precio/Total queden a la altura
+     de la primera linea de la descripcion, aunque debajo se listen varios codigos
+     IMEI/ICCID que hagan la fila mas alta. */
+  vertical-align: top;
 }
 
 .pos-table td.text-right {
@@ -628,6 +643,145 @@ th {
 
 .pos-receipt-actions .btn-ghost:hover {
   background: #e4e7ec;
+}
+
+/* ---------- Facturacion: acciones de la fila de entrada y boton "Ver todo" ---------- */
+.pos-entrada-acciones {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.pos-ver-todo-btn {
+  background: #fff;
+  border: 1px solid #0b4f9e;
+  color: #0b4f9e;
+  padding: 4px 9px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-ver-todo-btn:hover {
+  background: #eaf1fb;
+}
+
+/* ---------- Facturacion: ventana "Ver todo" (vista ampliada de la factura) ---------- */
+.pos-vertodo-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(16, 24, 40, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+  padding: 24px;
+}
+
+.pos-vertodo-box {
+  background: #fff;
+  border-radius: 10px;
+  width: 100%;
+  max-width: 1000px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.pos-vertodo-header {
+  background: #0b4f9e;
+  color: #fff;
+  padding: 14px 20px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pos-vertodo-cerrar {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.pos-vertodo-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.pos-vertodo-vacio {
+  color: #98a2b3;
+  text-align: center;
+  padding: 30px 0;
+}
+
+.pos-vertodo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1.02rem;
+}
+
+.pos-vertodo-table th {
+  background: #f2f4f7;
+  color: #344054;
+  text-align: left;
+  padding: 10px;
+  font-size: 0.85rem;
+  border-bottom: 2px solid #d0d5dd;
+}
+
+.pos-vertodo-table td {
+  padding: 10px;
+  border-bottom: 1px solid #eaecf0;
+  vertical-align: top;
+}
+
+.pos-vertodo-table td.text-right {
+  text-align: right;
+}
+
+.pos-vertodo-codigos {
+  margin-top: 6px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: #475467;
+  line-height: 1.6;
+}
+
+.pos-vertodo-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  padding: 14px 20px;
+  border-top: 1px solid #eaecf0;
+  font-size: 0.95rem;
+  color: #344054;
+}
+
+.pos-vertodo-footer .btn-primary {
+  background: #0b4f9e;
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.pos-vertodo-footer .btn-primary:hover {
+  background: #083b78;
 }
 
 /* Impresion: al imprimir una pantalla que contenga un elemento .print-area (ej: la factura
