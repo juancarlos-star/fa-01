@@ -1276,9 +1276,9 @@ ipcMain.handle('clientes:create', (event, data) => {
   const db = getDb();
   const { nombre, rif_cedula, telefono, direccion, email, tipo_cliente, movil, red_social1, red_social2, red_social3, notas } = data;
   if (!nombre || !nombre.trim()) return { ok: false, message: 'El nombre del cliente es obligatorio' };
-  if (!telefono || !telefono.trim()) return { ok: false, message: 'El telefono del cliente es obligatorio' };
   const cedulaLimpia = (rif_cedula || '').trim();
   if (!cedulaLimpia) return { ok: false, message: 'La cedula o RIF del cliente es obligatoria' };
+  if (!direccion || !direccion.trim()) return { ok: false, message: 'La direccion del cliente es obligatoria' };
   const existente = db.prepare('SELECT id FROM clientes WHERE rif_cedula = ? COLLATE NOCASE').get(cedulaLimpia);
   if (existente) return { ok: false, message: 'Ya existe un cliente registrado con esa cedula o RIF' };
   const info = db
@@ -1287,7 +1287,7 @@ ipcMain.handle('clientes:create', (event, data) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
     )
     .run(
-      nombre.trim(), cedulaLimpia, telefono.trim(), direccion || '', email || '',
+      nombre.trim(), cedulaLimpia, (telefono || '').trim(), direccion.trim(), email || '',
       tipo_cliente || 'Natural', movil || '', red_social1 || '', red_social2 || '', red_social3 || '', notas || ''
     );
   const cliente = db.prepare('SELECT * FROM clientes WHERE id = ?').get(info.lastInsertRowid);
@@ -1298,12 +1298,14 @@ ipcMain.handle('clientes:update', (event, { id, nombre, rif_cedula, telefono, di
   const db = getDb();
   if (!id) return { ok: false, message: 'Cliente invalido' };
   if (!nombre || !nombre.trim()) return { ok: false, message: 'El nombre del cliente es obligatorio' };
+  if (!rif_cedula || !rif_cedula.trim()) return { ok: false, message: 'La cedula o RIF del cliente es obligatoria' };
+  if (!direccion || !direccion.trim()) return { ok: false, message: 'La direccion del cliente es obligatoria' };
   db.prepare(
     `UPDATE clientes SET nombre = ?, rif_cedula = ?, telefono = ?, direccion = ?, email = ?,
        tipo_cliente = ?, movil = ?, red_social1 = ?, red_social2 = ?, red_social3 = ?, notas = ?
      WHERE id = ?`
   ).run(
-    nombre.trim(), rif_cedula || '', telefono || '', direccion || '', email || '',
+    nombre.trim(), rif_cedula.trim(), (telefono || '').trim(), direccion.trim(), email || '',
     tipo_cliente || 'Natural', movil || '', red_social1 || '', red_social2 || '', red_social3 || '', notas || '',
     id
   );
