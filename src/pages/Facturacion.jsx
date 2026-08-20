@@ -43,12 +43,17 @@ export default function Facturacion({ currentUser }) {
 
   const codigoRef = useRef(null);
   const cantidadRef = useRef(null);
+  const cedulaRef = useRef(null);
 
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
   const [keyPendienteQuitar, setKeyPendienteQuitar] = useState(null);
   const [emitiendo, setEmitiendo] = useState(false);
+
+  // Ventana "Ver todo": muestra en grande, sin la limitacion de alto/scroll de la tabla
+  // chica, todos los productos que ya estan agregados a la factura actual.
+  const [mostrarModalVerTodo, setMostrarModalVerTodo] = useState(false);
 
   useEffect(() => {
     window.api.getSettings().then(setSettings);
@@ -63,8 +68,10 @@ export default function Facturacion({ currentUser }) {
     });
   }, []);
 
+  // Al abrir el modulo de ventas el foco debe estar en Cedula/RIF, listo para que el
+  // vendedor empiece a facturar metiendo de una vez el documento del cliente.
   useEffect(() => {
-    setTimeout(() => codigoRef.current?.focus(), 0);
+    setTimeout(() => cedulaRef.current?.focus(), 0);
   }, []);
 
   // ---- Cliente: buscar por cedula/RIF al presionar Enter ----
@@ -77,6 +84,9 @@ export default function Facturacion({ currentUser }) {
       if (encontrado) {
         setClienteSeleccionado(encontrado);
         setCedula(encontrado.rif_cedula || texto);
+        // Cliente ya registrado: el foco pasa directo a Codigo para seguir agregando
+        // productos a la factura, sin que el vendedor tenga que hacer click.
+        setTimeout(() => codigoRef.current?.focus(), 0);
       } else {
         setMostrarModalClienteNuevo(true);
       }
@@ -97,6 +107,7 @@ export default function Facturacion({ currentUser }) {
     setEditandoCliente(false);
     setMostrarModalClienteNuevo(false);
     setCedula('');
+    setTimeout(() => cedulaRef.current?.focus(), 0);
   };
 
   const abrirEdicionCliente = () => {
@@ -115,6 +126,14 @@ export default function Facturacion({ currentUser }) {
     setError('');
     if (!clienteEdicion.nombre.trim()) {
       setError('El nombre del cliente es obligatorio');
+      return;
+    }
+    if (!clienteEdicion.rif_cedula.trim()) {
+      setError('La cedula o RIF del cliente es obligatoria');
+      return;
+    }
+    if (!clienteEdicion.direccion.trim()) {
+      setError('La direccion del cliente es obligatoria');
       return;
     }
     setGuardandoEdicion(true);
@@ -496,6 +515,7 @@ export default function Facturacion({ currentUser }) {
           <div className="pos-field">
             <label>Cliente <span className="required-mark">*</span></label>
             <input
+              ref={cedulaRef}
               placeholder="Cedula o RIF + Enter"
               value={cedula}
               onChange={(e) => { setCedula(e.target.value); if (clienteSeleccionado) setClienteSeleccionado(null); }}
@@ -537,13 +557,13 @@ export default function Facturacion({ currentUser }) {
           {clienteSeleccionado && editandoCliente && (
             <div className="pos-edit-box">
               <p>Editando datos del cliente:</p>
-              <input placeholder="Cedula o RIF" value={clienteEdicion.rif_cedula}
+              <input placeholder="Cedula o RIF *" value={clienteEdicion.rif_cedula}
                 onChange={(e) => setClienteEdicion({ ...clienteEdicion, rif_cedula: e.target.value })} />
-              <input placeholder="Nombre y apellido" value={clienteEdicion.nombre}
+              <input placeholder="Nombre y apellido *" value={clienteEdicion.nombre}
                 onChange={(e) => setClienteEdicion({ ...clienteEdicion, nombre: e.target.value })} />
-              <input placeholder="Telefono" value={clienteEdicion.telefono}
+              <input placeholder="Telefono (opcional)" value={clienteEdicion.telefono}
                 onChange={(e) => setClienteEdicion({ ...clienteEdicion, telefono: e.target.value })} />
-              <input placeholder="Direccion" value={clienteEdicion.direccion}
+              <input placeholder="Direccion *" value={clienteEdicion.direccion}
                 onChange={(e) => setClienteEdicion({ ...clienteEdicion, direccion: e.target.value })} />
               <input placeholder="Email (opcional)" value={clienteEdicion.email}
                 onChange={(e) => setClienteEdicion({ ...clienteEdicion, email: e.target.value })} />
@@ -562,13 +582,18 @@ export default function Facturacion({ currentUser }) {
             <div className="pos-stripe placeholder">Buscando cliente...</div>
           ) : clienteSeleccionado ? (
             <>
-              <div className="pos-stripe">{clienteSeleccionado.nombre}</div>
+              {/* Nombre, cedula y direccion son obligatorios para todo cliente, asi que
+                  siempre deberian traer un valor; el resto (ej. telefono) es opcional y
+                  se muestra con un guion cuando no fue registrado. */}
+              <div className="pos-stripe">{clienteSeleccionado.nombre || '—'}</div>
               <div className="pos-stripe">{clienteSeleccionado.rif_cedula || '—'}</div>
               <div className="pos-stripe">{clienteSeleccionado.telefono || '—'}</div>
+              <div className="pos-stripe">{clienteSeleccionado.direccion || '—'}</div>
             </>
           ) : (
             <>
               <div className="pos-stripe placeholder">Escribe la cedula o RIF y presiona Enter</div>
+              <div className="pos-stripe placeholder">—</div>
               <div className="pos-stripe placeholder">—</div>
               <div className="pos-stripe placeholder">—</div>
             </>
@@ -602,13 +627,13 @@ export default function Facturacion({ currentUser }) {
         <table className="pos-table">
           <thead>
             <tr>
-              <th style={{ width: '16%' }}>Código</th>
+              <th style={{ width: '14%' }}>Código</th>
               <th>Descripción</th>
-              <th style={{ width: '10%' }}>Cantidad</th>
-              <th style={{ width: '8%' }}>Und</th>
-              <th style={{ width: '13%' }}>Precio</th>
-              <th style={{ width: '13%' }}>Total</th>
-              <th style={{ width: '6%' }}></th>
+              <th style={{ width: '9%' }}>Cantidad</th>
+              <th style={{ width: '7%' }}>Und</th>
+              <th style={{ width: '12%' }}>Precio</th>
+              <th style={{ width: '12%' }}>Total</th>
+              <th style={{ width: '13%' }}></th>
             </tr>
           </thead>
           <tbody>
@@ -651,10 +676,15 @@ export default function Facturacion({ currentUser }) {
               <td className="text-right">{filaProducto ? fmt(precioFila()) : ''}</td>
               <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
               <td>
-                {filaProducto && (
-                  <button type="button" className="pos-remove-btn"
-                    onClick={() => { limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }}>×</button>
-                )}
+                <div className="pos-entrada-acciones">
+                  <button type="button" className="pos-ver-todo-btn" onClick={() => setMostrarModalVerTodo(true)}>
+                    Ver todo
+                  </button>
+                  {filaProducto && (
+                    <button type="button" className="pos-remove-btn"
+                      onClick={() => { limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }}>×</button>
+                  )}
+                </div>
               </td>
             </tr>
 
@@ -724,6 +754,61 @@ export default function Facturacion({ currentUser }) {
           onConfirm={confirmarSeleccionUnidades}
           onCancel={cancelarSeleccionUnidades}
         />
+      )}
+
+      {mostrarModalVerTodo && (
+        <div className="pos-vertodo-overlay" onClick={() => setMostrarModalVerTodo(false)}>
+          <div className="pos-vertodo-box" onClick={(e) => e.stopPropagation()}>
+            <div className="pos-vertodo-header">
+              <span>Productos de la factura</span>
+              <button type="button" className="pos-vertodo-cerrar" onClick={() => setMostrarModalVerTodo(false)}>×</button>
+            </div>
+            <div className="pos-vertodo-body">
+              {gruposCarrito.length === 0 ? (
+                <p className="pos-vertodo-vacio">Aun no has agregado productos a esta factura.</p>
+              ) : (
+                <table className="pos-vertodo-table">
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Descripción</th>
+                      <th>Cantidad</th>
+                      <th>Und</th>
+                      <th>Precio</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gruposCarrito.map((g) => (
+                      <tr key={g.groupKey}>
+                        <td>{g.producto_codigo}</td>
+                        <td>
+                          <div>{g.descripcion}</div>
+                          {g.codigosIndividuales.length > 0 && (
+                            <div className="pos-vertodo-codigos">
+                              {g.codigosIndividuales.map((cod) => (
+                                <div key={cod}>{cod}</div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td>{g.cantidad}</td>
+                        <td>UND</td>
+                        <td className="text-right">{fmt(g.precio_unitario)}</td>
+                        <td className="text-right">{fmt(g.precio_unitario * g.cantidad)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="pos-vertodo-footer">
+              <span>Total cantidad de items: <strong>{totalPiezas}</strong></span>
+              <span>Total: <strong>{fmt(total)}</strong></span>
+              <button type="button" className="btn-primary" onClick={() => setMostrarModalVerTodo(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
