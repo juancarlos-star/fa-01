@@ -4,8 +4,8 @@ import React, { useState } from 'react';
 // ventana "CLIENTES" del software de referencia: encabezado en franja de color, campo "Cedula o
 // RIF" (reemplaza a "Codigo"), Tipo Cliente, Nombre, Telefono, Movil, Correo Electronico, las 3
 // Redes Sociales y Notas. Se excluyen a proposito "Denominacion Fiscal", "Contacto", "Fax",
-// "Dias de Credito" y "Limite de Credito", tal como se pidio. Solo Cedula/RIF, Nombre y Telefono
-// son obligatorios para poder crear el cliente; el resto es opcional.
+// "Dias de Credito" y "Limite de Credito", tal como se pidio. Cedula/RIF, Nombre y Direccion son
+// obligatorios para poder crear el cliente; el resto (incluyendo Telefono) es opcional.
 export default function ClienteNuevoModal({ cedulaInicial, onConfirm, onCancel }) {
   const [form, setForm] = useState({
     rif_cedula: cedulaInicial || '',
@@ -30,7 +30,7 @@ export default function ClienteNuevoModal({ cedulaInicial, onConfirm, onCancel }
     setError('');
     if (!form.rif_cedula.trim()) { setError('La cedula o RIF es obligatoria'); return; }
     if (!form.nombre.trim()) { setError('El nombre es obligatorio'); return; }
-    if (!form.telefono.trim()) { setError('El telefono es obligatorio'); return; }
+    if (!form.direccion.trim()) { setError('La direccion es obligatoria'); return; }
 
     setGuardando(true);
     try {
@@ -75,8 +75,8 @@ export default function ClienteNuevoModal({ cedulaInicial, onConfirm, onCancel }
 
           <div style={{ display: 'flex', gap: '10px' }}>
             <div style={{ flex: 1 }}>
-              <Campo label="Telefono" required>
-                <input value={form.telefono} onChange={set('telefono')} placeholder="0424-0000000" style={inputStyle} />
+              <Campo label="Telefono">
+                <input value={form.telefono} onChange={set('telefono')} placeholder="0424-0000000 (opcional)" style={inputStyle} />
               </Campo>
             </div>
             <div style={{ flex: 1 }}>
@@ -86,7 +86,7 @@ export default function ClienteNuevoModal({ cedulaInicial, onConfirm, onCancel }
             </div>
           </div>
 
-          <Campo label="Direccion">
+          <Campo label="Direccion" required>
             <input value={form.direccion} onChange={set('direccion')}
               placeholder="Direccion del cliente" style={inputStyle} />
           </Campo>
