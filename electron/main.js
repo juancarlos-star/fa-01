@@ -133,6 +133,27 @@ function prepararGuardadoPDF(nombreArchivo, base64, subcarpeta) {
   return guardarPdfEvitandoBloqueo(carpetaBase, nombreFinal, buffer);
 }
 
+// ---------- Utilidad: mostrar un PDF en una ventana propia de la app (no delegar al visor
+// externo por defecto de Windows) ----------
+// Antes se usaba shell.openPath(), que abre el PDF con el programa que el usuario tenga
+// configurado por defecto (ej. Adobe Acrobat). El problema: Acrobat es un programa APARTE que
+// sigue corriendo en segundo plano aunque se reinstale esta app entre pruebas, y cuando se
+// vuelve a generar un archivo con el MISMO nombre (ej. "Factura-000002.pdf", tras reiniciar la
+// base de datos), Acrobat podia mostrar una pestaña vieja con contenido cacheado/desactualizado
+// (se veia en negro) junto a la nueva. Mostrando el PDF en una ventana propia de Electron, cada
+// factura se lee siempre fresca desde el disco, sin ningun cache externo que se desincronice.
+function abrirPdfEnVentanaPropia(filePath, titulo) {
+  const ventana = new BrowserWindow({
+    width: 950,
+    height: 1000,
+    title: titulo || path.basename(filePath),
+    webPreferences: { plugins: true }
+  });
+  ventana.setMenuBarVisibility(false);
+  ventana.loadFile(filePath);
+  return ventana;
+}
+
 // ---------- Utilidad: imprimir un PDF automaticamente en segundo plano ----------
 // Abre el PDF en una ventana oculta (usando el visor de PDF integrado de Chromium) y lo manda
 // directo a la impresora predeterminada del sistema apenas termina de cargar, SIN mostrar el
@@ -163,10 +184,7 @@ function imprimirPdfEnSegundoPlano(filePath) {
 ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subcarpeta }) => {
   try {
     const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
-    const errorAlAbrir = await shell.openPath(filePath);
-    if (errorAlAbrir) {
-      return { ok: true, path: filePath, avisoApertura: errorAlAbrir };
-    }
+    abrirPdfEnVentanaPropia(filePath, nombreArchivo);
     return { ok: true, path: filePath };
   } catch (err) {
     console.error('Error guardando PDF', err);
@@ -178,11 +196,8 @@ ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subca
 ipcMain.handle('pdf:guardarAbrirEImprimir', async (event, { nombreArchivo, base64, subcarpeta }) => {
   try {
     const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
-    const errorAlAbrir = await shell.openPath(filePath);
+    abrirPdfEnVentanaPropia(filePath, nombreArchivo);
     await imprimirPdfEnSegundoPlano(filePath);
-    if (errorAlAbrir) {
-      return { ok: true, path: filePath, avisoApertura: errorAlAbrir };
-    }
     return { ok: true, path: filePath };
   } catch (err) {
     console.error('Error guardando/imprimiendo PDF', err);
