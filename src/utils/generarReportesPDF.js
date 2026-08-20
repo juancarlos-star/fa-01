@@ -17,7 +17,7 @@ function encabezado(doc, titulo, desde, hasta) {
 // ---------------- Ventas y ganancias ----------------
 
 export async function generarPDFGanancias(reporte, desde, hasta) {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Reporte de Ventas y Ganancias', desde, hasta);
 
   doc.setFontSize(10);
@@ -55,7 +55,7 @@ export async function generarPDFGanancias(reporte, desde, hasta) {
 // ---------------- Compras ----------------
 
 export async function generarPDFCompras(reporte, desde, hasta) {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Reporte de Compras', desde, hasta);
 
   doc.setFontSize(10);
@@ -78,7 +78,7 @@ export async function generarPDFCompras(reporte, desde, hasta) {
 // ---------------- Facturas ----------------
 
 export async function generarPDFFacturas(reporte, desde, hasta) {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Reporte de Facturas', desde, hasta);
 
   doc.setFontSize(10);
@@ -111,7 +111,7 @@ export async function generarPDFFacturas(reporte, desde, hasta) {
 // ---------------- Productos vendidos ----------------
 
 export async function generarPDFProductosVendidos(reporte, desde, hasta, tipoLabel) {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, `Reporte de Productos Vendidos — ${tipoLabel}`, desde, hasta);
 
   doc.setFontSize(10);
@@ -160,7 +160,7 @@ export async function generarPDFProductosVendidos(reporte, desde, hasta, tipoLab
 // ---------------- Cargos y descargos de inventario ----------------
 
 export async function generarPDFCargosDescargos(reporte, desde, hasta) {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Reporte de Cargos y Descargos de Inventario', desde, hasta);
 
   doc.setFontSize(10);
@@ -214,7 +214,7 @@ export async function generarPDFCargosDescargos(reporte, desde, hasta) {
 // ---------------- Clientes ----------------
 
 export async function generarPDFClientes(clientes) {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   doc.text('Reporte de Clientes', 10, 15);

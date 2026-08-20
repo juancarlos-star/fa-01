@@ -6,7 +6,7 @@ import { fmt } from './format.js';
 const IVA_TASA = 0.16;
 
 export async function generarCompraFacturaPDF(encabezado, items, settings, opciones = {}) {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
 
   if (settings?.nombre_tienda) {
     doc.setFont('helvetica', 'bold');

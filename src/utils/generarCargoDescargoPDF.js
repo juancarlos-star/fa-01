@@ -6,7 +6,7 @@ import { fmt } from './format.js';
 // Genera el PDF de UN solo cargo o descargo (documento individual), en el mismo estilo que
 // el resto de comprobantes del sistema (encabezado con datos de la tienda + tabla de datos).
 export async function generarCargoDescargoPDF(registro, tipoDocumento, settings, opciones = {}) {
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   const esCargo = tipoDocumento === 'cargo';
   const colorAcento = esCargo ? [2, 122, 72] : [180, 35, 24];
   const titulo = esCargo ? 'COMPROBANTE DE CARGO DE INVENTARIO' : 'COMPROBANTE DE DESCARGO DE INVENTARIO';
@@ -98,7 +98,7 @@ export async function generarCargoDescargoPDF(registro, tipoDocumento, settings,
 // completa de codigos incluidos en el lote.
 export async function generarCargoDescargoLotePDF(registros, tipoDocumento, settings, opciones = {}) {
   if (!registros || registros.length === 0) return;
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   const esCargo = tipoDocumento === 'cargo';
   const colorAcento = esCargo ? [2, 122, 72] : [180, 35, 24];
   const titulo = esCargo ? 'COMPROBANTE DE CARGO POR LOTE' : 'COMPROBANTE DE DESCARGO POR LOTE';
@@ -195,7 +195,7 @@ export async function generarCargoDescargoLotePDF(registros, tipoDocumento, sett
 // corresponde.
 export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, tipoDocumento, settings, opciones = {}) {
   if (!registros || registros.length === 0) return;
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   const esCargo = tipoDocumento === 'cargo';
   const colorAcento = esCargo ? [2, 122, 72] : [180, 35, 24];
   const titulo = esCargo ? 'COMPROBANTE DE CARGO DE INVENTARIO' : 'COMPROBANTE DE DESCARGO DE INVENTARIO';
