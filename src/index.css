@@ -319,6 +319,13 @@ th {
   width: 100%;
   border-collapse: collapse;
   border-radius: 0;
+  /* Fijo (no automatico): el ancho de cada columna se toma SOLO de los porcentajes
+     declarados en los <th> de abajo y se mantiene igual sin importar que cambie el
+     contenido de las filas (por ejemplo al pasar de "escribiendo el codigo" a "producto
+     encontrado con su IMEI debajo"). Sin esto, el navegador recalculaba el ancho de cada
+     columna segun el contenido de cada fila, y como el encabezado esta "pegado" (sticky)
+     arriba, terminaba desalineado con las columnas de los datos. */
+  table-layout: fixed;
 }
 
 .pos-table th {
