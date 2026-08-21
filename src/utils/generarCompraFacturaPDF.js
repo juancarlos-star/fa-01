@@ -21,14 +21,20 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   doc.text('FECHA:', 145, 21);
   doc.text('DOCUMENTO:', 145, 27);
   doc.text('MONEDA:', 145, 33);
+  doc.text('VENDEDOR:', 145, 39);
 
+  // Todos los valores de este bloque quedan alineados en la misma columna (x=182), con
+  // suficiente separacion del titulo mas largo ("DOCUMENTO:"), para que no queden pegados
+  // como "DOCUMENTO765436879".
+  const xValor = 182;
   doc.setFont('helvetica', 'normal');
-  doc.text(String(encabezado.id).padStart(6, '0'), 178, 15);
+  doc.text(String(encabezado.id).padStart(6, '0'), xValor, 15);
   const [fechaParte, horaParte] = (encabezado.created_at || '').split(' ');
   const fecha = (fechaParte || '').split('-').reverse().join('/');
-  doc.text(`${fecha}${horaParte ? '  ' + horaParte : ''}`, 165, 21);
-  doc.text(encabezado.numero_factura_compra || '-', 168, 27);
-  doc.text(encabezado.moneda === 'Dolares' ? 'Dólares' : 'Bs.', 168, 33);
+  doc.text(`${fecha}${horaParte ? '  ' + horaParte : ''}`, xValor, 21);
+  doc.text(encabezado.numero_factura_compra || '-', xValor, 27);
+  doc.text(encabezado.moneda === 'Dolares' ? 'Dólares' : 'Bs.', xValor, 33);
+  doc.text(encabezado.usuario || '-', xValor, 39);
 
   doc.setFont('helvetica', 'bold');
   doc.text('PROVEEDOR:', 10, 35);
