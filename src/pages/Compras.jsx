@@ -1,93 +1,80 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import ConfirmDialog from '../components/ConfirmDialog';
-import { fmt } from '../utils/format.js';
+import React, { useState, useEffect, useRef } from 'react';
 import { generarCompraFacturaPDF } from '../utils/generarCompraFacturaPDF.js';
+import { fmt } from '../utils/format.js';
+import ProveedorNuevoModal from '../components/ProveedorNuevoModal.jsx';
+import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
+import CodigosNuevosModal from '../components/CodigosNuevosModal.jsx';
 
-const TIPOS = [
-  { key: 'equipo', label: 'Equipos (IMEI)' },
-  { key: 'simcard', label: 'SIM Card' },
-  { key: 'usim', label: 'USIM' },
-  { key: 'accesorio', label: 'Accesorios' }
-];
-
-const IVA_TASA = 0.16;
-
+// Modulo de Compras, con el mismo diseno y forma de trabajar que Facturacion: un renglon de
+// entrada donde se escribe el codigo o nombre del producto y Enter, franjas azules con los
+// datos del proveedor, y el cuadro de totales arriba a la derecha. La diferencia principal es
+// que aqui el "Precio" de cada renglon es en realidad el COSTO de compra (editable, porque
+// cambia segun el proveedor/lote), y en vez de elegir unidades YA existentes (como en
+// Facturacion), aqui se ingresan los codigos/IMEI NUEVOS que estan entrando al inventario.
 export default function Compras({ currentUser }) {
-  const [proveedor, setProveedor] = useState('');
-  const [numeroFacturaCompra, setNumeroFacturaCompra] = useState('');
-  // Numero de compra consecutivo que le asigna el sistema (id de compras_encabezado). Se
-  // muestra como vista previa antes de registrar; el numero real se confirma al guardar.
-  const [proximoNumeroCompra, setProximoNumeroCompra] = useState(null);
+  const [settings, setSettings] = useState(null);
 
   // Deposito que recibe la mercancia de esta compra: toda la compra entra a UN solo deposito.
   const [depositos, setDepositos] = useState([]);
   const [depositoId, setDepositoId] = useState('');
 
-  const [tipoSeleccionado, setTipoSeleccionado] = useState('equipo');
-  const [productos, setProductos] = useState([]);
-  const [productoId, setProductoId] = useState('');
-  const [costoUnitario, setCostoUnitario] = useState('');
-  const [cantidadDeseada, setCantidadDeseada] = useState('');
+  // Moneda en la que se esta registrando el costo de esta compra (solo informativo/para el
+  // PDF; no cambia como se calculan los totales, que siempre se guardan en USD como el resto
+  // del sistema).
+  const [moneda, setMoneda] = useState('Bs');
 
-  const [modoEscaneo, setModoEscaneo] = useState('manual'); // 'manual' | 'rango'
+  // Documento de compra: numero de factura/nota de entrega del proveedor.
+  const [documentoCompra, setDocumentoCompra] = useState('');
 
-  const [codigosEscaneados, setCodigosEscaneados] = useState([]);
-  const [valorEscaneo, setValorEscaneo] = useState('');
-  const [verificando, setVerificando] = useState(false);
-  const [errorEscaneo, setErrorEscaneo] = useState('');
-  const scanInputRef = useRef(null);
+  // Numero de compra consecutivo que le asigna el sistema (id de compras_encabezado). Se
+  // muestra como vista previa antes de registrar.
+  const [proximoNumeroCompra, setProximoNumeroCompra] = useState(null);
 
-  const [codigoInicioRango, setCodigoInicioRango] = useState('');
-  const [codigoFinRango, setCodigoFinRango] = useState('');
-  const [generandoRango, setGenerandoRango] = useState(false);
-  // Cantidad objetivo cuando se genero un rango (se guarda aparte, porque tras generarlo el
-  // usuario puede borrar codigos individuales y hay que saber cuantos faltan para completar).
-  const [cantidadObjetivoRango, setCantidadObjetivoRango] = useState(0);
+  // Proveedor: se busca EXACTO por RIF al presionar Enter. Si existe, se trae de una vez (se
+  // muestra en las franjas azules); si no existe, se abre la ventana modal para registrarlo.
+  const [rifProveedor, setRifProveedor] = useState('');
+  const [buscandoProveedor, setBuscandoProveedor] = useState(false);
+  const [proveedorSeleccionado, setProveedorSeleccionado] = useState(null);
+  const [mostrarModalProveedorNuevo, setMostrarModalProveedorNuevo] = useState(false);
+  const [editandoProveedor, setEditandoProveedor] = useState(false);
+  const [proveedorEdicion, setProveedorEdicion] = useState({ nombre: '', rif: '', telefono: '', direccion: '' });
+  const [guardandoEdicionProveedor, setGuardandoEdicionProveedor] = useState(false);
+
+  // ---- Renglon de entrada (fila superior de la tabla) ----
+  // Se escribe el codigo o nombre del producto y se presiona Enter: si se encuentra, se
+  // muestran Descripcion/Costo y el foco pasa a Cantidad. Si NUNCA se ha creado ese producto,
+  // se abre la ventana para crearlo al vuelo. Al confirmar Cantidad, si el producto requiere
+  // codigo/IMEI individual (equipos, SIM, USIM), se abre la ventana para ir tipiando o leyendo
+  // con la pistola los codigos NUEVOS que estan entrando.
+  const [filaCodigo, setFilaCodigo] = useState('');
+  const [buscandoCodigo, setBuscandoCodigo] = useState(false);
+  const [filaProducto, setFilaProducto] = useState(null);
+  const [filaCosto, setFilaCosto] = useState('');
+  const [filaCantidad, setFilaCantidad] = useState(1);
+  const [errorFila, setErrorFila] = useState('');
+  const [mostrarModalProductoNuevo, setMostrarModalProductoNuevo] = useState(false);
+  const [mostrarModalCodigosNuevos, setMostrarModalCodigosNuevos] = useState(false);
+
+  const codigoRef = useRef(null);
+  const cantidadRef = useRef(null);
+  const proveedorRef = useRef(null);
 
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
-  const [imprimiendoCompra, setImprimiendoCompra] = useState(false);
-  const [errorImprimirCompra, setErrorImprimirCompra] = useState('');
-  // Confirmacion propia (sin dialogo nativo): { tipo: 'quitarCodigo'|'eliminarTodos'|'quitarCarrito'|'cantidadIncompleta', index?, key?, accion? }
-  const [confirmando, setConfirmando] = useState(null);
+  const [keyPendienteQuitar, setKeyPendienteQuitar] = useState(null);
+  const [emitiendo, setEmitiendo] = useState(false);
 
-  const esAccesorio = tipoSeleccionado === 'accesorio';
-  const cantidadNum = parseInt(cantidadDeseada, 10) || 0;
-  const permiteRango = tipoSeleccionado === 'simcard' || tipoSeleccionado === 'usim';
-  const modoRangoActivo = permiteRango && modoEscaneo === 'rango';
-  // Cantidad objetivo actual, sea que venga de "Cantidad que llego segun la factura" (modo
-  // manual) o de la cantidad calculada al generar el rango (modo rango).
-  const cantidadObjetivo = modoRangoActivo ? cantidadObjetivoRango : cantidadNum;
-
-  // Datos base (producto + costo) ya definidos: a partir de aqui se puede elegir modo manual o por rango.
-  const datosBaseListos = !esAccesorio && productoId !== '' && costoUnitario !== '';
-  // En modo rango no se pide cantidad: la calcula el sistema a partir del primer y el ultimo codigo.
-  const listoParaEscanear = datosBaseListos && (modoRangoActivo || cantidadNum > 0);
-  const escaneoCompleto = listoParaEscanear && cantidadObjetivo > 0 && codigosEscaneados.length === cantidadObjetivo;
-
-  const resetearFormularioProducto = () => {
-    setProductoId('');
-    setCostoUnitario('');
-    setCantidadDeseada('');
-    setCodigosEscaneados([]);
-    setValorEscaneo('');
-    setErrorEscaneo('');
-    setCodigoInicioRango('');
-    setCodigoFinRango('');
-    setCantidadObjetivoRango(0);
-    setModoEscaneo('manual');
-  };
+  // Ventana "Ver todo": igual que en Facturacion, muestra en grande todos los productos ya
+  // agregados a la compra actual.
+  const [mostrarModalVerTodo, setMostrarModalVerTodo] = useState(false);
 
   useEffect(() => {
-    window.api.listProducts(tipoSeleccionado, undefined, depositoId ? Number(depositoId) : undefined).then((data) => {
-      setProductos(data);
-      resetearFormularioProducto();
-    });
-  }, [tipoSeleccionado, depositoId]);
+    window.api.getSettings().then(setSettings);
+  }, []);
 
   // Carga los depositos activos al entrar a Compras y deja el primero seleccionado por
-  // defecto, igual que en Facturacion.
+  // defecto (normalmente "Principal"), igual que en Facturacion.
   useEffect(() => {
     window.api.listDepositos(true).then((data) => {
       setDepositos(data);
@@ -98,248 +85,309 @@ export default function Compras({ currentUser }) {
   const cargarProximoNumeroCompra = () => {
     window.api.proximoNumeroCompra().then((res) => setProximoNumeroCompra(res.proximoNumero));
   };
-
   useEffect(() => { cargarProximoNumeroCompra(); }, []);
 
-  // El mensaje de error general de la pantalla (setError) se referia a un estado del escaneo
-  // que ya cambio (ej: "Faltan codigos (9 de 10)" seguia visible aunque ya se hubiera
-  // completado el 10 de 10). Se limpia automaticamente cada vez que cambia la lista de codigos.
+  // Al abrir el modulo de Compras el foco debe estar en el RIF del proveedor, listo para
+  // empezar a registrar la compra.
   useEffect(() => {
-    setError('');
-  }, [codigosEscaneados]);
+    setTimeout(() => proveedorRef.current?.focus(), 0);
+  }, []);
 
-  // El salto de foco hacia el cuadro de escaneo NUNCA ocurre mientras el usuario esta
-  // escribiendo en otro campo (cantidad, costo, etc). Solo se dispara con eventos explicitos:
-  // al salir (blur) de cantidad/costo, al quitar un codigo, al agregar un codigo manual,
-  // o al cambiar a modo manual.
-  // Importante: nunca usar autoFocus en el input de escaneo, porque robaria el foco del
-  // campo Cantidad apenas se muestre este bloque (eso causaba que solo se pudiera escribir
-  // 1 digito en Cantidad).
-  // Importante tambien: las confirmaciones de "quitar/eliminar" en esta pantalla usan un
-  // modal propio (ConfirmDialog), NO window.confirm() nativo. El dialogo nativo le quita la
-  // activacion de la ventana a Windows a nivel de sistema operativo y no siempre se recupera
-  // (eso causaba que el campo se viera activo pero no aceptara texto ni pistola hasta cambiar
-  // de ventana y volver). Un modal de React nunca sale de la ventana del programa, asi que
-  // este problema no puede volver a pasar mientras no se reintroduzca window.confirm() aqui.
-  const enfocarEscaneoSiListo = () => {
-    if (listoParaEscanear && !escaneoCompleto && cantidadObjetivo > 0 && scanInputRef.current) {
-      scanInputRef.current.focus();
-    }
-  };
-
-  useEffect(() => {
-    if (modoEscaneo === 'manual') enfocarEscaneoSiListo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modoEscaneo]);
-
-  const agregarCodigoEscaneado = async () => {
-    const codigo = valorEscaneo.trim();
-    setValorEscaneo('');
-    if (!codigo) return;
-    setErrorEscaneo('');
-
-    if (codigosEscaneados.length >= cantidadObjetivo) {
-      setErrorEscaneo(`Ya llegaste a los ${cantidadObjetivo} codigos declarados. Quita alguno si necesitas corregir.`);
-      return;
-    }
-    if (codigosEscaneados.includes(codigo)) {
-      setErrorEscaneo(`El codigo "${codigo}" ya fue escaneado en esta misma compra`);
-      return;
-    }
-
-    setVerificando(true);
+  // ---- Proveedor: buscar por RIF al presionar Enter ----
+  const buscarProveedorPorEnter = async () => {
+    const texto = rifProveedor.trim();
+    if (!texto) return;
+    setBuscandoProveedor(true);
     try {
-      const res = await window.api.codigoExiste({ codigo });
-      if (res.existe) {
-        setErrorEscaneo(`El codigo "${codigo}" ya esta registrado en el inventario`);
+      const encontrado = await window.api.buscarProveedorPorRif(texto);
+      if (encontrado) {
+        setProveedorSeleccionado(encontrado);
+        setRifProveedor(encontrado.rif || texto);
+        // Proveedor ya registrado: el foco pasa directo a Codigo para seguir agregando
+        // productos a la compra, sin que el usuario tenga que hacer click.
+        setTimeout(() => codigoRef.current?.focus(), 0);
       } else {
-        setCodigosEscaneados((prev) => [...prev, codigo]);
+        setMostrarModalProveedorNuevo(true);
       }
-    } catch (err) {
-      setErrorEscaneo('Error verificando el codigo: ' + (err?.message || String(err)));
     } finally {
-      setVerificando(false);
-      // El foco se pide en el siguiente tick (no de inmediato), porque el input todavia esta
-      // marcado como disabled en el DOM en este instante (React aun no aplico el cambio de
-      // "verificando"); un input disabled no acepta foco, por eso antes se quedaba sin
-      // regresar el cursor automaticamente al campo para escribir el siguiente codigo.
-      setTimeout(() => { if (scanInputRef.current) scanInputRef.current.focus(); }, 0);
+      setBuscandoProveedor(false);
     }
   };
 
-  // La pistola escaneadora manda un "Enter" automatico al terminar de leer el codigo de barras,
-  // por eso el Enter agrega el codigo solo. Al escribir a mano el usuario debe presionar Enter
-  // o el boton "Agregar codigo" de al lado, ya que el teclado no manda ese Enter automatico.
-  const handleScanKeyDown = (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    agregarCodigoEscaneado();
+  const handleProveedorCreado = (proveedor) => {
+    setProveedorSeleccionado(proveedor);
+    setRifProveedor(proveedor.rif || '');
+    setMostrarModalProveedorNuevo(false);
+    setTimeout(() => codigoRef.current?.focus(), 0);
   };
 
-  const quitarCodigoEscaneado = (index) => {
-    setConfirmando({ tipo: 'quitarCodigo', index });
+  const quitarProveedor = () => {
+    setProveedorSeleccionado(null);
+    setEditandoProveedor(false);
+    setMostrarModalProveedorNuevo(false);
+    setRifProveedor('');
+    setTimeout(() => proveedorRef.current?.focus(), 0);
   };
 
-  const eliminarTodosLosCodigos = () => {
-    if (codigosEscaneados.length === 0) return;
-    setConfirmando({ tipo: 'eliminarTodos' });
+  const abrirEdicionProveedor = () => {
+    if (!proveedorSeleccionado) return;
+    setProveedorEdicion({
+      nombre: proveedorSeleccionado.nombre || '',
+      rif: proveedorSeleccionado.rif || '',
+      telefono: proveedorSeleccionado.telefono || '',
+      direccion: proveedorSeleccionado.direccion || ''
+    });
+    setEditandoProveedor(true);
   };
 
-  const ejecutarQuitarCodigo = (index) => {
-    setCodigosEscaneados((prev) => prev.filter((_, i) => i !== index));
-    setErrorEscaneo('');
-    setConfirmando(null);
-    // Al ser un modal propio de React (no window.confirm nativo), la ventana nunca pierde
-    // el foco a nivel de sistema operativo, asi que el input recupera el foco sin trucos.
-    setTimeout(enfocarEscaneoSiListo, 0);
-  };
-
-  const ejecutarEliminarTodos = () => {
-    setCodigosEscaneados([]);
-    setErrorEscaneo('');
-    setConfirmando(null);
-    if (modoRangoActivo) {
-      // Si borra todo, se vuelve a pedir el primer y el ultimo codigo para regenerar el rango.
-      setCantidadObjetivoRango(0);
-      setCodigoInicioRango('');
-      setCodigoFinRango('');
-    }
-    setTimeout(enfocarEscaneoSiListo, 0);
-  };
-
-  const handleGenerarRango = async () => {
-    setErrorEscaneo('');
-    if (!codigoInicioRango.trim() || !codigoFinRango.trim()) {
-      setErrorEscaneo('Escanea o escribe el primer y el ultimo codigo de la caja');
-      return;
-    }
-    setGenerandoRango(true);
-    try {
-      const res = await window.api.calcularRangoCompra(codigoInicioRango.trim(), codigoFinRango.trim());
-      if (!res.ok) {
-        setErrorEscaneo(res.message);
-        return;
-      }
-      if (res.yaExisten.length > 0) {
-        setErrorEscaneo(
-          `${res.yaExisten.length} codigo(s) del rango ya estan registrados en el inventario (ej: ${res.yaExisten[0]}). Corrige el rango o usa escaneo manual para los que faltan.`
-        );
-        return;
-      }
-      setCodigosEscaneados(res.disponibles);
-      setCantidadObjetivoRango(res.disponibles.length);
-    } catch (err) {
-      setErrorEscaneo('Error calculando el rango: ' + (err?.message || String(err)));
-    } finally {
-      setGenerandoRango(false);
-    }
-  };
-
-  const agregarProductoAlCarrito = () => {
+  const guardarEdicionProveedor = async () => {
     setError('');
-    const producto = productos.find((p) => p.id === Number(productoId));
-    if (!producto) { setError('Selecciona un producto'); return; }
-    const costo = parseFloat(costoUnitario);
-    if (isNaN(costo) || costo < 0) { setError('Indica el costo unitario'); return; }
-
-    if (esAccesorio) {
-      const cantidad = parseInt(cantidadDeseada, 10);
-      if (!cantidad || cantidad <= 0) { setError('Cantidad invalida'); return; }
-      setCarrito((prev) => [...prev, {
-        key: `${producto.id}-${Date.now()}`,
-        product_id: producto.id, tipo: producto.tipo, descripcion: producto.nombre,
-        costoUnitario: costo, cantidad, subtotal: costo * cantidad
-      }]);
-      resetearFormularioProducto();
-      return;
+    if (!proveedorEdicion.nombre.trim()) { setError('El nombre del proveedor es obligatorio'); return; }
+    if (!proveedorEdicion.rif.trim()) { setError('El RIF del proveedor es obligatorio'); return; }
+    if (!proveedorEdicion.direccion.trim()) { setError('La direccion del proveedor es obligatoria'); return; }
+    setGuardandoEdicionProveedor(true);
+    try {
+      const res = await window.api.updateProveedor(proveedorSeleccionado.id, proveedorEdicion);
+      if (!res.ok) {
+        setError(res.message || 'No se pudo actualizar el proveedor');
+        return;
+      }
+      setProveedorSeleccionado(res.proveedor);
+      setRifProveedor(res.proveedor.rif || '');
+      setEditandoProveedor(false);
+    } finally {
+      setGuardandoEdicionProveedor(false);
     }
-
-    if (modoRangoActivo && cantidadObjetivoRango === 0) { setError('Genera el rango de codigos antes de agregar'); return; }
-    if (codigosEscaneados.length === 0) { setError('Escanea o genera al menos un codigo antes de agregar'); return; }
-
-    if (!escaneoCompleto) {
-      // La cantidad escaneada/generada no coincide con la declarada: se pregunta si continuar
-      // con lo que hay, en vez de bloquear el boton sin explicar nada.
-      setConfirmando({ tipo: 'cantidadIncompleta', accion: () => insertarItemNoAccesorio(producto, costo) });
-      return;
-    }
-    insertarItemNoAccesorio(producto, costo);
   };
 
-  const insertarItemNoAccesorio = (producto, costo) => {
-    setCarrito((prev) => [...prev, {
-      key: `${producto.id}-${Date.now()}`,
-      product_id: producto.id, tipo: producto.tipo, descripcion: producto.nombre,
-      costoUnitario: costo, codigos: [...codigosEscaneados], cantidadDeclarada: codigosEscaneados.length,
-      subtotal: costo * codigosEscaneados.length
-    }]);
-    setConfirmando(null);
-    resetearFormularioProducto();
+  // ---- Renglon de entrada: buscar producto por codigo o nombre ----
+  const limpiarFila = () => {
+    setFilaCodigo('');
+    setFilaProducto(null);
+    setFilaCosto('');
+    setFilaCantidad(1);
+    setErrorFila('');
+    setMostrarModalCodigosNuevos(false);
+  };
+
+  const seleccionarProductoEnFila = (p) => {
+    setFilaProducto(p);
+    setFilaCosto(p.costo_promedio_usd != null ? String(p.costo_promedio_usd) : '0');
+    setFilaCantidad(1);
+    setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
+  };
+
+  const buscarProductoPorCodigoEnter = async () => {
+    setErrorFila('');
+    const texto = filaCodigo.trim();
+    if (!texto) return;
+    setBuscandoCodigo(true);
+    try {
+      const p = await window.api.buscarProductoPorCodigo(texto, depositoId ? Number(depositoId) : undefined);
+      if (!p) {
+        // Nunca se ha creado este producto: se abre la ventana para crearlo al vuelo, con el
+        // codigo/nombre que ya se escribio.
+        setMostrarModalProductoNuevo(true);
+        return;
+      }
+      if (p.multiplesCoincidencias) {
+        setErrorFila(`Hay ${p.cantidad} productos que coinciden con "${texto}". Se mas especifico o usa el codigo exacto.`);
+        return;
+      }
+      if (p.noDisponible || p.otroDeposito) {
+        // Esto pasa si lo que se escribio coincide con un codigo/IMEI individual ya
+        // registrado en el inventario, en vez del codigo o nombre del PRODUCTO. En Compras no
+        // aplica (no se esta vendiendo ni verificando disponibilidad), asi que se avisa.
+        setErrorFila(`"${texto}" corresponde a un codigo/IMEI individual ya registrado, no a un producto. Escribe el codigo o nombre del producto para comprar.`);
+        return;
+      }
+      seleccionarProductoEnFila(p);
+    } finally {
+      setBuscandoCodigo(false);
+    }
+  };
+
+  const handleProductoNuevoCreado = (producto) => {
+    setMostrarModalProductoNuevo(false);
+    seleccionarProductoEnFila(producto);
+  };
+
+  const totalFila = () => (parseFloat(filaCosto) || 0) * (parseInt(filaCantidad, 10) || 0);
+
+  // Confirma la cantidad (Enter en Cantidad o en Costo). Para accesorios se agrega directo a
+  // la compra (solo hace falta la cantidad total). Para equipos/SIM/USIM se abre la ventana
+  // para ir ingresando, uno por uno, los codigos/IMEI NUEVOS de las unidades que estan
+  // entrando, hasta completar la cantidad indicada.
+  const confirmarFila = () => {
+    setErrorFila('');
+    const cant = parseInt(filaCantidad, 10);
+    if (!cant || cant <= 0) { setErrorFila('Cantidad invalida'); return; }
+    const costo = parseFloat(filaCosto);
+    if (isNaN(costo) || costo < 0) { setErrorFila('Costo invalido'); return; }
+
+    if (filaProducto.tipo === 'accesorio') {
+      setCarrito((prev) => [
+        ...prev,
+        {
+          key: `${filaProducto.id}-${Date.now()}`,
+          product_id: filaProducto.id,
+          tipo: 'accesorio',
+          descripcion: filaProducto.nombre,
+          producto_codigo: filaProducto.codigo_producto || null,
+          costoUnitario: costo,
+          cantidad: cant,
+          codigos: null
+        }
+      ]);
+      limpiarFila();
+      setTimeout(() => codigoRef.current?.focus(), 0);
+    } else {
+      setMostrarModalCodigosNuevos(true);
+    }
+  };
+
+  const confirmarCodigosNuevos = (codigosNuevos) => {
+    setCarrito((prev) => [
+      ...prev,
+      {
+        key: `${filaProducto.id}-${Date.now()}`,
+        product_id: filaProducto.id,
+        tipo: filaProducto.tipo,
+        descripcion: filaProducto.nombre,
+        producto_codigo: filaProducto.codigo_producto || null,
+        costoUnitario: parseFloat(filaCosto) || 0,
+        cantidad: codigosNuevos.length,
+        codigos: codigosNuevos
+      }
+    ]);
+    limpiarFila();
+    setTimeout(() => codigoRef.current?.focus(), 0);
+  };
+
+  const cancelarCodigosNuevos = () => {
+    setMostrarModalCodigosNuevos(false);
   };
 
   const quitarDelCarrito = (key) => {
-    setConfirmando({ tipo: 'quitarCarrito', key });
+    // Confirmacion dentro de la propia app (no window.confirm), igual que en Facturacion, para
+    // evitar que el dialogo nativo de Electron deje los campos de la fila de entrada sin
+    // responder.
+    setKeyPendienteQuitar(key);
   };
 
-  const ejecutarQuitarDelCarrito = (key) => {
-    setCarrito((prev) => prev.filter((i) => i.key !== key));
-    setConfirmando(null);
+  const confirmarQuitarDelCarrito = () => {
+    setCarrito(carrito.filter((item) => item.key !== keyPendienteQuitar));
+    setKeyPendienteQuitar(null);
   };
 
-  const baseImponible = carrito.reduce((acc, i) => acc + i.subtotal, 0);
-  const totalIva = baseImponible * IVA_TASA;
-  const totalCompra = baseImponible + totalIva;
+  const cancelarQuitarDelCarrito = () => {
+    setKeyPendienteQuitar(null);
+  };
+
+  const baseImponible = carrito.reduce((acc, i) => acc + i.costoUnitario * i.cantidad, 0);
+  const ivaPorcentaje = settings ? parseFloat(settings.iva_porcentaje) : 0;
+  const iva = baseImponible * (ivaPorcentaje / 100);
+  const total = baseImponible + iva;
+  const totalPiezas = carrito.reduce((acc, i) => acc + (parseInt(i.cantidad, 10) || 0), 0);
+  const numeroCompraPreview = proximoNumeroCompra != null ? String(proximoNumeroCompra).padStart(6, '0') : '------';
+
+  // Mismo guard que en Facturacion: evita que la compra se pueda registrar/imprimir dos veces
+  // si se mantiene presionada la tecla F10 o se hace doble clic muy rapido.
+  const totalizandoRef = useRef(false);
 
   const handleRegistrarCompra = async () => {
+    if (totalizandoRef.current) return;
     setError('');
-    if (!proveedor.trim()) { setError('Indica el nombre del proveedor'); return; }
-    if (!numeroFacturaCompra.trim()) { setError('Indica el numero de factura de compra'); return; }
-    if (!depositoId) { setError('Selecciona el deposito que recibe la mercancia'); return; }
-    if (carrito.length === 0) { setError('Agrega al menos un producto'); return; }
+    if (carrito.length === 0) {
+      setError('Agrega al menos un producto a la compra');
+      return;
+    }
+    if (!proveedorSeleccionado) {
+      setError('Escribe el RIF del proveedor y presiona Enter para buscarlo o registrarlo');
+      return;
+    }
+    if (!depositoId) {
+      setError('Selecciona el deposito que recibe la mercancia');
+      return;
+    }
+    if (!documentoCompra.trim()) {
+      setError('Indica el numero de documento de compra');
+      return;
+    }
 
-    const items = carrito.map((i) => ({
-      product_id: i.product_id,
-      costoUnitario: i.costoUnitario,
-      cantidad: i.cantidad,
-      codigos: i.codigos,
-      cantidadDeclarada: i.cantidadDeclarada
-    }));
-
+    totalizandoRef.current = true;
+    setEmitiendo(true);
     try {
       const res = await window.api.crearCompraLote({
-        proveedor: proveedor.trim(),
-        numeroFacturaCompra: numeroFacturaCompra.trim(),
-        items,
+        proveedor: proveedorSeleccionado.nombre,
+        proveedorId: proveedorSeleccionado.id,
+        proveedorRif: proveedorSeleccionado.rif,
+        proveedorTelefono: proveedorSeleccionado.telefono,
+        proveedorDireccion: proveedorSeleccionado.direccion,
+        moneda,
+        numeroFacturaCompra: documentoCompra.trim(),
+        items: carrito.map((i) => ({
+          product_id: i.product_id,
+          costoUnitario: i.costoUnitario,
+          cantidad: i.cantidad,
+          codigos: i.codigos || undefined
+        })),
         usuario: currentUser?.username,
         depositoId: Number(depositoId)
       });
-      if (!res.ok) { setError(res.message); return; }
-      setConfirmacion(res);
+
+      if (!res.ok) {
+        setError(res.message);
+        return;
+      }
+
+      const detalle = await window.api.detalleCompraEncabezado(res.encabezadoId);
       setCarrito([]);
-      setProveedor('');
-      setNumeroFacturaCompra('');
-      setTipoSeleccionado('equipo');
-      resetearFormularioProducto();
+      quitarProveedor();
+      setDocumentoCompra('');
       cargarProximoNumeroCompra();
+
+      // La compra se imprime automaticamente al registrarla, ANTES de mostrar la pantalla de
+      // "Compra registrada" (mismo orden que se corrigio en Facturacion, para evitar que el
+      // usuario alcance a presionar "Reimprimir PDF" pensando que no se imprimio, generando el
+      // PDF dos veces para la misma compra).
+      if (detalle.ok) {
+        try {
+          await generarCompraFacturaPDF(detalle.encabezado, detalle.items, settings, { imprimir: true });
+        } catch (errImpresion) {
+          console.error('Error al imprimir la compra automaticamente:', errImpresion);
+        }
+      }
+
+      setConfirmacion({ encabezadoId: res.encabezadoId, totalUsd: res.totalUsd, detalle: detalle.ok ? detalle : null });
     } catch (err) {
-      setError('Error inesperado: ' + (err?.message || String(err)));
+      console.error('Error al registrar la compra:', err);
+      setError('Ocurrio un error inesperado al registrar la compra: ' + (err?.message || String(err)));
+    } finally {
+      setEmitiendo(false);
+      totalizandoRef.current = false;
     }
   };
 
-  const handleImprimirCompra = async () => {
-    if (!confirmacion?.encabezadoId) return;
-    setErrorImprimirCompra('');
+  // Atajo de teclado F10 = Registrar compra, igual que en Facturacion.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'F10' && !e.repeat) {
+        e.preventDefault();
+        handleRegistrarCompra();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
+  const [imprimiendoCompra, setImprimiendoCompra] = useState(false);
+
+  const handleReimprimir = async () => {
+    if (!confirmacion?.detalle) return;
     setImprimiendoCompra(true);
     try {
-      const [detalle, settings] = await Promise.all([
-        window.api.detalleCompraEncabezado(confirmacion.encabezadoId),
-        window.api.getSettings()
-      ]);
-      if (!detalle.ok) {
-        setErrorImprimirCompra(detalle.message || 'No se pudo obtener el detalle de la compra');
-        return;
-      }
-      await generarCompraFacturaPDF(detalle.encabezado, detalle.items, settings, { imprimir: true });
+      await generarCompraFacturaPDF(confirmacion.detalle.encabezado, confirmacion.detalle.items, settings, { imprimir: true });
     } finally {
       setImprimiendoCompra(false);
     }
@@ -347,288 +395,393 @@ export default function Compras({ currentUser }) {
 
   if (confirmacion) {
     return (
-      <div>
-        <h1>Compra registrada</h1>
-        <div className="form-box" style={{ maxWidth: '400px' }}>
-          <p><strong>N° de compra:</strong> {confirmacion.encabezadoId}</p>
-          <p><strong>Total de la compra:</strong> ${fmt(confirmacion.totalUsd)}</p>
-          <p style={{ color: '#666', fontSize: '0.85rem' }}>
-            Consulta el historial completo de compras en Reportes.
-          </p>
-          {errorImprimirCompra && <p style={{ color: 'red' }}>{errorImprimirCompra}</p>}
-          <button onClick={handleImprimirCompra} disabled={imprimiendoCompra} style={{ marginRight: '8px' }}>
-            {imprimiendoCompra ? 'Imprimiendo...' : 'Imprimir compra'}
+      <div className="pos-receipt">
+        <div className="pos-receipt-header">
+          <div className="check">✓</div>
+          <h1>Compra registrada</h1>
+        </div>
+        <div className="pos-receipt-body">
+          <div className="pos-receipt-row">
+            <span>N° de compra</span>
+            <strong>{String(confirmacion.encabezadoId).padStart(6, '0')}</strong>
+          </div>
+          <div className="pos-receipt-row">
+            <span>Total USD</span>
+            <strong>${fmt(confirmacion.totalUsd)}</strong>
+          </div>
+          <p className="pos-receipt-note">La compra ya se envio a imprimir automaticamente.</p>
+        </div>
+        <div className="pos-receipt-actions">
+          <button className="btn-ghost" onClick={handleReimprimir} disabled={imprimiendoCompra}>
+            {imprimiendoCompra ? 'Imprimiendo...' : 'Reimprimir PDF'}
           </button>
-          <button onClick={() => setConfirmacion(null)}>Registrar otra compra</button>
+          <button className="btn-primary" onClick={() => setConfirmacion(null)}>Hacer otra compra</button>
         </div>
       </div>
     );
   }
 
-  return (
-    <div>
-      <h1>Compras</h1>
+  const cambiarDeposito = (nuevoId) => {
+    // Cambiar de deposito a mitad de una compra no invalida nada tecnicamente (no hay codigos
+    // ya escaneados que dependan del deposito, como en Facturacion), pero se avisa igual para
+    // que quede claro que la mercancia entrara a un almacen distinto al que se venia usando.
+    if (carrito.length > 0 && !window.confirm('Cambiar de deposito vacia los productos que ya agregaste a esta compra. ¿Deseas continuar?')) {
+      return;
+    }
+    setDepositoId(nuevoId);
+    setCarrito([]);
+    limpiarFila();
+  };
 
-      <div className="form-box" style={{ maxWidth: '500px' }}>
-        <h3>Datos del proveedor</h3>
-        {proximoNumeroCompra !== null && (
-          <p style={{ margin: '0 0 0.75rem 0', color: '#0b4f9e', fontWeight: '600' }}>
-            N° de compra que se asignara: {proximoNumeroCompra}
-          </p>
-        )}
-        <label>Proveedor</label>
-        <input value={proveedor} onChange={(e) => setProveedor(e.target.value)} placeholder="Ej: Distribuidora XYZ" />
-        <label>N° de factura de compra</label>
-        <input value={numeroFacturaCompra} onChange={(e) => setNumeroFacturaCompra(e.target.value)} placeholder="Ej: 00458" />
-        <label>Deposito que recibe la mercancia</label>
-        <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
-          {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
-          {depositos.map((d) => (
-            <option key={d.id} value={d.id}>{d.codigo} - {d.nombre}</option>
-          ))}
-        </select>
+  return (
+    <div className="pos-page">
+      <div className="pos-topbar">
+        <span className="pos-topbar-side">MODULO DE COMPRAS</span>
+        <span className="pos-topbar-center">COMPRAS</span>
+        <span className="pos-topbar-side">MODO: NORMAL</span>
       </div>
 
-      <div className="form-box" style={{ maxWidth: '600px' }}>
-        <h3>Agregar producto a la compra</h3>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-          {TIPOS.map((t) => (
-            <button key={t.key} type="button" onClick={() => setTipoSeleccionado(t.key)}
-              style={{
-                padding: '0.4rem 0.8rem',
-                backgroundColor: tipoSeleccionado === t.key ? '#0b4f9e' : '#e2e8f0',
-                color: tipoSeleccionado === t.key ? '#fff' : '#111',
-                border: 'none', borderRadius: '4px', cursor: 'pointer'
-              }}>
-              {t.label}
-            </button>
-          ))}
+      <div className="pos-panels">
+        <div className="pos-left">
+          <div className="pos-field">
+            <label>Proveedor <span className="required-mark">*</span></label>
+            <input
+              ref={proveedorRef}
+              placeholder="RIF + Enter"
+              value={rifProveedor}
+              onChange={(e) => { setRifProveedor(e.target.value); if (proveedorSeleccionado) setProveedorSeleccionado(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarProveedorPorEnter(); } }}
+              disabled={!!proveedorSeleccionado || buscandoProveedor}
+            />
+          </div>
+
+          <div className="pos-field">
+            <label>Vendedor <span className="required-mark">*</span></label>
+            <input value={currentUser?.username || ''} disabled />
+          </div>
+
+          <div className="pos-field">
+            <label>Depósito <span className="required-mark">*</span></label>
+            <select value={depositoId} onChange={(e) => cambiarDeposito(e.target.value)}>
+              {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
+              {depositos.map((d) => (
+                <option key={d.id} value={d.id}>{d.codigo} - {d.nombre}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="pos-field">
+            <label>Moneda</label>
+            <select value={moneda} onChange={(e) => setMoneda(e.target.value)}>
+              <option value="Bs">Bs.</option>
+              <option value="Dolares">Dólares</option>
+            </select>
+          </div>
+
+          <div className="pos-field">
+            <label>Documento de compra <span className="required-mark">*</span></label>
+            <input
+              placeholder="N° de factura o nota de entrega"
+              value={documentoCompra}
+              onChange={(e) => setDocumentoCompra(e.target.value)}
+            />
+          </div>
+
+          {proveedorSeleccionado && !editandoProveedor && (
+            <div className="pos-actions-row">
+              <button type="button" className="pos-btn-link" onClick={quitarProveedor}>Cambiar proveedor</button>
+              <button type="button" className="pos-btn-link" onClick={abrirEdicionProveedor}>Editar datos</button>
+            </div>
+          )}
+
+          {proveedorSeleccionado && editandoProveedor && (
+            <div className="pos-edit-box">
+              <p>Editando datos del proveedor:</p>
+              <input placeholder="RIF *" value={proveedorEdicion.rif}
+                onChange={(e) => setProveedorEdicion({ ...proveedorEdicion, rif: e.target.value })} />
+              <input placeholder="Nombre / Razon social *" value={proveedorEdicion.nombre}
+                onChange={(e) => setProveedorEdicion({ ...proveedorEdicion, nombre: e.target.value })} />
+              <input placeholder="Telefono (opcional)" value={proveedorEdicion.telefono}
+                onChange={(e) => setProveedorEdicion({ ...proveedorEdicion, telefono: e.target.value })} />
+              <input placeholder="Direccion *" value={proveedorEdicion.direccion}
+                onChange={(e) => setProveedorEdicion({ ...proveedorEdicion, direccion: e.target.value })} />
+              <div className="pos-edit-actions">
+                <button type="button" className="btn-primary" onClick={guardarEdicionProveedor} disabled={guardandoEdicionProveedor}>
+                  {guardandoEdicionProveedor ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+                <button type="button" className="btn-ghost" onClick={() => setEditandoProveedor(false)}>Cancelar</button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <label>Producto</label>
-        <select value={productoId} onChange={(e) => { setProductoId(e.target.value); setCodigosEscaneados([]); }}>
-          <option value="">-- Selecciona --</option>
-          {productos.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-        </select>
+        <div className="pos-mid">
+          {buscandoProveedor ? (
+            <div className="pos-stripe placeholder">Buscando proveedor...</div>
+          ) : proveedorSeleccionado ? (
+            <>
+              {/* Nombre, RIF y direccion son obligatorios para todo proveedor, asi que siempre
+                  deberian traer un valor; el telefono es opcional. */}
+              <div className="pos-stripe">{proveedorSeleccionado.nombre || '—'}</div>
+              <div className="pos-stripe">{proveedorSeleccionado.rif || '—'}</div>
+              <div className="pos-stripe">{proveedorSeleccionado.telefono || '—'}</div>
+              <div className="pos-stripe">{proveedorSeleccionado.direccion || '—'}</div>
+            </>
+          ) : (
+            <>
+              <div className="pos-stripe placeholder">Escribe el RIF y presiona Enter</div>
+              <div className="pos-stripe placeholder">—</div>
+              <div className="pos-stripe placeholder">—</div>
+              <div className="pos-stripe placeholder">—</div>
+            </>
+          )}
+        </div>
 
-        <label>Costo unitario sin IVA (USD)</label>
-        <input type="number" step="0.01" value={costoUnitario}
-          onChange={(e) => { setCostoUnitario(e.target.value); setCodigosEscaneados([]); }}
-          onBlur={enfocarEscaneoSiListo} />
-
-        {datosBaseListos && permiteRango && codigosEscaneados.length === 0 && (
-          <div style={{ display: 'flex', gap: '0.5rem', margin: '0.75rem 0 0.25rem 0', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => setModoEscaneo('manual')}
-              style={{
-                padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                backgroundColor: modoEscaneo === 'manual' ? '#0b4f9e' : '#e2e8f0', color: modoEscaneo === 'manual' ? '#fff' : '#111'
-              }}
-            >
-              Manual (pistola, uno por uno)
-            </button>
-            <button
-              type="button"
-              onClick={() => setModoEscaneo('rango')}
-              style={{
-                padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                backgroundColor: modoEscaneo === 'rango' ? '#0b4f9e' : '#e2e8f0', color: modoEscaneo === 'rango' ? '#fff' : '#111'
-              }}
-            >
-              Por rango (primer y ultimo codigo de la caja)
-            </button>
+        <div className="pos-right">
+          <div className="pos-right-header">Compra N° {numeroCompraPreview}</div>
+          <div className="pos-right-row">
+            <span>Base imponible</span>
+            <span>{fmt(baseImponible)}</span>
           </div>
-        )}
-
-        {!modoRangoActivo && (
-          <>
-            <label>Cantidad {esAccesorio ? '' : 'que llego segun la factura'}</label>
-            <input type="number" min="1" value={cantidadDeseada}
-              onChange={(e) => { setCantidadDeseada(e.target.value); setCodigosEscaneados([]); }}
-              onBlur={enfocarEscaneoSiListo} />
-          </>
-        )}
-
-        {listoParaEscanear && (
-          <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#f4f7fb', borderRadius: '6px' }}>
-
-            {cantidadObjetivo > 0 && (
-              <p style={{ margin: '0 0 0.4rem 0', fontWeight: '600', fontSize: '0.9rem' }}>
-                Escaneados: {codigosEscaneados.length} de {cantidadObjetivo}
-              </p>
-            )}
-
-            {!escaneoCompleto && cantidadObjetivo > 0 && (
-              <>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <input
-                    ref={scanInputRef}
-                    value={valorEscaneo}
-                    onChange={(e) => setValorEscaneo(e.target.value)}
-                    onKeyDown={handleScanKeyDown}
-                    placeholder={verificando ? 'Verificando...' : 'Dispara la pistola aqui o escribe y presiona Enter'}
-                    disabled={verificando}
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    type="button"
-                    onClick={agregarCodigoEscaneado}
-                    disabled={verificando || !valorEscaneo.trim()}
-                  >
-                    Agregar codigo
-                  </button>
-                </div>
-                <p style={{ margin: '0.3rem 0 0 0', fontSize: '0.75rem', color: '#888' }}>
-                  Con la pistola se agrega solo al disparar. Si lo escribes a mano, presiona Enter o el boton "Agregar codigo".
-                </p>
-              </>
-            )}
-
-            {escaneoCompleto && (
-              <p style={{ margin: 0, color: '#027a48', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                Ha llegado a los {cantidadObjetivo} items
-              </p>
-            )}
-
-            {modoRangoActivo && cantidadObjetivoRango === 0 && (
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem' }}>Primer codigo de la caja</label><br />
-                  <input placeholder="Ej: 190000" value={codigoInicioRango} onChange={(e) => setCodigoInicioRango(e.target.value)} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.75rem' }}>Ultimo codigo de la caja</label><br />
-                  <input placeholder="Ej: 190050" value={codigoFinRango} onChange={(e) => setCodigoFinRango(e.target.value)} />
-                </div>
-                <button type="button" onClick={handleGenerarRango} disabled={generandoRango}>
-                  {generandoRango ? 'Generando...' : 'Generar rango completo'}
-                </button>
-              </div>
-            )}
-
-            {errorEscaneo && <p style={{ color: 'red', fontSize: '0.85rem' }}>{errorEscaneo}</p>}
-            {codigosEscaneados.length > 0 && (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0.4rem 0' }}>
-                  <button
-                    type="button"
-                    onClick={eliminarTodosLosCodigos}
-                    style={{
-                      fontSize: '0.75rem', padding: '0.3rem 0.7rem', borderRadius: '4px', border: 'none',
-                      cursor: 'pointer', backgroundColor: '#b42318', color: '#fff'
-                    }}
-                  >
-                    Eliminar todos
-                  </button>
-                </div>
-                <ul style={{ maxHeight: '150px', overflowY: 'auto', margin: 0, paddingLeft: '1.2rem' }}>
-                  {codigosEscaneados.map((c, i) => (
-                    <li key={`${c}-${i}`} style={{ fontSize: '0.85rem' }}>
-                      {c} <button type="button" onClick={() => quitarCodigoEscaneado(i)} style={{ fontSize: '0.75rem' }}>Quitar</button>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
+          <div className="pos-right-row">
+            <span>IVA ({ivaPorcentaje}%)</span>
+            <span>{fmt(iva)}</span>
           </div>
-        )}
-
-        <button
-          type="button"
-          onClick={agregarProductoAlCarrito}
-          style={{ marginTop: '0.75rem' }}
-        >
-          + Agregar a la compra
-        </button>
-        {!esAccesorio && codigosEscaneados.length > 0 && !escaneoCompleto && (
-          <p style={{ color: '#666', fontSize: '0.8rem', margin: '0.3rem 0 0 0' }}>
-            Llevas {codigosEscaneados.length} de {cantidadObjetivo} declarados. Puedes seguir escaneando,
-            o presionar "+ Agregar a la compra" para agregarlo con lo que llevas (se te pedira confirmar).
-          </p>
-        )}
-        {!esAccesorio && modoRangoActivo && cantidadObjetivoRango === 0 && (
-          <p style={{ color: '#666', fontSize: '0.8rem', margin: '0.3rem 0 0 0' }}>
-            Genera el rango de codigos antes de agregar.
-          </p>
-        )}
+          <div className="pos-right-row total-final">
+            <span>Total</span>
+            <span>{fmt(total)}</span>
+          </div>
+          <div className="pos-right-footer">
+            <span>Total cantidad de Items</span>
+            <span>{totalPiezas}</span>
+          </div>
+        </div>
       </div>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {(error || errorFila) && <div className="pos-error-banner">{error || errorFila}</div>}
 
-      <h3>Items de esta compra</h3>
-      {carrito.length === 0 ? (
-        <p>Aun no has agregado productos.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1rem' }}>
+      <div className="pos-table-wrap">
+        <table className="pos-table">
           <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Producto</th>
-              <th>Cantidad</th>
-              <th>Costo unit. sin IVA</th>
-              <th>Subtotal</th>
-              <th></th>
+            <tr>
+              <th style={{ width: '14%' }}>Código</th>
+              <th>Descripción</th>
+              <th style={{ width: '9%' }}>Cantidad</th>
+              <th style={{ width: '7%' }}>Und</th>
+              <th style={{ width: '12%' }}>Costo</th>
+              <th style={{ width: '12%' }}>Total</th>
+              <th style={{ width: '13%' }}></th>
             </tr>
           </thead>
           <tbody>
-            {carrito.map((item) => (
-              <tr key={item.key} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{item.descripcion}</td>
-                <td>{item.codigos ? item.codigos.length : item.cantidad}</td>
-                <td>${fmt(item.costoUnitario)}</td>
-                <td>${fmt(item.subtotal)}</td>
-                <td><button onClick={() => quitarDelCarrito(item.key)}>Quitar</button></td>
+            <tr className="fila-entrada">
+              <td>
+                {!filaProducto ? (
+                  <input
+                    ref={codigoRef}
+                    type="text"
+                    placeholder="Código + Enter"
+                    value={filaCodigo}
+                    onChange={(e) => setFilaCodigo(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarProductoPorCodigoEnter(); } }}
+                    disabled={buscandoCodigo}
+                  />
+                ) : (
+                  <span>{filaProducto.codigo_producto || '—'}</span>
+                )}
+              </td>
+              <td>{filaProducto ? filaProducto.nombre : <span style={{ color: '#98a2b3' }}>—</span>}</td>
+              <td>
+                {filaProducto ? (
+                  <input
+                    ref={cantidadRef}
+                    type="number"
+                    min="1"
+                    value={filaCantidad}
+                    onChange={(e) => setFilaCantidad(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); }
+                      if (e.key === 'Escape') { e.preventDefault(); limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }
+                    }}
+                  />
+                ) : (
+                  <span></span>
+                )}
+              </td>
+              <td>{filaProducto ? 'UND' : ''}</td>
+              <td className="text-right">
+                {filaProducto ? (
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={filaCosto}
+                    onChange={(e) => setFilaCosto(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); } }}
+                    style={{ width: '90px', textAlign: 'right' }}
+                  />
+                ) : ''}
+              </td>
+              <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
+              <td>
+                <div className="pos-entrada-acciones">
+                  <button type="button" className="pos-ver-todo-btn" onClick={() => setMostrarModalVerTodo(true)}>
+                    Ver todo
+                  </button>
+                  {filaProducto && (
+                    <button type="button" className="pos-remove-btn"
+                      onClick={() => { limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }}>×</button>
+                  )}
+                </div>
+              </td>
+            </tr>
+
+            {carrito.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', color: '#98a2b3', padding: '18px' }}>
+                  Aun no has agregado productos.
+                </td>
               </tr>
-            ))}
+            ) : (
+              carrito.map((item) => (
+                <tr key={item.key}>
+                  <td>{item.producto_codigo || '—'}</td>
+                  <td>
+                    <div>{item.descripcion}</div>
+                    {item.codigos && item.codigos.length > 0 && (
+                      <div style={codigosListStyle}>
+                        {item.codigos.map((cod) => (
+                          <div key={cod} style={codigoLineStyle}>{cod}</div>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td>{item.cantidad}</td>
+                  <td>UND</td>
+                  <td className="text-right">{fmt(item.costoUnitario)}</td>
+                  <td className="text-right">{fmt(item.costoUnitario * item.cantidad)}</td>
+                  <td>
+                    {keyPendienteQuitar === item.key ? (
+                      <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+                        <button type="button" className="pos-confirm-btn yes" onClick={confirmarQuitarDelCarrito}>Si</button>
+                        <button type="button" className="pos-confirm-btn no" onClick={cancelarQuitarDelCarrito}>No</button>
+                      </span>
+                    ) : (
+                      <button type="button" className="pos-remove-btn" onClick={() => quitarDelCarrito(item.key)}>×</button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
-      )}
-
-      <div className="form-box" style={{ maxWidth: '340px' }}>
-        <p style={{ margin: '0 0 0.3rem 0' }}>Base imponible sin IVA: <strong>${fmt(baseImponible)}</strong></p>
-        <p style={{ margin: '0 0 0.3rem 0' }}>IVA (16%): <strong>${fmt(totalIva)}</strong></p>
-        <p style={{ margin: '0 0 0.3rem 0' }}>Total de la compra: <strong>${fmt(totalCompra)}</strong></p>
-        <button onClick={handleRegistrarCompra} style={{ marginTop: '8px' }}>Registrar compra</button>
       </div>
 
-      <p style={{ color: '#666', fontSize: '0.85rem', marginTop: '2rem' }}>
-        El historial de compras ahora se consulta desde <strong>Reportes → Reporte de compras</strong>,
-        con filtros por dia, semana, mes, año o rango de fechas.
-      </p>
+      <div className="pos-footer-actions">
+        <span style={{ marginRight: '16px', color: '#667085', fontSize: '0.85rem', alignSelf: 'center' }}>
+          Moneda: {moneda === 'Dolares' ? 'Dólares' : 'Bs.'}
+        </span>
+        <button type="button" className="pos-btn-totalizar" onClick={handleRegistrarCompra} disabled={emitiendo}>
+          {emitiendo ? 'Registrando...' : 'F10 Registrar compra'}
+        </button>
+      </div>
 
-      {confirmando?.tipo === 'quitarCodigo' && (
-        <ConfirmDialog
-          message="¿Seguro que deseas quitar este codigo de la lista?"
-          confirmLabel="Si, quitar"
-          onConfirm={() => ejecutarQuitarCodigo(confirmando.index)}
-          onCancel={() => setConfirmando(null)}
+      {mostrarModalProveedorNuevo && (
+        <ProveedorNuevoModal
+          rifInicial={rifProveedor}
+          onConfirm={handleProveedorCreado}
+          onCancel={() => setMostrarModalProveedorNuevo(false)}
         />
       )}
-      {confirmando?.tipo === 'eliminarTodos' && (
-        <ConfirmDialog
-          message={`¿Seguro que deseas eliminar los ${codigosEscaneados.length} codigo(s) escaneados/generados?`}
-          confirmLabel="Si, eliminar todos"
-          onConfirm={ejecutarEliminarTodos}
-          onCancel={() => setConfirmando(null)}
+
+      {mostrarModalProductoNuevo && (
+        <ProductoRapidoModal
+          codigoInicial={filaCodigo}
+          onConfirm={handleProductoNuevoCreado}
+          onCancel={() => setMostrarModalProductoNuevo(false)}
         />
       )}
-      {confirmando?.tipo === 'quitarCarrito' && (
-        <ConfirmDialog
-          message="¿Seguro que deseas quitar este producto de la compra?"
-          confirmLabel="Si, quitar"
-          onConfirm={() => ejecutarQuitarDelCarrito(confirmando.key)}
-          onCancel={() => setConfirmando(null)}
+
+      {mostrarModalCodigosNuevos && filaProducto && (
+        <CodigosNuevosModal
+          nombreProducto={filaProducto.nombre}
+          cantidadNecesaria={parseInt(filaCantidad, 10) || 1}
+          onConfirm={confirmarCodigosNuevos}
+          onCancel={cancelarCodigosNuevos}
         />
       )}
-      {confirmando?.tipo === 'cantidadIncompleta' && (
-        <ConfirmDialog
-          message={`La cantidad de codigos (${codigosEscaneados.length}) no coincide con la cantidad declarada (${cantidadObjetivo}). ¿Deseas continuar de todos modos?`}
-          confirmLabel="Si, continuar"
-          danger={false}
-          onConfirm={() => confirmando.accion && confirmando.accion()}
-          onCancel={() => setConfirmando(null)}
-        />
+
+      {mostrarModalVerTodo && (
+        <div className="pos-vertodo-overlay" onClick={() => setMostrarModalVerTodo(false)}>
+          <div className="pos-vertodo-box" onClick={(e) => e.stopPropagation()}>
+            <div className="pos-vertodo-header">
+              <span>Productos de la compra</span>
+              <button type="button" className="pos-vertodo-cerrar" onClick={() => setMostrarModalVerTodo(false)}>×</button>
+            </div>
+            <div className="pos-vertodo-body">
+              {carrito.length === 0 ? (
+                <p className="pos-vertodo-vacio">Aun no has agregado productos a esta compra.</p>
+              ) : (
+                <table className="pos-vertodo-table">
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Descripción</th>
+                      <th>Cantidad</th>
+                      <th>Und</th>
+                      <th>Costo</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {carrito.map((item) => (
+                      <tr key={item.key}>
+                        <td>{item.producto_codigo || '—'}</td>
+                        <td>
+                          <div>{item.descripcion}</div>
+                          {item.codigos && item.codigos.length > 0 && (
+                            <div className="pos-vertodo-codigos">
+                              {item.codigos.map((cod) => (
+                                <div key={cod}>{cod}</div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td>{item.cantidad}</td>
+                        <td>UND</td>
+                        <td className="text-right">{fmt(item.costoUnitario)}</td>
+                        <td className="text-right">{fmt(item.costoUnitario * item.cantidad)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="pos-vertodo-footer">
+              <span>Total cantidad de items: <strong>{totalPiezas}</strong></span>
+              <span>Total: <strong>{fmt(total)}</strong></span>
+              <button type="button" className="btn-primary" onClick={() => setMostrarModalVerTodo(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
+
+const codigosListStyle = {
+  marginTop: '4px',
+  maxHeight: '110px',
+  overflowY: 'auto',
+  border: '1px solid #eef0f3',
+  borderRadius: '4px',
+  padding: '4px 6px',
+  background: '#fafbfc'
+};
+
+const codigoLineStyle = {
+  fontFamily: 'monospace',
+  fontSize: '0.78rem',
+  color: '#475467',
+  lineHeight: '1.5'
+};
