@@ -55,6 +55,11 @@ contextBridge.exposeInMainWorld('api', {
   buscarClientePorCedula: (cedula) => ipcRenderer.invoke('clientes:buscarPorCedula', { cedula }),
   createCliente: (data) => ipcRenderer.invoke('clientes:create', data),
   updateCliente: (id, data) => ipcRenderer.invoke('clientes:update', { id, ...data }),
+  // Proveedores (modulo de Compras)
+  listProveedores: () => ipcRenderer.invoke('proveedores:list'),
+  buscarProveedorPorRif: (rif) => ipcRenderer.invoke('proveedores:buscarPorRif', { rif }),
+  createProveedor: (data) => ipcRenderer.invoke('proveedores:create', data),
+  updateProveedor: (id, data) => ipcRenderer.invoke('proveedores:update', { id, ...data }),
   // Depositos (almacenes)
   listDepositos: (soloActivos) => ipcRenderer.invoke('depositos:list', { soloActivos }),
   createDeposito: (data) => ipcRenderer.invoke('depositos:create', data),

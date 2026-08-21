@@ -256,6 +256,32 @@ function migrarClientesCamposSiHaceFalta(database) {
   }
 }
 
+// Modulo de Compras (rediseño estilo Facturacion): el proveedor ahora es una entidad guardada
+// (tabla "proveedores"), igual que el cliente en Facturacion, en vez de un simple texto libre.
+// compras_encabezado guarda una "foto" (snapshot) del proveedor al momento de la compra
+// (proveedor_id + rif/telefono/direccion), ademas de la moneda en la que se registro el costo.
+// La columna "proveedor" (nombre) ya existia y se sigue llenando, para no romper las pantallas
+// que ya la usan (historial de compras / PDF).
+function migrarProveedoresYComprasEncabezadoSiHaceFalta(database) {
+  const existeCompras = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras_encabezado'").get();
+  if (!existeCompras) return;
+  if (!tieneColumna(database, 'compras_encabezado', 'proveedor_id')) {
+    database.exec('ALTER TABLE compras_encabezado ADD COLUMN proveedor_id INTEGER');
+  }
+  if (!tieneColumna(database, 'compras_encabezado', 'proveedor_rif')) {
+    database.exec('ALTER TABLE compras_encabezado ADD COLUMN proveedor_rif TEXT');
+  }
+  if (!tieneColumna(database, 'compras_encabezado', 'proveedor_telefono')) {
+    database.exec('ALTER TABLE compras_encabezado ADD COLUMN proveedor_telefono TEXT');
+  }
+  if (!tieneColumna(database, 'compras_encabezado', 'proveedor_direccion')) {
+    database.exec('ALTER TABLE compras_encabezado ADD COLUMN proveedor_direccion TEXT');
+  }
+  if (!tieneColumna(database, 'compras_encabezado', 'moneda')) {
+    database.exec("ALTER TABLE compras_encabezado ADD COLUMN moneda TEXT NOT NULL DEFAULT 'Bs'");
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -314,6 +340,14 @@ function initDb() {
       telefono TEXT,
       direccion TEXT,
       email TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS proveedores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre TEXT NOT NULL,
+      rif TEXT,
+      telefono TEXT,
+      direccion TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS facturas (
@@ -400,6 +434,7 @@ function initDb() {
   migrarDepositosSiHaceFalta(database);
   migrarPreciosYCodigoProductoSiHaceFalta(database);
   migrarClientesCamposSiHaceFalta(database);
+  migrarProveedoresYComprasEncabezadoSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');

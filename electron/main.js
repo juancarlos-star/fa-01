@@ -1328,6 +1328,54 @@ ipcMain.handle('clientes:update', (event, { id, nombre, rif_cedula, telefono, di
   return { ok: true, cliente: actualizado };
 });
 
+// ---------- IPC: Proveedores (modulo de Compras) ----------
+// Mismo patron que Clientes: busqueda EXACTA por RIF (usada en el renglon "Proveedor" de
+// Compras), crear y actualizar. RIF, nombre, telefono y direccion son los unicos campos que se
+// piden, tal como se definio para el modulo de Compras.
+ipcMain.handle('proveedores:list', () => {
+  const db = getDb();
+  return db.prepare('SELECT * FROM proveedores ORDER BY nombre').all();
+});
+
+ipcMain.handle('proveedores:buscarPorRif', (event, { rif }) => {
+  const db = getDb();
+  const r = (rif || '').trim();
+  if (!r) return null;
+  return db.prepare('SELECT * FROM proveedores WHERE rif = ? COLLATE NOCASE').get(r) || null;
+});
+
+ipcMain.handle('proveedores:create', (event, data) => {
+  const db = getDb();
+  const { nombre, rif, telefono, direccion } = data;
+  if (!nombre || !nombre.trim()) return { ok: false, message: 'El nombre del proveedor es obligatorio' };
+  const rifLimpio = (rif || '').trim();
+  if (!rifLimpio) return { ok: false, message: 'El RIF del proveedor es obligatorio' };
+  if (!direccion || !direccion.trim()) return { ok: false, message: 'La direccion del proveedor es obligatoria' };
+  const existente = db.prepare('SELECT id FROM proveedores WHERE rif = ? COLLATE NOCASE').get(rifLimpio);
+  if (existente) return { ok: false, message: 'Ya existe un proveedor registrado con ese RIF' };
+  const info = db
+    .prepare(
+      `INSERT INTO proveedores (nombre, rif, telefono, direccion, created_at)
+       VALUES (?, ?, ?, ?, datetime('now','localtime'))`
+    )
+    .run(nombre.trim(), rifLimpio, (telefono || '').trim(), direccion.trim());
+  const proveedor = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(info.lastInsertRowid);
+  return { ok: true, id: info.lastInsertRowid, proveedor };
+});
+
+ipcMain.handle('proveedores:update', (event, { id, nombre, rif, telefono, direccion }) => {
+  const db = getDb();
+  if (!id) return { ok: false, message: 'Proveedor invalido' };
+  if (!nombre || !nombre.trim()) return { ok: false, message: 'El nombre del proveedor es obligatorio' };
+  if (!rif || !rif.trim()) return { ok: false, message: 'El RIF del proveedor es obligatorio' };
+  if (!direccion || !direccion.trim()) return { ok: false, message: 'La direccion del proveedor es obligatoria' };
+  db.prepare(
+    `UPDATE proveedores SET nombre = ?, rif = ?, telefono = ?, direccion = ? WHERE id = ?`
+  ).run(nombre.trim(), rif.trim(), (telefono || '').trim(), direccion.trim(), id);
+  const actualizado = db.prepare('SELECT * FROM proveedores WHERE id = ?').get(id);
+  return { ok: true, proveedor: actualizado };
+});
+
 // ---------- IPC: Facturacion ----------
 ipcMain.handle('facturas:crear', (event, payload) => {
   const db = getDb();
@@ -1662,10 +1710,10 @@ ipcMain.handle('inventario:buscarPorCodigo', (event, { codigo }) => {
 ipcMain.handle('compras:crearLote', (event, payload) => {
   const db = getDb();
   try {
-    const { proveedor, numeroFacturaCompra, items, usuario, depositoId } = payload;
+    const { proveedor, proveedorId, proveedorRif, proveedorTelefono, proveedorDireccion, moneda, numeroFacturaCompra, items, usuario, depositoId } = payload;
 
     if (!proveedor || !proveedor.trim()) return { ok: false, message: 'El nombre del proveedor es obligatorio' };
-    if (!numeroFacturaCompra || !numeroFacturaCompra.trim()) return { ok: false, message: 'El numero de factura de compra es obligatorio' };
+    if (!numeroFacturaCompra || !numeroFacturaCompra.trim()) return { ok: false, message: 'El numero de documento de compra es obligatorio' };
     if (!items || items.length === 0) return { ok: false, message: 'Agrega al menos un producto a la compra' };
     if (!depositoId) return { ok: false, message: 'Selecciona el deposito que recibe la mercancia' };
     if (!depositoValido(db, depositoId)) return { ok: false, message: 'El deposito seleccionado no es valido o esta inactivo' };
@@ -1684,16 +1732,16 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
         if (!cantidad || cantidad <= 0) return { ok: false, message: `Cantidad invalida para "${product.nombre}"` };
       } else {
         const codigos = Array.isArray(item.codigos) ? item.codigos.map((c) => (c || '').trim()).filter(Boolean) : [];
-        if (codigos.length === 0) return { ok: false, message: `No se escaneo ningun codigo para "${product.nombre}"` };
-        if (!item.cantidadDeclarada || codigos.length !== Number(item.cantidadDeclarada)) {
-          return { ok: false, message: `"${product.nombre}": escaneaste ${codigos.length} codigo(s) pero declaraste ${item.cantidadDeclarada}` };
+        if (codigos.length === 0) return { ok: false, message: `No se ingreso ningun codigo/IMEI para "${product.nombre}"` };
+        if (!item.cantidad || codigos.length !== Number(item.cantidad)) {
+          return { ok: false, message: `"${product.nombre}": se ingresaron ${codigos.length} codigo(s) pero se pidio cantidad ${item.cantidad}` };
         }
         for (const codigo of codigos) {
-          if (codigosVistosEnEsteLote.has(codigo)) {
+          if (codigosVistosEnEsteLote.has(codigo.toLowerCase())) {
             return { ok: false, message: `El codigo "${codigo}" esta repetido dentro de esta misma compra` };
           }
-          codigosVistosEnEsteLote.add(codigo);
-          const exists = db.prepare('SELECT id FROM inventory_units WHERE codigo = ?').get(codigo);
+          codigosVistosEnEsteLote.add(codigo.toLowerCase());
+          const exists = db.prepare('SELECT id FROM inventory_units WHERE codigo = ? COLLATE NOCASE').get(codigo);
           if (exists) return { ok: false, message: `El codigo "${codigo}" ya esta registrado en el inventario` };
         }
       }
@@ -1703,9 +1751,13 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
 
     const transaccion = db.transaction(() => {
       const encabezadoInfo = db.prepare(
-        `INSERT INTO compras_encabezado (proveedor, numero_factura_compra, total_usd, usuario, created_at)
-         VALUES (?, ?, 0, ?, datetime('now','localtime'))`
-      ).run(proveedor.trim(), numeroFacturaCompra.trim(), usuario || '');
+        `INSERT INTO compras_encabezado
+           (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda, numero_factura_compra, total_usd, usuario, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'))`
+      ).run(
+        proveedor.trim(), proveedorId || null, proveedorRif || '', proveedorTelefono || '', proveedorDireccion || '',
+        moneda || 'Bs', numeroFacturaCompra.trim(), usuario || ''
+      );
       const encabezadoId = encabezadoInfo.lastInsertRowid;
 
       const insertCompra = db.prepare(
