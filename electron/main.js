@@ -1665,6 +1665,22 @@ ipcMain.handle('inventario:codigoExiste', (event, { codigo, excludeId }) => {
   return { existe: !!existe };
 });
 
+// Version "por lote" de la verificacion anterior: recibe varios codigos de una sola vez (por
+// ejemplo, los que resultan de generar un rango de SIM/USIM) y devuelve cuales de ellos YA
+// estan registrados en el inventario, en una sola consulta en vez de una por codigo.
+ipcMain.handle('inventario:codigosExisten', (event, { codigos }) => {
+  const db = getDb();
+  const lista = Array.isArray(codigos) ? codigos.map((c) => (c || '').trim()).filter(Boolean) : [];
+  if (lista.length === 0) return { existentes: [] };
+  const placeholders = lista.map(() => '?').join(',');
+  const filas = db
+    .prepare(`SELECT codigo FROM inventory_units WHERE codigo IN (${placeholders}) COLLATE NOCASE`)
+    .all(...lista);
+  const existentesSet = new Set(filas.map((f) => f.codigo.toLowerCase()));
+  const existentes = lista.filter((c) => existentesSet.has(c.toLowerCase()));
+  return { existentes };
+});
+
 // Busca un IMEI/codigo de unidad (equipo, simcard, usim) o un codigo de barras de accesorio,
 // para que el modulo de Cargos y Descargos pueda saltar directo al producto correspondiente
 // sin que el usuario tenga que buscarlo a mano en una lista larga.
