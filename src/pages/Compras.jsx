@@ -332,7 +332,7 @@ export default function Compras({ currentUser }) {
           cantidad: i.cantidad,
           codigos: i.codigos || undefined
         })),
-        usuario: currentUser?.username,
+        usuario: currentUser?.full_name || currentUser?.username,
         depositoId: Number(depositoId)
       });
 
@@ -705,6 +705,7 @@ export default function Compras({ currentUser }) {
       {mostrarModalCodigosNuevos && filaProducto && (
         <CodigosNuevosModal
           nombreProducto={filaProducto.nombre}
+          tipo={filaProducto.tipo}
           cantidadNecesaria={parseInt(filaCantidad, 10) || 1}
           onConfirm={confirmarCodigosNuevos}
           onCancel={cancelarCodigosNuevos}
