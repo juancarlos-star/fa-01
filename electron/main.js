@@ -1827,9 +1827,13 @@ ipcMain.handle('reportes:ganancias', (event, { desde, hasta }) => {
   if (idsFacturas.length > 0) {
     const placeholders = idsFacturas.map(() => '?').join(',');
     const items = db.prepare(
-      `SELECT cantidad, costo_unitario_usd FROM factura_items WHERE factura_id IN (${placeholders})`
+      `SELECT cantidad, costo_unitario_usd, es_devolucion FROM factura_items WHERE factura_id IN (${placeholders})`
     ).all(...idsFacturas);
-    costoVendidoUsd = items.reduce((acc, i) => acc + (i.costo_unitario_usd * i.cantidad), 0);
+    // Los renglones de una devolucion (es_devolucion = 1) restan del costo vendido en vez de
+    // sumar: ese producto ya no se quedo vendido, volvio al inventario. Sin este signo, una
+    // devolucion inflaba el costo (se contaba como si se hubiera vendido dos veces) en vez de
+    // anularlo, distorsionando la ganancia bruta/neta del periodo.
+    costoVendidoUsd = items.reduce((acc, i) => acc + (i.costo_unitario_usd * i.cantidad) * (i.es_devolucion ? -1 : 1), 0);
   }
 
   const gastos = db.prepare(
