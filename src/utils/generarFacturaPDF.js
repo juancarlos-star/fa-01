@@ -1,16 +1,23 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { guardarYAbrirPDF, guardarAbrirEImprimirPDF } from './pdfUtils.js';
+import { guardarYAbrirPDF, guardarAbrirEImprimirPDF, dibujarEncabezadoEmpresa, dibujarPiePaginaEmpresa } from './pdfUtils.js';
 import { fmt } from './format.js';
 import { agruparItemsPorProducto } from './agruparFacturaItems.js';
 
-export async function generarFacturaPDF(factura, items, opciones = {}) {
+export async function generarFacturaPDF(factura, items, settings, opciones = {}) {
   // compress:true genera un PDF con streams comprimidos (mas chico y con una estructura
   // mas estandar). Junto con la actualizacion de jsPDF/jspdf-autotable a una version mas
   // reciente, esto corrige que la factura se viera "toda negra" al abrirla con Adobe
   // Acrobat (el PDF se veia bien en Chrome/otros lectores, pero Acrobat es mas estricto
   // leyendo la estructura interna que generaban las versiones viejas de jsPDF).
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+
+  // Logo + nombre + RIF + direccion + telefono de la tienda, arriba a la izquierda. Antes esta
+  // esquina quedaba vacia (la factura no mostraba ningun dato de la propia tienda). El bloque
+  // de datos del CLIENTE se corre hacia abajo dinamicamente segun cuanto espacio ocupe esto,
+  // para no superponerse si se usan las 4 lineas completas.
+  const yEncabezadoEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88 });
+  const yCliente = Math.max(35, yEncabezadoEmpresa + 6);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -28,21 +35,23 @@ export async function generarFacturaPDF(factura, items, opciones = {}) {
   doc.setTextColor(0, 0, 0);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('CLIENTE/RAZON SOCIAL:', 10, 35);
+  doc.text('CLIENTE/RAZON SOCIAL:', 10, yCliente);
   doc.setFont('helvetica', 'normal');
-  doc.text(factura.cliente_nombre || 'Consumidor final', 55, 35);
+  doc.text(factura.cliente_nombre || 'Consumidor final', 55, yCliente);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('CEDULA/R.I.F.:', 10, 41);
+  doc.text('CEDULA/R.I.F.:', 10, yCliente + 6);
   doc.setFont('helvetica', 'normal');
-  doc.text(factura.cliente_rif || '-', 55, 41);
+  doc.text(factura.cliente_rif || '-', 55, yCliente + 6);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('DIRECCION:', 10, 47);
+  doc.text('DIRECCION:', 10, yCliente + 12);
   doc.setFont('helvetica', 'normal');
   const direccion = factura.cliente_direccion || '-';
   const lineasDireccion = doc.splitTextToSize(direccion, 140);
-  doc.text(lineasDireccion, 55, 47);
+  doc.text(lineasDireccion, 55, yCliente + 12);
+
+  const yTabla = yCliente + 12 + 5 * lineasDireccion.length + 6;
 
   // Se agrupan por producto para que, si se vendieron varias unidades del
   // mismo producto (ej. 3 Redmi Note 15), aparezca una sola fila con la
@@ -57,7 +66,7 @@ export async function generarFacturaPDF(factura, items, opciones = {}) {
   ]);
 
   autoTable(doc, {
-    startY: 58,
+    startY: yTabla,
     head: [['CANTIDAD', 'DESCRIPCION', 'PRECIO U.', 'TOTAL']],
     body: filas,
     theme: 'grid',
@@ -72,7 +81,8 @@ export async function generarFacturaPDF(factura, items, opciones = {}) {
     margin: { left: 10, right: 10 }
   });
 
-  const finalY = doc.lastAutoTable.finalY + 8;
+  let finalY = doc.lastAutoTable.finalY + 8;
+  if (finalY > 250) { doc.addPage(); finalY = 20; }
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
@@ -87,6 +97,8 @@ export async function generarFacturaPDF(factura, items, opciones = {}) {
   doc.text(fmt(factura.iva_usd), 195, finalY + 10, { align: 'right' });
   doc.setFont('helvetica', 'bold');
   doc.text(fmt(factura.total_usd), 195, finalY + 15, { align: 'right' });
+
+  dibujarPiePaginaEmpresa(doc, settings);
 
   if (opciones.imprimir) {
     await guardarAbrirEImprimirPDF(doc, `Factura-${factura.numero_factura || factura.id}`, 'Facturas');

@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { guardarYAbrirPDF, guardarAbrirEImprimirPDF } from './pdfUtils.js';
+import { guardarYAbrirPDF, guardarAbrirEImprimirPDF, dibujarEncabezadoEmpresa, dibujarPiePaginaEmpresa } from './pdfUtils.js';
 import { fmt } from './format.js';
 
 const IVA_TASA_DEFECTO = 0.16;
@@ -14,6 +14,12 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   // vio en pantalla al registrar la compra.
   const ivaTasa = settings && settings.iva_porcentaje != null ? parseFloat(settings.iva_porcentaje) / 100 : IVA_TASA_DEFECTO;
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+
+  // Logo + nombre + RIF + direccion + telefono de LA TIENDA (no del proveedor), arriba a la
+  // izquierda. El bloque de datos del PROVEEDOR se corre hacia abajo dinamicamente segun
+  // cuanto espacio ocupe esto.
+  const yEncabezadoEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88 });
+  const yProveedor = Math.max(35, yEncabezadoEmpresa + 6);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -42,26 +48,28 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   doc.text(encabezado.usuario || '-', xValor, 39);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('PROVEEDOR:', 10, 35);
+  doc.text('PROVEEDOR:', 10, yProveedor);
   doc.setFont('helvetica', 'normal');
-  doc.text(encabezado.proveedor || '-', 45, 35);
+  doc.text(encabezado.proveedor || '-', 45, yProveedor);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('RIF:', 10, 41);
+  doc.text('RIF:', 10, yProveedor + 6);
   doc.setFont('helvetica', 'normal');
-  doc.text(encabezado.proveedor_rif || '-', 45, 41);
+  doc.text(encabezado.proveedor_rif || '-', 45, yProveedor + 6);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('TELÉFONO:', 10, 47);
+  doc.text('TELÉFONO:', 10, yProveedor + 12);
   doc.setFont('helvetica', 'normal');
-  doc.text(encabezado.proveedor_telefono || '-', 45, 47);
+  doc.text(encabezado.proveedor_telefono || '-', 45, yProveedor + 12);
 
   doc.setFont('helvetica', 'bold');
-  doc.text('DIRECCIÓN:', 10, 53);
+  doc.text('DIRECCIÓN:', 10, yProveedor + 18);
   doc.setFont('helvetica', 'normal');
   const direccion = encabezado.proveedor_direccion || '-';
   const lineasDireccion = doc.splitTextToSize(direccion, 140);
-  doc.text(lineasDireccion, 45, 53);
+  doc.text(lineasDireccion, 45, yProveedor + 18);
+
+  const yTabla = Math.max(62, yProveedor + 18 + 5 * lineasDireccion.length + 6);
 
   // Cada item ya trae sus codigos/IMEI (cuando aplica) desde compras:detalleEncabezado, asi
   // que se listan debajo de la descripcion dentro de la misma celda, igual que en la factura
@@ -74,7 +82,7 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   ]);
 
   autoTable(doc, {
-    startY: 62,
+    startY: yTabla,
     head: [['CANTIDAD', 'DESCRIPCION', 'COSTO U.', 'TOTAL']],
     body: filas,
     theme: 'grid',
@@ -90,7 +98,7 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   });
 
   let y = doc.lastAutoTable.finalY + 8;
-  if (y > 260) { doc.addPage(); y = 15; }
+  if (y > 250) { doc.addPage(); y = 20; }
 
   const baseImponible = encabezado.total_usd;
   const iva = baseImponible * ivaTasa;
@@ -108,6 +116,8 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text(fmt(total), 195, y + 10, { align: 'right' });
+
+  dibujarPiePaginaEmpresa(doc, settings);
 
   const nombreArchivo = `${encabezado.es_devolucion ? 'Devolucion' : 'Compra'}-${String(numeroMostrado).padStart(6, '0')}`;
   if (opciones.imprimir) {

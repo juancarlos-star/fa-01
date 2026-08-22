@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { guardarYAbrirPDF, guardarAbrirEImprimirPDF, fechaParaNombreArchivo } from './pdfUtils.js';
+import { guardarYAbrirPDF, guardarAbrirEImprimirPDF, fechaParaNombreArchivo, dibujarEncabezadoEmpresa } from './pdfUtils.js';
 import { fmt } from './format.js';
 
 // Genera el PDF de UN solo cargo o descargo (documento individual), en el mismo estilo que
@@ -13,16 +13,7 @@ export async function generarCargoDescargoPDF(registro, tipoDocumento, settings,
   const prefijo = esCargo ? 'CAR' : 'DES';
   const numeroDocumento = registro.secuencia != null ? registro.secuencia : registro.id;
 
-  if (settings?.nombre_tienda) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text(settings.nombre_tienda, 10, 15);
-    if (settings.rif_tienda) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.text(`R.I.F.: ${settings.rif_tienda}`, 10, 20);
-    }
-  }
+  dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88 });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
@@ -103,16 +94,7 @@ export async function generarCargoDescargoLotePDF(registros, tipoDocumento, sett
   const colorAcento = esCargo ? [2, 122, 72] : [180, 35, 24];
   const titulo = esCargo ? 'COMPROBANTE DE CARGO POR LOTE' : 'COMPROBANTE DE DESCARGO POR LOTE';
 
-  if (settings?.nombre_tienda) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text(settings.nombre_tienda, 10, 15);
-    if (settings.rif_tienda) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.text(`R.I.F.: ${settings.rif_tienda}`, 10, 20);
-    }
-  }
+  dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88 });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
@@ -201,16 +183,7 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
   const titulo = esCargo ? 'COMPROBANTE DE CARGO DE INVENTARIO' : 'COMPROBANTE DE DESCARGO DE INVENTARIO';
   const prefijo = esCargo ? 'CAR' : 'DES';
 
-  if (settings?.nombre_tienda) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text(settings.nombre_tienda, 10, 15);
-    if (settings.rif_tienda) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.text(`R.I.F.: ${settings.rif_tienda}`, 10, 20);
-    }
-  }
+  dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88 });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
