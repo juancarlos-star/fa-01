@@ -1893,10 +1893,21 @@ ipcMain.handle('compras:buscarPorDocumento', (event, { documento }) => {
   const texto = (documento || '').trim();
   if (!texto) return { ok: false, message: 'Escribe el numero de documento de compra' };
 
+  // IMPORTANTE: la busqueda ya NO filtra "AND es_devolucion = 0" directo en el SQL. Se busca
+  // el documento SIN esa condicion y se valida despues en JS, para poder devolver un mensaje
+  // especifico si lo que se encontro es en realidad una devolucion (en vez de un generico "no
+  // encontrado", que no ayudaba a entender que estaba pasando). TRIM() en ambos lados evita
+  // fallos por espacios invisibles que se hayan colado al escribir el documento originalmente.
   const encabezado = db.prepare(
-    `SELECT * FROM compras_encabezado WHERE numero_factura_compra = ? COLLATE NOCASE AND es_devolucion = 0 ORDER BY id DESC LIMIT 1`
+    `SELECT * FROM compras_encabezado WHERE TRIM(numero_factura_compra) = TRIM(?) COLLATE NOCASE ORDER BY id DESC LIMIT 1`
   ).get(texto);
-  if (!encabezado) return { ok: false, message: `No se encontro ninguna compra (no una devolucion) con el documento "${texto}"` };
+  if (!encabezado) return { ok: false, message: `No se encontro ninguna compra con el documento "${texto}"` };
+  if (encabezado.es_devolucion) {
+    return {
+      ok: false,
+      message: `El documento "${texto}" corresponde a una devolucion (N° ${String(encabezado.numero_devolucion || '').padStart(6, '0')}), no a una compra original`
+    };
+  }
 
   const items = db.prepare('SELECT * FROM compras WHERE compra_encabezado_id = ? AND es_devolucion = 0').all(encabezado.id);
   const devolucionesPrevias = db.prepare('SELECT id FROM compras_encabezado WHERE devuelve_a_encabezado_id = ?').all(encabezado.id).map((r) => r.id);
