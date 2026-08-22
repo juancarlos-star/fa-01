@@ -221,14 +221,12 @@ function ReporteCompras({ desde, hasta }) {
                 <td>{c.proveedor}</td>
                 <td>
                   {c.numero_factura_compra}
-                  {/* DIAGNOSTICO TEMPORAL: muestra el valor exacto tal como esta guardado (con
-                      comillas y cualquier caracter invisible a la vista, por ejemplo un \n o
-                      \u0000) para encontrar de una vez por que aparecen numeros con un caracter
-                      de mas al final. Se puede quitar este bloque despues de confirmar la causa. */}
-                  <div style={{ fontSize: '0.72rem', color: '#d0d5dd', fontFamily: 'monospace' }}>
-                    {JSON.stringify(c.numero_factura_compra)} (len {(c.numero_factura_compra || '').length})
-                  </div>
-                  {c.es_devolucion && c.devuelve_a_encabezado_id && (
+                  {/* Antes esto estaba escrito como "c.es_devolucion && c.devuelve_a_encabezado_id && (...)".
+                      c.es_devolucion viene de SQLite como el NUMERO 0 o 1 (no true/false). Cuando es 0,
+                      "0 && cualquier_cosa" se queda en 0 (numero), y React SI renderiza el numero 0 como
+                      texto "0" (a diferencia de false/null/undefined, que no renderizan nada) — por eso
+                      aparecia un "0" suelto debajo del N° de factura en TODAS las compras normales. */}
+                  {Boolean(c.es_devolucion) && c.devuelve_a_encabezado_id && (
                     <div style={{ fontSize: '0.78rem', color: '#98a2b3' }}>↩ Devuelve compra #{c.devuelve_a_encabezado_id}</div>
                   )}
                   {!c.es_devolucion && c.numerosDevolucion && c.numerosDevolucion.length > 0 && (

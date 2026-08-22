@@ -359,15 +359,7 @@ export default function Compras({ currentUser }) {
         }
       }
 
-      setConfirmacion({
-        encabezadoId: res.encabezadoId,
-        totalUsd: res.totalUsd,
-        detalle: detalle.ok ? detalle : null,
-        // DIAGNOSTICO TEMPORAL: se guarda el mismo texto que se envio como numeroFacturaCompra,
-        // para comparar en la pantalla de confirmacion contra lo que Reportes muestra
-        // despues como guardado. Se puede quitar despues de encontrar la causa.
-        documentoEnviado: documentoCompra.trim()
-      });
+      setConfirmacion({ encabezadoId: res.encabezadoId, totalUsd: res.totalUsd, detalle: detalle.ok ? detalle : null });
     } catch (err) {
       console.error('Error al registrar la compra:', err);
       setError('Ocurrio un error inesperado al registrar la compra: ' + (err?.message || String(err)));
@@ -418,15 +410,6 @@ export default function Compras({ currentUser }) {
             <strong>${fmt(confirmacion.totalUsd)}</strong>
           </div>
           <p className="pos-receipt-note">La compra ya se envio a imprimir automaticamente.</p>
-          {/* DIAGNOSTICO TEMPORAL: compara este valor contra lo que aparece luego en Reportes
-              para el mismo N° de compra. Si son diferentes, el problema esta entre aqui y el
-              guardado; si son iguales, el problema esta en como Reportes lo muestra. Se puede
-              quitar despues de encontrar la causa. */}
-          {confirmacion.documentoEnviado !== undefined && (
-            <p style={{ fontSize: '0.75rem', color: '#98a2b3', fontFamily: 'monospace' }}>
-              Documento enviado: {JSON.stringify(confirmacion.documentoEnviado)}
-            </p>
-          )}
         </div>
         <div className="pos-receipt-actions">
           <button className="btn-ghost" onClick={handleReimprimir} disabled={imprimiendoCompra}>
