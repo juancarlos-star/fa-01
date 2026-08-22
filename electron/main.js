@@ -1547,7 +1547,228 @@ ipcMain.handle('facturas:eliminar', (event, { id }) => {
   return { ok: true };
 });
 
-// ---------- IPC: Gastos ----------
+// ---------- IPC: Devolucion de Facturas (ventas) ----------
+
+// Busca una factura de VENTA (no una devolucion) por su numero correlativo, para el modulo de
+// Devolucion de Facturas. Trae los datos del cliente y, por cada producto de la factura, cuanto
+// queda disponible para devolver: para accesorios, la cantidad original menos lo ya devuelto en
+// devoluciones previas; para equipos/SIM/USIM, el estado actual de cada codigo/IMEI (solo se
+// puede devolver lo que sigue "vendido" a esta misma factura; si ya se devolvio antes, no).
+ipcMain.handle('facturas:buscarPorNumero', (event, { numero }) => {
+  const db = getDb();
+  const texto = (numero || '').trim();
+  if (!texto) return { ok: false, message: 'Escribe el numero de factura de venta' };
+
+  // Misma normalizacion robusta que se uso para Devolucion de Compras: se quita todo lo que no
+  // sea letra o numero antes de comparar, para que no falle por espacios o caracteres invisibles
+  // que a veces trae el copiar y pegar.
+  const normalizar = (s) => (s || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const objetivo = normalizar(texto);
+
+  const candidatas = db.prepare('SELECT * FROM facturas ORDER BY id DESC').all();
+  const factura = candidatas.find((f) => normalizar(f.numero_factura) === objetivo);
+  if (!factura) return { ok: false, message: `No se encontro ninguna factura de venta con el numero "${texto}"` };
+  if (factura.es_devolucion) {
+    return {
+      ok: false,
+      message: `El numero "${texto}" corresponde a una devolucion (N° ${String(factura.numero_devolucion || '').padStart(6, '0')}), no a una factura de venta original`
+    };
+  }
+
+  // Si la venta tiene un cliente registrado (no fue "Consumidor final"), se trae tambien el
+  // telefono y el email desde la tabla clientes (la factura solo guarda nombre/rif/direccion
+  // "congelados" al momento de vender, para que la factura no cambie si el cliente se edita
+  // despues).
+  let clienteInfo = null;
+  if (factura.cliente_id) {
+    clienteInfo = db.prepare('SELECT telefono, email FROM clientes WHERE id = ?').get(factura.cliente_id);
+  }
+
+  const items = db.prepare('SELECT * FROM factura_items WHERE factura_id = ? AND es_devolucion = 0').all(factura.id);
+  const devolucionesPrevias = db.prepare('SELECT id FROM facturas WHERE devuelve_a_factura_id = ?').all(factura.id).map((r) => r.id);
+
+  const itemsConDetalle = items.map((item) => {
+    if (item.tipo === 'accesorio') {
+      let cantidadYaDevuelta = 0;
+      if (devolucionesPrevias.length > 0) {
+        const placeholders = devolucionesPrevias.map(() => '?').join(',');
+        const fila = db.prepare(
+          `SELECT COALESCE(SUM(cantidad),0) AS c FROM factura_items WHERE factura_id IN (${placeholders}) AND product_id = ? AND es_devolucion = 1`
+        ).get(...devolucionesPrevias, item.product_id);
+        cantidadYaDevuelta = fila.c || 0;
+      }
+      return {
+        ...item,
+        codigos: [],
+        unidades: [],
+        cantidad_ya_devuelta: cantidadYaDevuelta,
+        cantidad_disponible_devolver: Math.max(0, item.cantidad - cantidadYaDevuelta)
+      };
+    }
+    // Para equipos/SIM/USIM cada renglon de la factura es UNA unidad puntual (un solo unit_id).
+    // Esta disponible para devolver si su estado sigue 'vendido' (si ya se devolvio antes,
+    // pasaria a 'disponible' y ya no aplicaria para una nueva devolucion de esta misma venta).
+    const unidad = item.unit_id ? db.prepare('SELECT id, codigo, estado FROM inventory_units WHERE id = ?').get(item.unit_id) : null;
+    const disponibleParaDevolver = !!unidad && unidad.estado === 'vendido';
+    return {
+      ...item,
+      codigos: unidad ? [unidad.codigo] : [],
+      unidades: unidad ? [{ ...unidad, estado: disponibleParaDevolver ? 'disponible' : 'no_disponible' }] : [],
+      cantidad_ya_devuelta: disponibleParaDevolver ? 0 : 1,
+      cantidad_disponible_devolver: disponibleParaDevolver ? 1 : 0
+    };
+  });
+
+  return {
+    ok: true,
+    encabezado: { ...factura, cliente_telefono: clienteInfo?.telefono || '', cliente_email: clienteInfo?.email || '' },
+    items: itemsConDetalle
+  };
+});
+
+// ---------- IPC: numero de devolucion de FACTURA consecutivo (independiente del numero de
+// factura y tambien independiente del numero_devolucion de compras) ----------
+ipcMain.handle('facturas:proximoNumeroDevolucion', () => {
+  const db = getDb();
+  const fila = db.prepare(
+    'SELECT COALESCE(MAX(numero_devolucion), 0) + 1 AS proximo FROM facturas WHERE es_devolucion = 1'
+  ).get();
+  return { proximoNumero: fila.proximo };
+});
+
+// Registra la devolucion (total o parcial) de una factura de venta. Por cada producto
+// devuelto:
+//  - Se SUMA de vuelta al inventario (a diferencia de la devolucion de compra, aqui el
+//    producto SI vuelve a estar disponible para venderse otra vez): para accesorios, se
+//    incrementa el stock del deposito de la venta; para equipos/SIM/USIM, la unidad puntual
+//    vuelve a estado 'disponible'.
+//  - Se genera la "contraparte negativa": una NUEVA fila en facturas (es_devolucion=1, totales
+//    NEGATIVOS) enlazada a la factura original via devuelve_a_factura_id, fechada el dia de hoy.
+//    Como los reportes de ventas ya suman facturas.total_usd por rango de fechas, esto reduce
+//    automaticamente las ventas/ganancias del mes en que se hace la devolucion, sin alterar el
+//    registro historico de la venta original.
+ipcMain.handle('facturas:crearDevolucion', (event, payload) => {
+  const db = getDb();
+  try {
+    const { facturaId, items, usuario } = payload;
+    if (!facturaId) return { ok: false, message: 'Factura invalida' };
+    const original = db.prepare('SELECT * FROM facturas WHERE id = ? AND es_devolucion = 0').get(facturaId);
+    if (!original) return { ok: false, message: 'La factura original no fue encontrada' };
+    if (!items || items.length === 0) return { ok: false, message: 'Selecciona al menos un producto para devolver' };
+    if (!original.deposito_id) return { ok: false, message: 'La factura original no tiene deposito asociado' };
+
+    const devolucionesPrevias = db.prepare('SELECT id FROM facturas WHERE devuelve_a_factura_id = ?').all(facturaId).map((r) => r.id);
+
+    for (const item of items) {
+      const lineaOriginal = db.prepare(
+        'SELECT * FROM factura_items WHERE factura_id = ? AND product_id = ? AND tipo = ? AND es_devolucion = 0'
+        + (item.unit_id ? ' AND unit_id = ?' : '')
+      ).get(...(item.unit_id ? [facturaId, item.product_id, item.tipo, item.unit_id] : [facturaId, item.product_id, item.tipo]));
+      if (!lineaOriginal) return { ok: false, message: `El producto (id ${item.product_id}) no pertenece a esta factura` };
+
+      if (item.tipo === 'accesorio') {
+        const cantidad = parseInt(item.cantidad, 10);
+        if (!cantidad || cantidad <= 0) return { ok: false, message: `Cantidad invalida a devolver para "${lineaOriginal.descripcion}"` };
+        let yaDevuelta = 0;
+        if (devolucionesPrevias.length > 0) {
+          const placeholders = devolucionesPrevias.map(() => '?').join(',');
+          const fila = db.prepare(
+            `SELECT COALESCE(SUM(cantidad),0) AS c FROM factura_items WHERE factura_id IN (${placeholders}) AND product_id = ? AND es_devolucion = 1`
+          ).get(...devolucionesPrevias, item.product_id);
+          yaDevuelta = fila.c || 0;
+        }
+        const disponible = lineaOriginal.cantidad - yaDevuelta;
+        if (cantidad > disponible) return { ok: false, message: `Solo puedes devolver ${disponible} unidad(es) de "${lineaOriginal.descripcion}"` };
+      } else {
+        const unidad = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(item.unit_id);
+        if (!unidad) return { ok: false, message: `La unidad de "${lineaOriginal.descripcion}" no fue encontrada` };
+        if (unidad.estado !== 'vendido') return { ok: false, message: `El codigo "${unidad.codigo}" ya fue devuelto anteriormente, no se puede devolver de nuevo` };
+      }
+    }
+
+    let totalDevueltoUsd = 0;
+
+    const transaccion = db.transaction(() => {
+      const filaNumero = db.prepare(
+        'SELECT COALESCE(MAX(numero_devolucion), 0) + 1 AS proximo FROM facturas WHERE es_devolucion = 1'
+      ).get();
+      const numeroDevolucion = filaNumero.proximo;
+      const tasaCambio = original.tasa_cambio || 1;
+
+      const devInfo = db.prepare(
+        `INSERT INTO facturas
+           (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd,
+            tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, deposito_id, created_at,
+            es_devolucion, devuelve_a_factura_id, numero_devolucion)
+         VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, 0, 0, 0, ?, ?, ?, datetime('now','localtime'), 1, ?, ?)`
+      ).run(
+        original.cliente_id, original.cliente_nombre, original.cliente_rif, original.cliente_direccion,
+        `DEV-${original.numero_factura}`, tasaCambio, original.iva_porcentaje, usuario || '', original.deposito_id,
+        original.id, numeroDevolucion
+      );
+      const devolucionId = devInfo.lastInsertRowid;
+
+      const insertItem = db.prepare(
+        `INSERT INTO factura_items
+           (factura_id, product_id, unit_id, tipo, descripcion, codigo, cantidad, precio_unitario_usd, subtotal_usd, costo_unitario_usd, es_devolucion)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+      );
+
+      for (const item of items) {
+        const lineaOriginal = db.prepare(
+          'SELECT * FROM factura_items WHERE factura_id = ? AND product_id = ? AND tipo = ? AND es_devolucion = 0'
+          + (item.unit_id ? ' AND unit_id = ?' : '')
+        ).get(...(item.unit_id ? [facturaId, item.product_id, item.tipo, item.unit_id] : [facturaId, item.product_id, item.tipo]));
+
+        if (item.tipo === 'accesorio') {
+          const cantidad = parseInt(item.cantidad, 10);
+          const totalLinea = lineaOriginal.precio_unitario_usd * cantidad;
+          ajustarStockDeposito(db, item.product_id, original.deposito_id, cantidad);
+          insertItem.run(
+            devolucionId, item.product_id, null, 'accesorio', lineaOriginal.descripcion, null,
+            cantidad, lineaOriginal.precio_unitario_usd, -totalLinea, lineaOriginal.costo_unitario_usd
+          );
+          totalDevueltoUsd += totalLinea;
+        } else {
+          const unidad = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(item.unit_id);
+          db.prepare(
+            "UPDATE inventory_units SET estado = 'disponible', devolucion_factura_id = ? WHERE id = ?"
+          ).run(devolucionId, unidad.id);
+          const totalLinea = lineaOriginal.precio_unitario_usd;
+          insertItem.run(
+            devolucionId, item.product_id, unidad.id, item.tipo, lineaOriginal.descripcion, unidad.codigo,
+            1, lineaOriginal.precio_unitario_usd, -totalLinea, lineaOriginal.costo_unitario_usd
+          );
+          totalDevueltoUsd += totalLinea;
+        }
+      }
+
+      const ivaPorcentaje = original.iva_porcentaje || 0;
+      // totalDevueltoUsd es la suma de precio_unitario_usd * cantidad de los renglones devueltos,
+      // es decir ya es la BASE IMPONIBLE (sin IVA) -igual que "subtotalUsd" en facturas:crear-,
+      // asi que el IVA se calcula a partir de ella, no al reves.
+      const subtotalDevuelto = totalDevueltoUsd;
+      const ivaDevuelto = subtotalDevuelto * (ivaPorcentaje / 100);
+      const totalConIvaDevuelto = subtotalDevuelto + ivaDevuelto;
+
+      db.prepare(
+        `UPDATE facturas SET subtotal_usd = ?, iva_usd = ?, total_usd = ?, subtotal_bs = ?, iva_bs = ?, total_bs = ? WHERE id = ?`
+      ).run(
+        -subtotalDevuelto, -ivaDevuelto, -totalConIvaDevuelto,
+        -subtotalDevuelto * tasaCambio, -ivaDevuelto * tasaCambio, -totalConIvaDevuelto * tasaCambio,
+        devolucionId
+      );
+
+      return { devolucionId, numeroDevolucion, totalConIvaDevuelto };
+    });
+
+    const { devolucionId, numeroDevolucion, totalConIvaDevuelto } = transaccion();
+    return { ok: true, devolucionId, numeroDevolucion, totalDevueltoUsd: totalConIvaDevuelto };
+  } catch (err) {
+    console.error('Error en facturas:crearDevolucion', err);
+    return { ok: false, message: 'Error inesperado: ' + (err?.message || String(err)) };
+  }
+});
 ipcMain.handle('gastos:create', (event, { concepto, categoria, monto_usd, usuario }) => {
   const db = getDb();
   if (!concepto || !concepto.trim()) return { ok: false, message: 'El concepto es obligatorio' };

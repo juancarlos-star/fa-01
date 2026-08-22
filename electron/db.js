@@ -320,6 +320,42 @@ function migrarDevolucionesCompraSiHaceFalta(database) {
   }
 }
 
+// Modulo de Devolucion de Facturas (ventas): misma idea que la devolucion de compras, pero al
+// reves en cuanto a inventario -aqui el producto SI vuelve a estar disponible para vender de
+// nuevo (en compras, en cambio, sale definitivamente al devolverse al proveedor)-.
+// Una devolucion de factura se guarda como su PROPIA fila en "facturas" (con totales
+// NEGATIVOS), enlazada a la factura original via devuelve_a_factura_id. "numero_devolucion" es
+// un consecutivo EXCLUSIVO de las devoluciones de factura (independiente del numero de factura
+// de venta y tambien independiente del numero_devolucion de compras, que vive en otra tabla).
+function migrarDevolucionesFacturaSiHaceFalta(database) {
+  const existeFacturas = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facturas'").get();
+  if (existeFacturas) {
+    if (!tieneColumna(database, 'facturas', 'es_devolucion')) {
+      database.exec('ALTER TABLE facturas ADD COLUMN es_devolucion INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!tieneColumna(database, 'facturas', 'devuelve_a_factura_id')) {
+      database.exec('ALTER TABLE facturas ADD COLUMN devuelve_a_factura_id INTEGER');
+    }
+    if (!tieneColumna(database, 'facturas', 'numero_devolucion')) {
+      database.exec('ALTER TABLE facturas ADD COLUMN numero_devolucion INTEGER');
+    }
+  }
+  // Solo para renglones de devolucion en factura_items: el costo/precio que tenia el producto en
+  // ese momento, para poder comparar despues contra el precio con el que se vendio.
+  const existeFacturaItems = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='factura_items'").get();
+  if (existeFacturaItems && !tieneColumna(database, 'factura_items', 'es_devolucion')) {
+    database.exec('ALTER TABLE factura_items ADD COLUMN es_devolucion INTEGER NOT NULL DEFAULT 0');
+  }
+  // A diferencia de la devolucion de COMPRA (que marca la unidad 'de_baja' porque sale del
+  // negocio), la devolucion de FACTURA marca la unidad de vuelta 'disponible' porque el
+  // producto fisicamente regreso al inventario. Este campo guarda de que devolucion de factura
+  // vino, solo para trazabilidad/reportes (no bloquea que se vuelva a vender).
+  const existeUnidadesFact = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_units'").get();
+  if (existeUnidadesFact && !tieneColumna(database, 'inventory_units', 'devolucion_factura_id')) {
+    database.exec('ALTER TABLE inventory_units ADD COLUMN devolucion_factura_id INTEGER');
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -474,6 +510,7 @@ function initDb() {
   migrarClientesCamposSiHaceFalta(database);
   migrarProveedoresYComprasEncabezadoSiHaceFalta(database);
   migrarDevolucionesCompraSiHaceFalta(database);
+  migrarDevolucionesFacturaSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');

@@ -70,6 +70,9 @@ contextBridge.exposeInMainWorld('api', {
   listFacturas: () => ipcRenderer.invoke('facturas:list'),
   detalleFactura: (id) => ipcRenderer.invoke('facturas:detalle', { id }),
   eliminarFactura: (id) => ipcRenderer.invoke('facturas:eliminar', { id }),
+  buscarFacturaPorNumero: (numero) => ipcRenderer.invoke('facturas:buscarPorNumero', { numero }),
+  proximoNumeroDevolucionFactura: () => ipcRenderer.invoke('facturas:proximoNumeroDevolucion'),
+  crearDevolucionFactura: (payload) => ipcRenderer.invoke('facturas:crearDevolucion', payload),
   // Compras y costos
   listCompras: (desde, hasta) => ipcRenderer.invoke('compras:list', { desde, hasta }),
   crearCompraLote: (payload) => ipcRenderer.invoke('compras:crearLote', payload),
