@@ -15,6 +15,14 @@ function obtenerStockDeposito(db, productId, depositoId) {
   return row ? row.cantidad : 0;
 }
 
+// Porcentaje de IVA configurado actualmente (Configuracion). Se usa para sellar cada compra con
+// el porcentaje vigente al momento de registrarla (igual que ya se hace en facturas), y como
+// respaldo al calcular el Libro de Compras IVA de compras antiguas que no lo tengan guardado.
+function obtenerIvaPorcentajeActual(db) {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'iva_porcentaje'").get();
+  return row ? parseFloat(row.value) || 0 : 0;
+}
+
 function ajustarStockDeposito(db, productId, depositoId, delta) {
   db.prepare(
     `INSERT INTO product_stock_deposito (product_id, deposito_id, cantidad) VALUES (?, ?, ?)
@@ -1995,13 +2003,14 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
     let totalUsd = 0;
 
     const transaccion = db.transaction(() => {
+      const ivaPorcentajeActual = obtenerIvaPorcentajeActual(db);
       const encabezadoInfo = db.prepare(
         `INSERT INTO compras_encabezado
-           (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda, numero_factura_compra, total_usd, usuario, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'))`
+           (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda, numero_factura_compra, total_usd, usuario, created_at, iva_porcentaje)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), ?)`
       ).run(
         proveedor.trim(), proveedorId || null, proveedorRif || '', proveedorTelefono || '', proveedorDireccion || '',
-        moneda || 'Bs', numeroFacturaCompra.trim(), usuario || ''
+        moneda || 'Bs', numeroFacturaCompra.trim(), usuario || '', ivaPorcentajeActual
       );
       const encabezadoId = encabezadoInfo.lastInsertRowid;
 
@@ -2265,11 +2274,12 @@ ipcMain.handle('compras:crearDevolucion', (event, payload) => {
       const devInfo = db.prepare(
         `INSERT INTO compras_encabezado
            (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda,
-            numero_factura_compra, total_usd, usuario, created_at, es_devolucion, devuelve_a_encabezado_id, numero_devolucion)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), 1, ?, ?)`
+            numero_factura_compra, total_usd, usuario, created_at, es_devolucion, devuelve_a_encabezado_id, numero_devolucion, iva_porcentaje)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), 1, ?, ?, ?)`
       ).run(
         original.proveedor, original.proveedor_id, original.proveedor_rif, original.proveedor_telefono, original.proveedor_direccion,
-        original.moneda, `DEV-${original.numero_factura_compra}`, usuario || '', original.id, numeroDevolucion
+        original.moneda, `DEV-${original.numero_factura_compra}`, usuario || '', original.id, numeroDevolucion,
+        original.iva_porcentaje !== null && original.iva_porcentaje !== undefined ? original.iva_porcentaje : obtenerIvaPorcentajeActual(db)
       );
       const devolucionId = devInfo.lastInsertRowid;
 
@@ -2517,6 +2527,79 @@ ipcMain.handle('reportes:devolucionesCompras', (event, { desde, hasta }) => {
   }));
   const totalUsd = devoluciones.reduce((acc, d) => acc + d.total_usd, 0);
   return { ok: true, desde, hasta, devoluciones: conOriginal, cantidad: devoluciones.length, totalUsd };
+});
+
+// ---------- IPC: Libro de Ventas IVA ----------
+// Trae TODAS las facturas del periodo (ventas normales y sus notas de credito/devolucion)
+// ordenadas por fecha, tal como exige un libro de ventas: cada documento con su fecha, numero,
+// datos del cliente, base imponible, IVA y total. Las devoluciones ya vienen con montos
+// NEGATIVOS (asi se guardaron), asi que sumarlas todas da directamente el neto del periodo.
+ipcMain.handle('reportes:libroVentasIva', (event, { desde, hasta }) => {
+  const db = getDb();
+  const filas = db.prepare(
+    "SELECT * FROM facturas WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at ASC, id ASC"
+  ).all(desde, hasta);
+
+  const getOriginal = db.prepare('SELECT numero_factura FROM facturas WHERE id = ?');
+  const filasConReferencia = filas.map((f) => ({
+    ...f,
+    numero_factura_original: f.es_devolucion && f.devuelve_a_factura_id
+      ? (getOriginal.get(f.devuelve_a_factura_id)?.numero_factura || null)
+      : null
+  }));
+
+  const totalBaseUsd = filasConReferencia.reduce((acc, f) => acc + f.subtotal_usd, 0);
+  const totalIvaUsd = filasConReferencia.reduce((acc, f) => acc + f.iva_usd, 0);
+  const totalGeneralUsd = filasConReferencia.reduce((acc, f) => acc + f.total_usd, 0);
+  const totalBaseBs = filasConReferencia.reduce((acc, f) => acc + f.subtotal_bs, 0);
+  const totalIvaBs = filasConReferencia.reduce((acc, f) => acc + f.iva_bs, 0);
+  const totalGeneralBs = filasConReferencia.reduce((acc, f) => acc + f.total_bs, 0);
+
+  return {
+    ok: true, desde, hasta, filas: filasConReferencia, cantidad: filasConReferencia.length,
+    totalBaseUsd, totalIvaUsd, totalGeneralUsd, totalBaseBs, totalIvaBs, totalGeneralBs
+  };
+});
+
+// ---------- IPC: Libro de Compras IVA ----------
+// Igual que el Libro de Ventas, pero con compras_encabezado (compras normales + sus
+// devoluciones, ya en negativo). Como compras_encabezado.total_usd es la BASE IMPONIBLE (el
+// costo, sin IVA -asi se guarda desde que se registra la compra-), el IVA de cada compra se
+// calcula con el porcentaje que quedo guardado en esa compra (iva_porcentaje); para compras
+// anteriores a ese cambio, que quedaron en NULL, se usa el porcentaje configurado actualmente.
+ipcMain.handle('reportes:libroComprasIva', (event, { desde, hasta }) => {
+  const db = getDb();
+  const ivaPorcentajeActual = obtenerIvaPorcentajeActual(db);
+  const filas = db.prepare(
+    "SELECT * FROM compras_encabezado WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at ASC, id ASC"
+  ).all(desde, hasta);
+
+  const getOriginal = db.prepare('SELECT numero_factura_compra FROM compras_encabezado WHERE id = ?');
+  const filasConCalculo = filas.map((f) => {
+    const ivaPorcentaje = (f.iva_porcentaje !== null && f.iva_porcentaje !== undefined) ? f.iva_porcentaje : ivaPorcentajeActual;
+    const baseUsd = f.total_usd;
+    const ivaUsd = baseUsd * (ivaPorcentaje / 100);
+    const totalUsd = baseUsd + ivaUsd;
+    return {
+      ...f,
+      numero_factura_compra_original: f.es_devolucion && f.devuelve_a_encabezado_id
+        ? (getOriginal.get(f.devuelve_a_encabezado_id)?.numero_factura_compra || null)
+        : null,
+      iva_porcentaje_usado: ivaPorcentaje,
+      base_usd: baseUsd,
+      iva_usd: ivaUsd,
+      total_con_iva_usd: totalUsd
+    };
+  });
+
+  const totalBaseUsd = filasConCalculo.reduce((acc, f) => acc + f.base_usd, 0);
+  const totalIvaUsd = filasConCalculo.reduce((acc, f) => acc + f.iva_usd, 0);
+  const totalGeneralUsd = filasConCalculo.reduce((acc, f) => acc + f.total_con_iva_usd, 0);
+
+  return {
+    ok: true, desde, hasta, filas: filasConCalculo, cantidad: filasConCalculo.length,
+    totalBaseUsd, totalIvaUsd, totalGeneralUsd
+  };
 });
 
 ipcMain.handle('reportes:productosVendidos', (event, { desde, hasta, tipo, product_id }) => {

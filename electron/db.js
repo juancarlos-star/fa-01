@@ -282,6 +282,19 @@ function migrarProveedoresYComprasEncabezadoSiHaceFalta(database) {
   }
 }
 
+// Libro de Compras IVA: a diferencia de facturas (que ya guardaba iva_porcentaje por cada
+// venta), compras_encabezado solo guardaba el total SIN desglosar el IVA. Se agrega esta
+// columna para que cada compra quede con el porcentaje de IVA vigente al momento de
+// registrarla (y no el de "ahora"), igual que ya funciona para las ventas. Para compras
+// anteriores a este cambio, que quedan en NULL, el reporte usa el porcentaje configurado
+// actualmente como respaldo.
+function migrarIvaPorcentajeComprasSiHaceFalta(database) {
+  const existeCompras = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras_encabezado'").get();
+  if (existeCompras && !tieneColumna(database, 'compras_encabezado', 'iva_porcentaje')) {
+    database.exec('ALTER TABLE compras_encabezado ADD COLUMN iva_porcentaje REAL');
+  }
+}
+
 // Modulo de Devolucion de Compras: una devolucion se guarda como su PROPIO encabezado de
 // compra (con total NEGATIVO), enlazado al encabezado original que se esta devolviendo. Asi,
 // los reportes que ya suman compras_encabezado.total_usd por rango de fechas reflejan la
@@ -509,6 +522,7 @@ function initDb() {
   migrarPreciosYCodigoProductoSiHaceFalta(database);
   migrarClientesCamposSiHaceFalta(database);
   migrarProveedoresYComprasEncabezadoSiHaceFalta(database);
+  migrarIvaPorcentajeComprasSiHaceFalta(database);
   migrarDevolucionesCompraSiHaceFalta(database);
   migrarDevolucionesFacturaSiHaceFalta(database);
 
