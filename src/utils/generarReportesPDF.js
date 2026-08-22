@@ -557,3 +557,77 @@ export async function generarPDFVentasPorCliente(cliente, facturas) {
 
   await guardarYAbrirPDF(doc, `Transacciones-Cliente_${fechaParaNombreArchivo()}`, 'Reportes');
 }
+
+// ---------------- Impuestos: Libro de Ventas IVA ----------------
+
+export async function generarPDFLibroVentasIva(reporte, desde, hasta) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  encabezado(doc, 'Libro de Ventas IVA', desde, hasta);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text(
+    `Documentos: ${reporte.cantidad}   —   Base: $${fmt(reporte.totalBaseUsd)}   —   IVA: $${fmt(reporte.totalIvaUsd)}   —   Total: $${fmt(reporte.totalGeneralUsd)}`,
+    10,
+    34
+  );
+
+  autoTable(doc, {
+    startY: 40,
+    head: [['Fecha', 'Documento', 'Cliente', 'RIF/Cédula', 'Base imponible', 'IVA', 'Total']],
+    body: reporte.filas.map((f) => [
+      f.created_at,
+      (f.numero_factura || String(f.id).padStart(6, '0')) + (f.es_devolucion ? ` (N/C dev. ${f.numero_factura_original || ''})` : ''),
+      f.cliente_nombre || '—',
+      f.cliente_rif || '—',
+      `$${fmt(f.subtotal_usd)}`,
+      `$${fmt(f.iva_usd)}`,
+      `$${fmt(f.total_usd)}`
+    ]),
+    foot: [['', '', '', 'Totales', `$${fmt(reporte.totalBaseUsd)}`, `$${fmt(reporte.totalIvaUsd)}`, `$${fmt(reporte.totalGeneralUsd)}`]],
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    footStyles: { fillColor: [230, 230, 230], textColor: [0, 0, 0], fontStyle: 'bold' },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Libro-Ventas-IVA_${fechaParaNombreArchivo()}`, 'Reportes');
+}
+
+// ---------------- Impuestos: Libro de Compras IVA ----------------
+
+export async function generarPDFLibroComprasIva(reporte, desde, hasta) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  encabezado(doc, 'Libro de Compras IVA', desde, hasta);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text(
+    `Documentos: ${reporte.cantidad}   —   Base: $${fmt(reporte.totalBaseUsd)}   —   IVA: $${fmt(reporte.totalIvaUsd)}   —   Total: $${fmt(reporte.totalGeneralUsd)}`,
+    10,
+    34
+  );
+
+  autoTable(doc, {
+    startY: 40,
+    head: [['Fecha', 'Documento', 'Proveedor', 'RIF', 'Base imponible', 'IVA', 'Total']],
+    body: reporte.filas.map((f) => [
+      f.created_at,
+      f.numero_factura_compra + (f.es_devolucion ? ` (N/C dev. ${f.numero_factura_compra_original || ''})` : ''),
+      f.proveedor || '—',
+      f.proveedor_rif || '—',
+      `$${fmt(f.base_usd)}`,
+      `$${fmt(f.iva_usd)} (${fmt(f.iva_porcentaje_usado, 0)}%)`,
+      `$${fmt(f.total_con_iva_usd)}`
+    ]),
+    foot: [['', '', '', 'Totales', `$${fmt(reporte.totalBaseUsd)}`, `$${fmt(reporte.totalIvaUsd)}`, `$${fmt(reporte.totalGeneralUsd)}`]],
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    footStyles: { fillColor: [230, 230, 230], textColor: [0, 0, 0], fontStyle: 'bold' },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Libro-Compras-IVA_${fechaParaNombreArchivo()}`, 'Reportes');
+}
