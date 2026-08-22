@@ -871,6 +871,69 @@ th {
   background: #083b78;
 }
 
+/* Reportes: fila de categorias (Inventario, Vendedores, Ventas, Compras...) y, debajo, la fila
+   de sub-reportes de la categoria activa. La categoria activa usa el azul principal y algo mas
+   grande/en mayusculas para que se note que es "el nivel de arriba"; el sub-tab activo usa un
+   azul mas claro, para diferenciar los dos niveles a simple vista. */
+.reportes-categorias {
+  display: flex;
+  gap: 0.4rem;
+  margin: 1rem 0 0.6rem;
+  flex-wrap: wrap;
+  border-bottom: 2px solid #d0d5dd;
+  padding-bottom: 0.6rem;
+}
+
+.reportes-categorias button {
+  padding: 0.5rem 1.1rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: #e2e8f0;
+  color: #344054;
+}
+
+.reportes-categorias button:hover {
+  background: #d5dce6;
+}
+
+.reportes-categorias button.active {
+  background: #0b4f9e;
+  color: #fff;
+}
+
+.reportes-subtabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.reportes-subtabs button {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  background: #fff;
+  color: #344054;
+}
+
+.reportes-subtabs button:hover {
+  background: #eef4ff;
+}
+
+.reportes-subtabs button.active {
+  background: #dbeafe;
+  border-color: #0b4f9e;
+  color: #0b4f9e;
+  font-weight: 600;
+}
+
 /* Impresion: al imprimir una pantalla que contenga un elemento .print-area (ej: la factura
    de una compra), se oculta todo lo demas (menu lateral, botones, filtros) y solo se imprime
    ese contenido. Los elementos con .no-print (botones de accion) tampoco se imprimen. */
