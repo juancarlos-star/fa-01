@@ -3,6 +3,7 @@ import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFec
 import CompraFacturaDetalle from '../components/CompraFacturaDetalle.jsx';
 import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
 import Facturas from './Facturas.jsx';
+import Etiquetas from './Etiquetas.jsx';
 import SelectorProducto from '../components/SelectorProducto.jsx';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { agruparItemsPorProducto } from '../utils/agruparFacturaItems.js';
@@ -28,8 +29,7 @@ import {
 } from '../utils/generarReportesPDF.js';import { fmt } from '../utils/format.js';
 
 // Reportes organizados por categorias (Inventario, Vendedores, Ventas, Compras...), cada una
-// con su propio sub-menu de reportes. Los reportes de Impuestos y Etiquetas se agregan en
-// partes siguientes; por ahora solo se muestran las categorias que ya tienen contenido.
+// con su propio sub-menu de reportes.
 const CATEGORIAS = [
   {
     key: 'inventario',
@@ -81,11 +81,18 @@ const CATEGORIAS = [
       { key: 'libroVentasIva', label: 'Libro de Ventas IVA' },
       { key: 'libroComprasIva', label: 'Libro de Compras IVA' }
     ]
+  },
+  {
+    key: 'etiquetas',
+    label: 'Etiquetas',
+    items: [
+      { key: 'etiquetas', label: 'Imprimir Etiquetas' }
+    ]
   }
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
-const SIN_FILTRO_FECHA = ['clientes', 'historial', 'inventarioProductos', 'inventarioFisico', 'vendedoresUltimasVentas', 'ventasCierreDiario'];
+const SIN_FILTRO_FECHA = ['clientes', 'historial', 'inventarioProductos', 'inventarioFisico', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
 
 export default function Reportes({ currentUser }) {
   const [categoria, setCategoria] = useState('ventas');
@@ -154,6 +161,7 @@ export default function Reportes({ currentUser }) {
       {tab === 'ventasPorCliente' && <ReporteVentasPorCliente desde={desde} hasta={hasta} />}
       {tab === 'libroVentasIva' && <ReporteLibroVentasIva desde={desde} hasta={hasta} />}
       {tab === 'libroComprasIva' && <ReporteLibroComprasIva desde={desde} hasta={hasta} />}
+      {tab === 'etiquetas' && <Etiquetas />}
     </div>
   );
 }
