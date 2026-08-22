@@ -354,10 +354,22 @@ function ReporteFacturas({ desde, hasta }) {
           </thead>
           <tbody>
             {reporte.facturas.map((f) => (
-              <tr key={f.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>#{f.numero_factura || String(f.id).padStart(6, '0')}</td>
+              <tr key={f.id} style={{ borderBottom: '1px solid #eee', color: f.es_devolucion ? '#b42318' : undefined }}>
+                <td style={{ padding: '0.5rem' }}>
+                  {f.es_devolucion ? `Devolución N° ${String(f.numero_devolucion).padStart(6, '0')}` : `#${f.numero_factura || String(f.id).padStart(6, '0')}`}
+                </td>
                 <td>{f.created_at}</td>
-                <td>{f.cliente_nombre}</td>
+                <td>
+                  {f.cliente_nombre}
+                  {Boolean(f.es_devolucion) && f.devuelve_a_factura_id && (
+                    <div style={{ fontSize: '0.78rem', color: '#98a2b3' }}>↩ Devuelve factura #{f.devuelve_a_factura_id}</div>
+                  )}
+                  {!f.es_devolucion && f.numerosDevolucion && f.numerosDevolucion.length > 0 && (
+                    <div style={{ fontSize: '0.78rem', color: '#b42318', fontWeight: 600 }}>
+                      {f.devueltoTotal ? '⚠ Devuelta por completo' : '⚠ Con devolución parcial'} — N° {f.numerosDevolucion.map((n) => String(n).padStart(6, '0')).join(', ')}
+                    </div>
+                  )}
+                </td>
                 <td>${fmt(f.total_usd)}</td>
                 <td>Bs {fmt(f.total_bs)}</td>
                 <td><button onClick={() => verDetalle(f.id)}>Ver</button></td>

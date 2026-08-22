@@ -35,12 +35,12 @@ export default function Facturas({ currentUser }) {
     return (
       <div>
         <button onClick={() => setDetalle(null)}>&larr; Volver</button>
-        <h1>Factura N° {factura.numero_factura || String(factura.id).padStart(6, '0')}</h1>
+        <h1>Factura N° {factura.es_devolucion ? `Devolución ${String(factura.numero_devolucion).padStart(6, '0')}` : (factura.numero_factura || String(factura.id).padStart(6, '0'))}</h1>
         <p><strong>Cliente:</strong> {factura.cliente_nombre} {factura.cliente_rif ? `(${factura.cliente_rif})` : ''}</p>
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
         <button onClick={() => generarFacturaPDF(factura, items)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
-        {esAdmin && (
+        {esAdmin && !factura.es_devolucion && (
           <button onClick={() => handleEliminar(factura.id)} style={{ marginBottom: '1rem', marginLeft: '8px', color: '#b42318' }}>
             Eliminar factura
           </button>
@@ -96,15 +96,17 @@ export default function Facturas({ currentUser }) {
           </thead>
           <tbody>
             {facturas.map((f) => (
-              <tr key={f.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>#{f.numero_factura || String(f.id).padStart(6, '0')}</td>
+              <tr key={f.id} style={{ borderBottom: '1px solid #eee', color: f.es_devolucion ? '#b42318' : undefined }}>
+                <td style={{ padding: '0.5rem' }}>
+                  {f.es_devolucion ? `Devolución N° ${String(f.numero_devolucion).padStart(6, '0')}` : `#${f.numero_factura || String(f.id).padStart(6, '0')}`}
+                </td>
                 <td>{f.created_at}</td>
                 <td>{f.cliente_nombre}</td>
                 <td>${fmt(f.total_usd)}</td>
                 <td>Bs {fmt(f.total_bs)}</td>
                 <td style={{ display: 'flex', gap: '0.4rem' }}>
                   <button onClick={() => verDetalle(f.id)}>Ver</button>
-                  {esAdmin && (
+                  {esAdmin && !f.es_devolucion && (
                     <button onClick={() => handleEliminar(f.id)} style={{ color: '#b42318' }}>Eliminar</button>
                   )}
                 </td>
