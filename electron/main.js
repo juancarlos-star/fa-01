@@ -505,6 +505,16 @@ ipcMain.handle('products:buscarPorCodigo', (event, { codigo, depositoId }) => {
   return null;
 });
 
+// Lista de unidades (IMEI/ICCID) disponibles de un producto puntual, usada por la pantalla de
+// Etiquetas para elegir cuales imprimir (a diferencia del conteo que ya devuelve products:list,
+// aqui se necesita el codigo de cada unidad).
+ipcMain.handle('products:unidadesDisponibles', (event, { productId }) => {
+  const db = getDb();
+  return db.prepare(
+    "SELECT id, codigo FROM inventory_units WHERE product_id = ? AND estado = 'disponible' ORDER BY codigo"
+  ).all(productId);
+});
+
 ipcMain.handle('products:names', (event, { tipo, categoria } = {}) => {
   const db = getDb();
   let rows;
