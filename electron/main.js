@@ -1902,6 +1902,8 @@ ipcMain.handle('compras:buscarPorDocumento', (event, { documento }) => {
   const devolucionesPrevias = db.prepare('SELECT id FROM compras_encabezado WHERE devuelve_a_encabezado_id = ?').all(encabezado.id).map((r) => r.id);
 
   const itemsConDetalle = items.map((item) => {
+    const producto = db.prepare('SELECT codigo_producto FROM products WHERE id = ?').get(item.product_id);
+    const codigoProducto = producto ? producto.codigo_producto : null;
     if (item.tipo === 'accesorio') {
       let cantidadYaDevuelta = 0;
       if (devolucionesPrevias.length > 0) {
@@ -1913,6 +1915,7 @@ ipcMain.handle('compras:buscarPorDocumento', (event, { documento }) => {
       }
       return {
         ...item,
+        producto_codigo: codigoProducto,
         codigos: [],
         unidades: [],
         cantidad_ya_devuelta: cantidadYaDevuelta,
@@ -1924,6 +1927,7 @@ ipcMain.handle('compras:buscarPorDocumento', (event, { documento }) => {
     ).all(encabezado.id, item.product_id);
     return {
       ...item,
+      producto_codigo: codigoProducto,
       codigos: unidades.map((u) => u.codigo),
       unidades,
       cantidad_ya_devuelta: unidades.filter((u) => u.estado !== 'disponible').length,
