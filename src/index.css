@@ -105,8 +105,19 @@ body {
    quedan sombreados (opacos) para que el submenu flotante sea lo unico que resalte. Solo
    afecta a los <button> que son hijos DIRECTOS de <nav> (Inicio, Facturar, Inventario,
    Categorias, etc.) — el boton "Compras" vive dentro de ".sidebar-submenu-wrap" (un <div>, no
-   un <button> directo de nav), asi que no se ve afectado por esta regla y se mantiene visible. */
+   un <button> directo de nav), asi que no se ve afectado por esta regla; ese caso se maneja
+   aparte con la clase ".dimmed" (ver App.jsx), que se agrega solo al wrap del submenu que NO
+   esta abierto. */
 .sidebar nav.submenu-open > button {
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* El boton con submenu que NO esta abierto (ej: "Facturar" mientras el submenu de "Compras"
+   esta abierto, o viceversa) tambien debe apagarse, para que solo quede resaltado el que
+   realmente tiene su submenu desplegado. */
+.sidebar-submenu-wrap.dimmed > button {
   opacity: 0.35;
   pointer-events: none;
   transition: opacity 0.15s ease;

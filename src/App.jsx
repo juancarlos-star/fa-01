@@ -28,6 +28,11 @@ export default function App() {
   };
   const vistasFacturacion = ['facturacion', 'devolucionFacturas'];
   const vistasCompras = ['compras', 'devolucionCompras'];
+  // Si hay CUALQUIER submenu abierto (Facturar o Compras), los botones que no son el que se
+  // abrio deben quedar apagados -- incluyendo el otro boton con submenu (Facturar/Compras),
+  // que antes se quedaba brillante porque vive dentro de un <div> y no es hijo directo de
+  // <nav>, por lo que la regla CSS que apaga al resto del menu no lo alcanzaba.
+  const algunSubmenuAbierto = menuFacturacionAbierto || menuComprasAbierto;
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -35,9 +40,9 @@ export default function App() {
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
-        <nav className={(menuFacturacionAbierto || menuComprasAbierto) ? 'submenu-open' : ''}>
+        <nav className={algunSubmenuAbierto ? 'submenu-open' : ''}>
           <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}>Inicio</button>
-          <div className="sidebar-submenu-wrap">
+          <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuFacturacionAbierto ? ' dimmed' : ''}`}>
             <button
               className={vistasFacturacion.includes(view) ? 'active' : ''}
               onClick={() => setMenuFacturacionAbierto((v) => !v)}
@@ -66,7 +71,7 @@ export default function App() {
           </div>
           <button className={view === 'inventario' ? 'active' : ''} onClick={() => setView('inventario')}>Inventario</button>
           {user.role === 'administrador' && (
-            <div className="sidebar-submenu-wrap">
+            <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuComprasAbierto ? ' dimmed' : ''}`}>
               <button
                 className={vistasCompras.includes(view) ? 'active' : ''}
                 onClick={() => setMenuComprasAbierto((v) => !v)}
