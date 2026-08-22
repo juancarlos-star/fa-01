@@ -12,7 +12,9 @@ import {
   generarPDFFacturas,
   generarPDFCargosDescargos,
   generarPDFClientes,
-  generarPDFProductosVendidos
+  generarPDFProductosVendidos,
+  generarPDFInventarioProductos,
+  generarPDFInventarioFisico
 } from '../utils/generarReportesPDF.js';
 import { fmt } from '../utils/format.js';
 
@@ -24,6 +26,8 @@ const CATEGORIAS = [
     key: 'inventario',
     label: 'Inventario',
     items: [
+      { key: 'inventarioProductos', label: 'Productos' },
+      { key: 'inventarioFisico', label: 'Inventario Físico' },
       { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' }
     ]
   },
@@ -56,7 +60,7 @@ const CATEGORIAS = [
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
-const SIN_FILTRO_FECHA = ['clientes', 'historial'];
+const SIN_FILTRO_FECHA = ['clientes', 'historial', 'inventarioProductos', 'inventarioFisico'];
 
 export default function Reportes({ currentUser }) {
   const [categoria, setCategoria] = useState('ventas');
@@ -113,6 +117,8 @@ export default function Reportes({ currentUser }) {
       {tab === 'productosVendidos' && <ReporteProductosVendidos desde={desde} hasta={hasta} />}
       {tab === 'cargosDescargos' && <ReporteCargosDescargos desde={desde} hasta={hasta} />}
       {tab === 'clientes' && <ReporteClientes />}
+      {tab === 'inventarioProductos' && <ReporteInventarioProductos />}
+      {tab === 'inventarioFisico' && <ReporteInventarioFisico />}
     </div>
   );
 }
@@ -904,6 +910,209 @@ function ReporteCargosDescargos({ desde, hasta }) {
             </tbody>
           </table>
         )
+      )}
+    </div>
+  );
+}
+
+// ---------------- Inventario: Productos (valorizado) ----------------
+
+const TIPO_LABEL_INV = { equipo: 'Equipo', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
+
+function ReporteInventarioProductos() {
+  const [depositos, setDepositos] = useState([]);
+  const [depositoId, setDepositoId] = useState('');
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  useEffect(() => { window.api.listDepositos(true).then(setDepositos); }, []);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteInventarioProductos(depositoId ? Number(depositoId) : null);
+    setReporte(data);
+    setCargando(false);
+  }, [depositoId]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const depositoLabel = depositoId
+    ? (depositos.find((d) => d.id === Number(depositoId))?.nombre || '—')
+    : 'Todos los depositos';
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFInventarioProductos(reporte, depositoLabel);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  if (cargando || !reporte) return <p>Cargando...</p>;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div className="form-box" style={{ maxWidth: '360px' }}>
+        <label>Deposito</label>
+        <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
+          <option value="">-- Todos los depositos --</option>
+          {depositos.map((d) => (
+            <option key={d.id} value={d.id}>{d.nombre}</option>
+          ))}
+        </select>
+      </div>
+
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+      <p>
+        Stock total: <strong>{reporte.totales.stock}</strong>
+        {' '}— Valor al costo: <strong>${fmt(reporte.totales.valorCostoUsd)}</strong>
+        {' '}— Valor a precio de venta: <strong>${fmt(reporte.totales.valorPrecioUsd)}</strong>
+      </p>
+
+      {reporte.productos.length === 0 ? (
+        <p>No hay productos cargados.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Tipo</th>
+              <th>Codigo</th>
+              <th>Producto</th>
+              <th>Stock</th>
+              <th>Costo prom.</th>
+              <th>Valor costo</th>
+              <th>Precio</th>
+              <th>Valor precio</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reporte.productos.map((p) => (
+              <tr key={p.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{TIPO_LABEL_INV[p.tipo] || p.tipo}</td>
+                <td>{p.codigo_producto || '—'}</td>
+                <td>{p.nombre}</td>
+                <td>{p.stock}</td>
+                <td>${fmt(p.costo_promedio_usd)}</td>
+                <td>${fmt(p.valorCostoUsd)}</td>
+                <td>${fmt(p.precio)}</td>
+                <td>${fmt(p.valorPrecioUsd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Inventario: Fisico (hoja de conteo) ----------------
+
+function ReporteInventarioFisico() {
+  const [depositos, setDepositos] = useState([]);
+  const [depositoId, setDepositoId] = useState('');
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  useEffect(() => {
+    window.api.listDepositos(true).then((lista) => {
+      setDepositos(lista);
+      if (lista.length > 0) setDepositoId((actual) => actual || String(lista[0].id));
+    });
+  }, []);
+
+  const cargar = useCallback(async () => {
+    if (!depositoId) { setReporte(null); return; }
+    setCargando(true);
+    const data = await window.api.getReporteInventarioFisico(Number(depositoId));
+    setReporte(data && data.ok ? data : null);
+    setCargando(false);
+  }, [depositoId]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFInventarioFisico(reporte);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div className="form-box" style={{ maxWidth: '360px' }}>
+        <label>Deposito a contar</label>
+        <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
+          {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
+          {depositos.map((d) => (
+            <option key={d.id} value={d.id}>{d.nombre}</option>
+          ))}
+        </select>
+      </div>
+
+      {cargando || !reporte ? (
+        <p>Cargando...</p>
+      ) : (
+        <>
+          <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+          <p style={{ color: '#667085', fontSize: '0.85rem' }}>
+            Esta hoja es para el conteo fisico: descarga el PDF, cuenta lo que hay realmente en
+            el deposito y compara contra la columna "en sistema". Este reporte no descuenta ni
+            ajusta stock automaticamente.
+          </p>
+
+          <h3>Accesorios (por cantidad) — {reporte.totalAccesorios} unidades en sistema</h3>
+          {reporte.accesorios.length === 0 ? (
+            <p>No hay accesorios cargados.</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1.5rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+                  <th style={{ padding: '0.5rem' }}>Codigo</th>
+                  <th>Producto</th>
+                  <th>Cant. en sistema</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reporte.accesorios.map((a) => (
+                  <tr key={a.product_id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '0.5rem' }}>{a.codigo_producto || '—'}</td>
+                    <td>{a.nombre}</td>
+                    <td>{a.cantidadSistema}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <h3>Equipos, SIM y USIM (por unidad) — {reporte.totalUnidades} unidades en sistema</h3>
+          {reporte.unidades.length === 0 ? (
+            <p>No hay unidades disponibles en este deposito.</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+                  <th style={{ padding: '0.5rem' }}>Tipo</th>
+                  <th>Producto</th>
+                  <th>Codigo / IMEI</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reporte.unidades.map((u) => (
+                  <tr key={u.unit_id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '0.5rem' }}>{TIPO_LABEL_INV[u.tipo] || u.tipo}</td>
+                    <td>{u.nombre}</td>
+                    <td>{u.codigo}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </div>
   );
