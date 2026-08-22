@@ -1588,6 +1588,8 @@ ipcMain.handle('facturas:buscarPorNumero', (event, { numero }) => {
   const devolucionesPrevias = db.prepare('SELECT id FROM facturas WHERE devuelve_a_factura_id = ?').all(factura.id).map((r) => r.id);
 
   const itemsConDetalle = items.map((item) => {
+    const producto = item.product_id ? db.prepare('SELECT codigo_producto FROM products WHERE id = ?').get(item.product_id) : null;
+    const codigoProducto = producto ? producto.codigo_producto : null;
     if (item.tipo === 'accesorio') {
       let cantidadYaDevuelta = 0;
       if (devolucionesPrevias.length > 0) {
@@ -1599,6 +1601,7 @@ ipcMain.handle('facturas:buscarPorNumero', (event, { numero }) => {
       }
       return {
         ...item,
+        producto_codigo: codigoProducto,
         codigos: [],
         unidades: [],
         cantidad_ya_devuelta: cantidadYaDevuelta,
@@ -1612,6 +1615,7 @@ ipcMain.handle('facturas:buscarPorNumero', (event, { numero }) => {
     const disponibleParaDevolver = !!unidad && unidad.estado === 'vendido';
     return {
       ...item,
+      producto_codigo: codigoProducto,
       codigos: unidad ? [unidad.codigo] : [],
       unidades: unidad ? [{ ...unidad, estado: disponibleParaDevolver ? 'disponible' : 'no_disponible' }] : [],
       cantidad_ya_devuelta: disponibleParaDevolver ? 0 : 1,
