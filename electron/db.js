@@ -282,6 +282,38 @@ function migrarProveedoresYComprasEncabezadoSiHaceFalta(database) {
   }
 }
 
+// Modulo de Devolucion de Compras: una devolucion se guarda como su PROPIO encabezado de
+// compra (con total NEGATIVO), enlazado al encabezado original que se esta devolviendo. Asi,
+// los reportes que ya suman compras_encabezado.total_usd por rango de fechas reflejan la
+// devolucion automaticamente en el mes en que se REALIZA la devolucion (no en el mes de la
+// compra original, que se mantiene intacto como registro historico). "es_devolucion" permite
+// distinguir un encabezado de devolucion de una compra normal en la misma tabla.
+function migrarDevolucionesCompraSiHaceFalta(database) {
+  const existeCompras = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras_encabezado'").get();
+  if (existeCompras) {
+    if (!tieneColumna(database, 'compras_encabezado', 'es_devolucion')) {
+      database.exec('ALTER TABLE compras_encabezado ADD COLUMN es_devolucion INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!tieneColumna(database, 'compras_encabezado', 'devuelve_a_encabezado_id')) {
+      database.exec('ALTER TABLE compras_encabezado ADD COLUMN devuelve_a_encabezado_id INTEGER');
+    }
+  }
+  const existeComprasDetalle = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras'").get();
+  if (existeComprasDetalle && !tieneColumna(database, 'compras', 'es_devolucion')) {
+    database.exec('ALTER TABLE compras ADD COLUMN es_devolucion INTEGER NOT NULL DEFAULT 0');
+  }
+  // Solo para renglones de devolucion: el costo promedio que tenia el producto en ese momento,
+  // para poder mostrar en el reporte la diferencia contra el costo con el que se compro
+  // originalmente.
+  if (existeComprasDetalle && !tieneColumna(database, 'compras', 'costo_actual_producto_usd')) {
+    database.exec('ALTER TABLE compras ADD COLUMN costo_actual_producto_usd REAL');
+  }
+  const existeUnidades = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_units'").get();
+  if (existeUnidades && !tieneColumna(database, 'inventory_units', 'devolucion_encabezado_id')) {
+    database.exec('ALTER TABLE inventory_units ADD COLUMN devolucion_encabezado_id INTEGER');
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -435,6 +467,7 @@ function initDb() {
   migrarPreciosYCodigoProductoSiHaceFalta(database);
   migrarClientesCamposSiHaceFalta(database);
   migrarProveedoresYComprasEncabezadoSiHaceFalta(database);
+  migrarDevolucionesCompraSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');

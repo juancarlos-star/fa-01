@@ -1833,7 +1833,227 @@ ipcMain.handle('compras:detalleEncabezado', (event, { id }) => {
     ...item,
     codigos: item.tipo === 'accesorio' ? [] : getCodigos.all(id, item.product_id).map((r) => r.codigo)
   }));
-  return { ok: true, encabezado, items: itemsConCodigos };
+
+  // Si esta compra tiene devoluciones (parciales o totales), se arma un resumen para que el
+  // Reporte de Compras pueda avisar: "esta compra fue devuelta" (total) o mostrar cuales
+  // productos se devolvieron y en cuanto cambio el costo del producto desde entonces (parcial).
+  // No aplica si el encabezado que se esta consultando ES, el mismo, una devolucion.
+  let devoluciones = [];
+  let resumenDevolucion = null;
+  if (!encabezado.es_devolucion) {
+    const devEncabezados = db.prepare('SELECT * FROM compras_encabezado WHERE devuelve_a_encabezado_id = ? ORDER BY id').all(id);
+    if (devEncabezados.length > 0) {
+      devoluciones = devEncabezados.map((dev) => {
+        const devItems = db.prepare('SELECT * FROM compras WHERE compra_encabezado_id = ? AND es_devolucion = 1').all(dev.id);
+        const devItemsConCodigos = devItems.map((di) => ({
+          ...di,
+          codigos: di.tipo === 'accesorio' ? [] : db.prepare(
+            'SELECT codigo FROM inventory_units WHERE devolucion_encabezado_id = ? AND product_id = ? ORDER BY id'
+          ).all(dev.id, di.product_id).map((r) => r.codigo)
+        }));
+        return { ...dev, items: devItemsConCodigos };
+      });
+
+      const resumenPorProducto = new Map();
+      for (const item of itemsConCodigos) {
+        resumenPorProducto.set(item.product_id, {
+          product_id: item.product_id,
+          descripcion: item.descripcion,
+          cantidad_original: item.cantidad,
+          cantidad_devuelta: 0,
+          costo_original_usd: item.costo_unitario_usd,
+          costo_actual_usd: null
+        });
+      }
+      for (const dev of devoluciones) {
+        for (const di of dev.items) {
+          const r = resumenPorProducto.get(di.product_id);
+          if (r) {
+            r.cantidad_devuelta += di.cantidad;
+            r.costo_actual_usd = di.costo_actual_producto_usd;
+          }
+        }
+      }
+      const resumenArray = Array.from(resumenPorProducto.values());
+      const esTotal = resumenArray.length > 0 && resumenArray.every((r) => r.cantidad_devuelta >= r.cantidad_original);
+      resumenDevolucion = { esTotal, productos: resumenArray.filter((r) => r.cantidad_devuelta > 0) };
+    }
+  }
+
+  return { ok: true, encabezado, items: itemsConCodigos, devoluciones, resumenDevolucion };
+});
+
+// Busca una compra (NO una devolucion) por su numero de documento, para el modulo de
+// Devolucion de Compras. Trae, para cada producto de la compra, cuanto queda disponible para
+// devolver: para accesorios, la cantidad original menos lo ya devuelto en devoluciones previas;
+// para equipos/SIM/USIM, el estado actual de cada codigo/IMEI individual (solo se puede
+// devolver lo que sigue "disponible": lo que ya se vendio o ya se devolvio antes, no).
+ipcMain.handle('compras:buscarPorDocumento', (event, { documento }) => {
+  const db = getDb();
+  const texto = (documento || '').trim();
+  if (!texto) return { ok: false, message: 'Escribe el numero de documento de compra' };
+
+  const encabezado = db.prepare(
+    `SELECT * FROM compras_encabezado WHERE numero_factura_compra = ? COLLATE NOCASE AND es_devolucion = 0 ORDER BY id DESC LIMIT 1`
+  ).get(texto);
+  if (!encabezado) return { ok: false, message: `No se encontro ninguna compra (no una devolucion) con el documento "${texto}"` };
+
+  const items = db.prepare('SELECT * FROM compras WHERE compra_encabezado_id = ? AND es_devolucion = 0').all(encabezado.id);
+  const devolucionesPrevias = db.prepare('SELECT id FROM compras_encabezado WHERE devuelve_a_encabezado_id = ?').all(encabezado.id).map((r) => r.id);
+
+  const itemsConDetalle = items.map((item) => {
+    if (item.tipo === 'accesorio') {
+      let cantidadYaDevuelta = 0;
+      if (devolucionesPrevias.length > 0) {
+        const placeholders = devolucionesPrevias.map(() => '?').join(',');
+        const fila = db.prepare(
+          `SELECT COALESCE(SUM(cantidad),0) AS c FROM compras WHERE compra_encabezado_id IN (${placeholders}) AND product_id = ? AND es_devolucion = 1`
+        ).get(...devolucionesPrevias, item.product_id);
+        cantidadYaDevuelta = fila.c || 0;
+      }
+      return {
+        ...item,
+        codigos: [],
+        unidades: [],
+        cantidad_ya_devuelta: cantidadYaDevuelta,
+        cantidad_disponible_devolver: Math.max(0, item.cantidad - cantidadYaDevuelta)
+      };
+    }
+    const unidades = db.prepare(
+      'SELECT id, codigo, estado FROM inventory_units WHERE compra_encabezado_id = ? AND product_id = ? ORDER BY id'
+    ).all(encabezado.id, item.product_id);
+    return {
+      ...item,
+      codigos: unidades.map((u) => u.codigo),
+      unidades,
+      cantidad_ya_devuelta: unidades.filter((u) => u.estado !== 'disponible').length,
+      cantidad_disponible_devolver: unidades.filter((u) => u.estado === 'disponible').length
+    };
+  });
+
+  return { ok: true, encabezado, items: itemsConDetalle };
+});
+
+// Registra la devolucion (total o parcial) de una compra. Por cada producto devuelto:
+//  - Se resta del inventario: para accesorios, se descuenta la cantidad del deposito donde
+//    habia entrado esa compra; para equipos/SIM/USIM, cada codigo/IMEI puntual pasa a
+//    'de_baja' (deja de estar disponible para vender).
+//  - Se genera la "contraparte negativa": un NUEVO encabezado de compra (es_devolucion=1,
+//    total_usd NEGATIVO) enlazado al original via devuelve_a_encabezado_id, con su propia
+//    fecha (hoy). Como los reportes de compras ya suman compras_encabezado.total_usd por rango
+//    de fechas, esto reduce automaticamente el total de "compras del mes" del mes en que se
+//    hace la devolucion, sin alterar el registro historico de la compra original.
+ipcMain.handle('compras:crearDevolucion', (event, payload) => {
+  const db = getDb();
+  try {
+    const { compraEncabezadoId, items, usuario } = payload;
+    if (!compraEncabezadoId) return { ok: false, message: 'Compra invalida' };
+    const original = db.prepare('SELECT * FROM compras_encabezado WHERE id = ? AND es_devolucion = 0').get(compraEncabezadoId);
+    if (!original) return { ok: false, message: 'La compra original no fue encontrada' };
+    if (!items || items.length === 0) return { ok: false, message: 'Selecciona al menos un producto para devolver' };
+
+    const devolucionesPrevias = db.prepare('SELECT id FROM compras_encabezado WHERE devuelve_a_encabezado_id = ?').all(compraEncabezadoId).map((r) => r.id);
+
+    for (const item of items) {
+      const lineaOriginal = db.prepare(
+        'SELECT * FROM compras WHERE compra_encabezado_id = ? AND product_id = ? AND es_devolucion = 0'
+      ).get(compraEncabezadoId, item.product_id);
+      if (!lineaOriginal) return { ok: false, message: `El producto (id ${item.product_id}) no pertenece a esta compra` };
+
+      if (lineaOriginal.tipo === 'accesorio') {
+        const cantidad = parseInt(item.cantidad, 10);
+        if (!cantidad || cantidad <= 0) return { ok: false, message: `Cantidad invalida a devolver para "${lineaOriginal.descripcion}"` };
+        let yaDevuelta = 0;
+        if (devolucionesPrevias.length > 0) {
+          const placeholders = devolucionesPrevias.map(() => '?').join(',');
+          const fila = db.prepare(
+            `SELECT COALESCE(SUM(cantidad),0) AS c FROM compras WHERE compra_encabezado_id IN (${placeholders}) AND product_id = ? AND es_devolucion = 1`
+          ).get(...devolucionesPrevias, item.product_id);
+          yaDevuelta = fila.c || 0;
+        }
+        const disponible = lineaOriginal.cantidad - yaDevuelta;
+        if (cantidad > disponible) return { ok: false, message: `Solo puedes devolver ${disponible} unidad(es) de "${lineaOriginal.descripcion}"` };
+      } else {
+        const codigos = Array.isArray(item.codigos) ? item.codigos.map((c) => (c || '').trim()).filter(Boolean) : [];
+        if (codigos.length === 0) return { ok: false, message: `Selecciona los codigos/IMEI a devolver de "${lineaOriginal.descripcion}"` };
+        for (const codigo of codigos) {
+          const unidad = db.prepare(
+            'SELECT * FROM inventory_units WHERE codigo = ? COLLATE NOCASE AND compra_encabezado_id = ? AND product_id = ?'
+          ).get(codigo, compraEncabezadoId, item.product_id);
+          if (!unidad) return { ok: false, message: `El codigo "${codigo}" no pertenece a esta compra` };
+          if (unidad.estado !== 'disponible') return { ok: false, message: `El codigo "${codigo}" ya fue vendido o devuelto anteriormente, no se puede devolver de nuevo` };
+        }
+      }
+    }
+
+    let totalDevueltoUsd = 0;
+
+    const transaccion = db.transaction(() => {
+      const devInfo = db.prepare(
+        `INSERT INTO compras_encabezado
+           (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda,
+            numero_factura_compra, total_usd, usuario, created_at, es_devolucion, devuelve_a_encabezado_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), 1, ?)`
+      ).run(
+        original.proveedor, original.proveedor_id, original.proveedor_rif, original.proveedor_telefono, original.proveedor_direccion,
+        original.moneda, `DEV-${original.numero_factura_compra}`, usuario || '', original.id
+      );
+      const devolucionId = devInfo.lastInsertRowid;
+
+      const insertLinea = db.prepare(
+        `INSERT INTO compras
+           (product_id, tipo, descripcion, costo_unitario_usd, cantidad, total_usd, usuario, created_at,
+            compra_encabezado_id, deposito_id, es_devolucion, costo_actual_producto_usd)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?, 1, ?)`
+      );
+      const marcarUnidadDevuelta = db.prepare(
+        `UPDATE inventory_units SET estado = 'de_baja', devolucion_encabezado_id = ? WHERE id = ?`
+      );
+
+      for (const item of items) {
+        const lineaOriginal = db.prepare(
+          'SELECT * FROM compras WHERE compra_encabezado_id = ? AND product_id = ? AND es_devolucion = 0'
+        ).get(compraEncabezadoId, item.product_id);
+        const producto = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
+        const costoUnit = lineaOriginal.costo_unitario_usd;
+        const costoActualProducto = producto ? producto.costo_promedio_usd : null;
+
+        if (lineaOriginal.tipo === 'accesorio') {
+          const cantidad = parseInt(item.cantidad, 10);
+          const totalLinea = costoUnit * cantidad;
+          ajustarStockDeposito(db, item.product_id, lineaOriginal.deposito_id, -cantidad);
+          insertLinea.run(
+            item.product_id, lineaOriginal.tipo, lineaOriginal.descripcion, costoUnit, cantidad, -totalLinea,
+            usuario || '', devolucionId, lineaOriginal.deposito_id, costoActualProducto
+          );
+          totalDevueltoUsd += totalLinea;
+        } else {
+          const codigos = item.codigos.map((c) => c.trim());
+          const unidadesInfo = codigos.map((codigo) =>
+            db.prepare(
+              'SELECT * FROM inventory_units WHERE codigo = ? COLLATE NOCASE AND compra_encabezado_id = ? AND product_id = ?'
+            ).get(codigo, compraEncabezadoId, item.product_id)
+          );
+          unidadesInfo.forEach((u) => marcarUnidadDevuelta.run(devolucionId, u.id));
+          const totalLinea = costoUnit * codigos.length;
+          insertLinea.run(
+            item.product_id, lineaOriginal.tipo, lineaOriginal.descripcion, costoUnit, codigos.length, -totalLinea,
+            usuario || '', devolucionId, lineaOriginal.deposito_id, costoActualProducto
+          );
+          totalDevueltoUsd += totalLinea;
+        }
+      }
+
+      db.prepare('UPDATE compras_encabezado SET total_usd = ? WHERE id = ?').run(-totalDevueltoUsd, devolucionId);
+      return devolucionId;
+    });
+
+    const devolucionId = transaccion();
+    return { ok: true, devolucionId, totalDevueltoUsd };
+  } catch (err) {
+    console.error('Error en compras:crearDevolucion', err);
+    return { ok: false, message: 'Error inesperado: ' + (err?.message || String(err)) };
+  }
 });
 
 // ---------- IPC: numero de compra consecutivo (id de compras_encabezado, se muestra antes de registrar) ----------
