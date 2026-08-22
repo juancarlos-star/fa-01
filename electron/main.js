@@ -2693,3 +2693,106 @@ ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
     cantidadDescargos: descargos.length
   };
 });
+
+// ---------------- Reportes de Vendedores (Parte 3) ----------------
+// facturas.usuario guarda el "username" de quien facturo (ver Facturacion.jsx), asi que en
+// todos estos reportes se cruza contra la tabla users para mostrar el nombre completo.
+
+function mapaUsuarios(db) {
+  const filas = db.prepare('SELECT username, full_name FROM users').all();
+  const mapa = {};
+  filas.forEach((u) => { mapa[u.username] = u.full_name; });
+  return mapa;
+}
+
+const FORMATO_PERIODO = { dia: '%Y-%m-%d', mes: '%Y-%m', anio: '%Y' };
+
+// "Efectividad": ventas por vendedor agrupadas por dia, mes o año dentro del rango de fechas.
+ipcMain.handle('reportes:vendedoresEfectividad', (event, { desde, hasta, agrupacion }) => {
+  const db = getDb();
+  const formato = FORMATO_PERIODO[agrupacion] || FORMATO_PERIODO.dia;
+  const filas = db.prepare(
+    `SELECT f.usuario, strftime(?, f.created_at) AS periodo,
+            COUNT(*) AS cantidadFacturas, SUM(f.total_usd) AS totalUsd
+     FROM facturas f
+     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)
+     GROUP BY f.usuario, periodo
+     ORDER BY periodo ASC, totalUsd DESC`
+  ).all(formato, desde, hasta);
+
+  const nombres = mapaUsuarios(db);
+  const conNombre = filas.map((f) => ({ ...f, nombreVendedor: nombres[f.usuario] || f.usuario || 'Sin asignar' }));
+  const totalGeneral = conNombre.reduce((acc, f) => acc + f.totalUsd, 0);
+  return { ok: true, desde, hasta, agrupacion: agrupacion || 'dia', filas: conNombre, totalGeneral };
+});
+
+// "Ultimas ventas a clientes": la ultima factura de cada cliente que ya tenga al menos una.
+ipcMain.handle('reportes:vendedoresUltimasVentas', (event) => {
+  const db = getDb();
+  const filas = db.prepare(
+    `SELECT c.id AS cliente_id, c.nombre AS cliente_nombre, c.rif_cedula, c.telefono,
+            f.id AS factura_id, f.numero_factura, f.created_at, f.total_usd, f.usuario
+     FROM clientes c
+     JOIN facturas f ON f.cliente_id = c.id AND f.es_devolucion = 0
+       AND f.created_at = (
+         SELECT MAX(f2.created_at) FROM facturas f2 WHERE f2.cliente_id = c.id AND f2.es_devolucion = 0
+       )
+     ORDER BY f.created_at DESC`
+  ).all();
+
+  const nombres = mapaUsuarios(db);
+  const conNombre = filas.map((f) => ({ ...f, nombreVendedor: nombres[f.usuario] || f.usuario || 'Sin asignar' }));
+  return { ok: true, filas: conNombre };
+});
+
+// "Ventas por categoria": matriz vendedor x tipo de producto (equipo/simcard/usim/accesorio).
+ipcMain.handle('reportes:vendedoresPorCategoria', (event, { desde, hasta }) => {
+  const db = getDb();
+  const filas = db.prepare(
+    `SELECT f.usuario, fi.tipo, SUM(fi.cantidad) AS cantidad, SUM(fi.subtotal_usd) AS totalUsd
+     FROM factura_items fi
+     JOIN facturas f ON f.id = fi.factura_id
+     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)
+     GROUP BY f.usuario, fi.tipo`
+  ).all(desde, hasta);
+
+  const nombres = mapaUsuarios(db);
+  const tipos = ['equipo', 'simcard', 'usim', 'accesorio'];
+  const vendedoresSet = new Set(filas.map((f) => f.usuario));
+  const matriz = Array.from(vendedoresSet).map((usuario) => {
+    const fila = { usuario, nombreVendedor: nombres[usuario] || usuario || 'Sin asignar' };
+    let totalVendedor = 0;
+    tipos.forEach((t) => {
+      const encontrado = filas.find((f) => f.usuario === usuario && f.tipo === t);
+      fila[t] = encontrado ? { cantidad: encontrado.cantidad, totalUsd: encontrado.totalUsd } : { cantidad: 0, totalUsd: 0 };
+      totalVendedor += fila[t].totalUsd;
+    });
+    fila.totalUsd = totalVendedor;
+    return fila;
+  }).sort((a, b) => b.totalUsd - a.totalUsd);
+
+  return { ok: true, desde, hasta, tipos, matriz };
+});
+
+// "Estadisticas": totales generales por vendedor (facturas, monto, ticket promedio, participacion %).
+ipcMain.handle('reportes:vendedoresEstadisticas', (event, { desde, hasta }) => {
+  const db = getDb();
+  const filas = db.prepare(
+    `SELECT f.usuario, COUNT(*) AS cantidadFacturas, SUM(f.total_usd) AS totalUsd
+     FROM facturas f
+     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)
+     GROUP BY f.usuario
+     ORDER BY totalUsd DESC`
+  ).all(desde, hasta);
+
+  const nombres = mapaUsuarios(db);
+  const totalGeneral = filas.reduce((acc, f) => acc + f.totalUsd, 0);
+  const conDetalle = filas.map((f) => ({
+    ...f,
+    nombreVendedor: nombres[f.usuario] || f.usuario || 'Sin asignar',
+    ticketPromedioUsd: f.cantidadFacturas > 0 ? f.totalUsd / f.cantidadFacturas : 0,
+    participacionPct: totalGeneral > 0 ? (f.totalUsd / totalGeneral) * 100 : 0
+  }));
+
+  return { ok: true, desde, hasta, filas: conDetalle, totalGeneral };
+});

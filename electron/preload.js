@@ -103,6 +103,11 @@ contextBridge.exposeInMainWorld('api', {
   getReporteCargosDescargos: (desde, hasta) => ipcRenderer.invoke('reportes:cargosDescargos', { desde, hasta }),
   getReporteInventarioProductos: (depositoId) => ipcRenderer.invoke('reportes:inventarioProductos', { depositoId }),
   getReporteInventarioFisico: (depositoId) => ipcRenderer.invoke('reportes:inventarioFisico', { depositoId }),
+  getReporteVendedoresEfectividad: (desde, hasta, agrupacion) =>
+    ipcRenderer.invoke('reportes:vendedoresEfectividad', { desde, hasta, agrupacion }),
+  getReporteVendedoresUltimasVentas: () => ipcRenderer.invoke('reportes:vendedoresUltimasVentas'),
+  getReporteVendedoresPorCategoria: (desde, hasta) => ipcRenderer.invoke('reportes:vendedoresPorCategoria', { desde, hasta }),
+  getReporteVendedoresEstadisticas: (desde, hasta) => ipcRenderer.invoke('reportes:vendedoresEstadisticas', { desde, hasta }),
   getReporteProductosVendidos: (desde, hasta, tipo, productId) =>
     ipcRenderer.invoke('reportes:productosVendidos', { desde, hasta, tipo, product_id: productId }),
   // Respaldo
