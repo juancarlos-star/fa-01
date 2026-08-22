@@ -13,6 +13,8 @@ import Reportes from './pages/Reportes.jsx';
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('inicio');
+  // Submenu de Facturacion (Generar Factura / Devolucion de Factura), igual al de Compras.
+  const [menuFacturacionAbierto, setMenuFacturacionAbierto] = useState(false);
   // Submenu de Compras (Generar Compras / Devolucion de Compras), igual al menu de referencia:
   // se abre al hacer click en "Compras" y se cierra al elegir una opcion o al hacer click afuera.
   const [menuComprasAbierto, setMenuComprasAbierto] = useState(false);
@@ -23,6 +25,7 @@ export default function App() {
     setUser(null);
     setView('inicio');
   };
+  const vistasFacturacion = ['facturacion', 'devolucionFacturas'];
   const vistasCompras = ['compras', 'devolucionCompras'];
   return (
     <div className="app-shell">
@@ -31,9 +34,35 @@ export default function App() {
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
-        <nav className={menuComprasAbierto ? 'submenu-open' : ''}>
+        <nav className={(menuFacturacionAbierto || menuComprasAbierto) ? 'submenu-open' : ''}>
           <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}>Inicio</button>
-          <button className={view === 'facturacion' ? 'active' : ''} onClick={() => setView('facturacion')}>Facturar</button>
+          <div className="sidebar-submenu-wrap">
+            <button
+              className={vistasFacturacion.includes(view) ? 'active' : ''}
+              onClick={() => setMenuFacturacionAbierto((v) => !v)}
+            >
+              Facturar
+            </button>
+            {menuFacturacionAbierto && (
+              <>
+                <div className="sidebar-submenu-overlay" onClick={() => setMenuFacturacionAbierto(false)} />
+                <div className="sidebar-submenu">
+                  <button
+                    className={view === 'facturacion' ? 'active' : ''}
+                    onClick={() => { setView('facturacion'); setMenuFacturacionAbierto(false); }}
+                  >
+                    🧾 Generar Factura
+                  </button>
+                  <button
+                    className={view === 'devolucionFacturas' ? 'active' : ''}
+                    onClick={() => { setView('devolucionFacturas'); setMenuFacturacionAbierto(false); }}
+                  >
+                    ↩ Devolución de Factura
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button className={view === 'inventario' ? 'active' : ''} onClick={() => setView('inventario')}>Inventario</button>
           {user.role === 'administrador' && (
             <div className="sidebar-submenu-wrap">
@@ -93,6 +122,12 @@ export default function App() {
           </div>
         )}
         {view === 'facturacion' && <Facturacion currentUser={user} />}
+        {view === 'devolucionFacturas' && (
+          <div style={{ background: '#fff', padding: '1.5rem', borderRadius: '8px' }}>
+            <h2>Devolución de Factura</h2>
+            <p>Esta pantalla se está construyendo en las próximas partes. Por ahora, el menú ya te trae aquí.</p>
+          </div>
+        )}
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
         {view === 'devolucionCompras' && user.role === 'administrador' && <DevolucionCompras currentUser={user} />}
