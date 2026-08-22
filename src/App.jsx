@@ -6,6 +6,7 @@ import CategoriasAdmin from './pages/CategoriasAdmin.jsx';
 import CargosDescargos from './pages/CargosDescargos.jsx';
 import Configuracion from './pages/Configuracion.jsx';
 import Facturacion from './pages/Facturacion.jsx';
+import DevolucionFacturas from './pages/DevolucionFacturas.jsx';
 import Compras from './pages/Compras.jsx';
 import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
@@ -122,12 +123,7 @@ export default function App() {
           </div>
         )}
         {view === 'facturacion' && <Facturacion currentUser={user} />}
-        {view === 'devolucionFacturas' && (
-          <div style={{ background: '#fff', padding: '1.5rem', borderRadius: '8px' }}>
-            <h2>Devolución de Factura</h2>
-            <p>Esta pantalla se está construyendo en las próximas partes. Por ahora, el menú ya te trae aquí.</p>
-          </div>
-        )}
+        {view === 'devolucionFacturas' && <DevolucionFacturas currentUser={user} />}
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
         {view === 'devolucionCompras' && user.role === 'administrador' && <DevolucionCompras currentUser={user} />}
