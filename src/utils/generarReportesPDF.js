@@ -330,3 +330,113 @@ export async function generarPDFInventarioFisico(reporte) {
 
   await guardarYAbrirPDF(doc, `Inventario-Fisico_${fechaParaNombreArchivo()}`, 'Reportes');
 }
+
+// ---------------- Vendedores: Efectividad ----------------
+
+const AGRUPACION_LABEL = { dia: 'Diario', mes: 'Mensual', anio: 'Anual' };
+
+export async function generarPDFVendedoresEfectividad(reporte) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  encabezado(doc, `Efectividad de Vendedores — ${AGRUPACION_LABEL[reporte.agrupacion] || ''}`, reporte.desde, reporte.hasta);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Total vendido en el periodo: $${fmt(reporte.totalGeneral)}`, 10, 34);
+
+  autoTable(doc, {
+    startY: 40,
+    head: [['Periodo', 'Vendedor', 'Facturas', 'Total vendido']],
+    body: reporte.filas.map((f) => [f.periodo, f.nombreVendedor, String(f.cantidadFacturas), `$${fmt(f.totalUsd)}`]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Vendedores-Efectividad_${fechaParaNombreArchivo()}`, 'Reportes');
+}
+
+// ---------------- Vendedores: Ultimas ventas a clientes ----------------
+
+export async function generarPDFVendedoresUltimasVentas(filas) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('Ultimas Ventas a Clientes', 10, 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Clientes con al menos una compra: ${filas.length}`, 10, 22);
+  doc.setDrawColor(200);
+  doc.line(10, 26, 200, 26);
+
+  autoTable(doc, {
+    startY: 32,
+    head: [['Cliente', 'Cedula/RIF', 'Ultima compra', 'N° factura', 'Total', 'Vendedor']],
+    body: filas.map((f) => [
+      f.cliente_nombre,
+      f.rif_cedula || '—',
+      f.created_at,
+      f.numero_factura || '—',
+      `$${fmt(f.total_usd)}`,
+      f.nombreVendedor
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Vendedores-Ultimas-Ventas_${fechaParaNombreArchivo()}`, 'Reportes');
+}
+
+// ---------------- Vendedores: Ventas por categoria ----------------
+
+const TIPO_LABEL_CAT = { equipo: 'Equipo', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
+
+export async function generarPDFVendedoresPorCategoria(reporte) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  encabezado(doc, 'Ventas por Categoria de Producto (por Vendedor)', reporte.desde, reporte.hasta);
+
+  autoTable(doc, {
+    startY: 34,
+    head: [['Vendedor', ...reporte.tipos.map((t) => TIPO_LABEL_CAT[t] || t), 'Total']],
+    body: reporte.matriz.map((m) => [
+      m.nombreVendedor,
+      ...reporte.tipos.map((t) => `$${fmt(m[t].totalUsd)} (${m[t].cantidad})`),
+      `$${fmt(m.totalUsd)}`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Vendedores-Por-Categoria_${fechaParaNombreArchivo()}`, 'Reportes');
+}
+
+// ---------------- Vendedores: Estadisticas ----------------
+
+export async function generarPDFVendedoresEstadisticas(reporte) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  encabezado(doc, 'Estadisticas de Vendedores', reporte.desde, reporte.hasta);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Total vendido en el periodo: $${fmt(reporte.totalGeneral)}`, 10, 34);
+
+  autoTable(doc, {
+    startY: 40,
+    head: [['Vendedor', 'Facturas', 'Total vendido', 'Ticket promedio', 'Participacion']],
+    body: reporte.filas.map((f) => [
+      f.nombreVendedor,
+      String(f.cantidadFacturas),
+      `$${fmt(f.totalUsd)}`,
+      `$${fmt(f.ticketPromedioUsd)}`,
+      `${fmt(f.participacionPct)}%`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Vendedores-Estadisticas_${fechaParaNombreArchivo()}`, 'Reportes');
+}
