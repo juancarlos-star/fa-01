@@ -14,7 +14,11 @@ import {
   generarPDFClientes,
   generarPDFProductosVendidos,
   generarPDFInventarioProductos,
-  generarPDFInventarioFisico
+  generarPDFInventarioFisico,
+  generarPDFVendedoresEfectividad,
+  generarPDFVendedoresUltimasVentas,
+  generarPDFVendedoresPorCategoria,
+  generarPDFVendedoresEstadisticas
 } from '../utils/generarReportesPDF.js';
 import { fmt } from '../utils/format.js';
 
@@ -35,7 +39,11 @@ const CATEGORIAS = [
     key: 'vendedores',
     label: 'Vendedores',
     items: [
-      { key: 'productosVendidos', label: 'Ventas de productos' }
+      { key: 'vendedoresEfectividad', label: 'Efectividad' },
+      { key: 'vendedoresUltimasVentas', label: 'Últimas ventas a clientes' },
+      { key: 'vendedoresPorCategoria', label: 'Ventas por categoría' },
+      { key: 'productosVendidos', label: 'Ventas de productos' },
+      { key: 'vendedoresEstadisticas', label: 'Estadísticas' }
     ]
   },
   {
@@ -60,7 +68,7 @@ const CATEGORIAS = [
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
-const SIN_FILTRO_FECHA = ['clientes', 'historial', 'inventarioProductos', 'inventarioFisico'];
+const SIN_FILTRO_FECHA = ['clientes', 'historial', 'inventarioProductos', 'inventarioFisico', 'vendedoresUltimasVentas'];
 
 export default function Reportes({ currentUser }) {
   const [categoria, setCategoria] = useState('ventas');
@@ -119,6 +127,10 @@ export default function Reportes({ currentUser }) {
       {tab === 'clientes' && <ReporteClientes />}
       {tab === 'inventarioProductos' && <ReporteInventarioProductos />}
       {tab === 'inventarioFisico' && <ReporteInventarioFisico />}
+      {tab === 'vendedoresEfectividad' && <ReporteVendedoresEfectividad desde={desde} hasta={hasta} />}
+      {tab === 'vendedoresUltimasVentas' && <ReporteVendedoresUltimasVentas />}
+      {tab === 'vendedoresPorCategoria' && <ReporteVendedoresPorCategoria desde={desde} hasta={hasta} />}
+      {tab === 'vendedoresEstadisticas' && <ReporteVendedoresEstadisticas desde={desde} hasta={hasta} />}
     </div>
   );
 }
@@ -1113,6 +1125,274 @@ function ReporteInventarioFisico() {
             </table>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Vendedores: Efectividad ----------------
+
+function ReporteVendedoresEfectividad({ desde, hasta }) {
+  const [agrupacion, setAgrupacion] = useState('dia');
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteVendedoresEfectividad(desde, hasta, agrupacion);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta, agrupacion]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFVendedoresEfectividad(reporte);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  if (cargando || !reporte) return <p>Cargando...</p>;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        {[{ key: 'dia', label: 'Diario' }, { key: 'mes', label: 'Mensual' }, { key: 'anio', label: 'Anual' }].map((a) => (
+          <button
+            key={a.key}
+            onClick={() => setAgrupacion(a.key)}
+            style={{
+              padding: '0.4rem 0.9rem',
+              backgroundColor: agrupacion === a.key ? '#0b4f9e' : '#e2e8f0',
+              color: agrupacion === a.key ? '#fff' : '#111',
+              border: 'none', borderRadius: '4px', cursor: 'pointer'
+            }}
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
+
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+      <p>Total vendido en el periodo: <strong>${fmt(reporte.totalGeneral)}</strong></p>
+
+      {reporte.filas.length === 0 ? (
+        <p>No hay ventas registradas en este rango de fechas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Periodo</th>
+              <th>Vendedor</th>
+              <th>Facturas</th>
+              <th>Total vendido</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reporte.filas.map((f, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{f.periodo}</td>
+                <td>{f.nombreVendedor}</td>
+                <td>{f.cantidadFacturas}</td>
+                <td>${fmt(f.totalUsd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Vendedores: Ultimas ventas a clientes ----------------
+
+function ReporteVendedoresUltimasVentas() {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteVendedoresUltimasVentas();
+    setReporte(data);
+    setCargando(false);
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFVendedoresUltimasVentas(reporte.filas);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  if (cargando || !reporte) return <p>Cargando...</p>;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+      <p>Clientes con al menos una compra: <strong>{reporte.filas.length}</strong></p>
+
+      {reporte.filas.length === 0 ? (
+        <p>Todavia no hay clientes con facturas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Cliente</th>
+              <th>Cedula/RIF</th>
+              <th>Ultima compra</th>
+              <th>N° factura</th>
+              <th>Total</th>
+              <th>Vendedor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reporte.filas.map((f) => (
+              <tr key={f.cliente_id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{f.cliente_nombre}</td>
+                <td>{f.rif_cedula || '—'}</td>
+                <td>{f.created_at}</td>
+                <td>{f.numero_factura || '—'}</td>
+                <td>${fmt(f.total_usd)}</td>
+                <td>{f.nombreVendedor}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Vendedores: Ventas por categoria ----------------
+
+function ReporteVendedoresPorCategoria({ desde, hasta }) {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteVendedoresPorCategoria(desde, hasta);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFVendedoresPorCategoria(reporte);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  if (cargando || !reporte) return <p>Cargando...</p>;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+      <p style={{ color: '#667085', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+        Cuanto vendio cada vendedor de cada tipo de producto (equipo, SIM, USIM, accesorio) en el periodo.
+      </p>
+
+      {reporte.matriz.length === 0 ? (
+        <p>No hay ventas registradas en este rango de fechas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Vendedor</th>
+              {reporte.tipos.map((t) => (
+                <th key={t}>{TIPO_LABEL_INV[t] || t}</th>
+              ))}
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reporte.matriz.map((m) => (
+              <tr key={m.usuario} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{m.nombreVendedor}</td>
+                {reporte.tipos.map((t) => (
+                  <td key={t}>${fmt(m[t].totalUsd)} <span style={{ color: '#98a2b3' }}>({m[t].cantidad})</span></td>
+                ))}
+                <td><strong>${fmt(m.totalUsd)}</strong></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Vendedores: Estadisticas ----------------
+
+function ReporteVendedoresEstadisticas({ desde, hasta }) {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteVendedoresEstadisticas(desde, hasta);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFVendedoresEstadisticas(reporte);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  if (cargando || !reporte) return <p>Cargando...</p>;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+      <p>Total vendido en el periodo: <strong>${fmt(reporte.totalGeneral)}</strong></p>
+
+      {reporte.filas.length === 0 ? (
+        <p>No hay ventas registradas en este rango de fechas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Vendedor</th>
+              <th>Facturas</th>
+              <th>Total vendido</th>
+              <th>Ticket promedio</th>
+              <th>Participación</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reporte.filas.map((f) => (
+              <tr key={f.usuario} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{f.nombreVendedor}</td>
+                <td>{f.cantidadFacturas}</td>
+                <td>${fmt(f.totalUsd)}</td>
+                <td>${fmt(f.ticketPromedioUsd)}</td>
+                <td>{fmt(f.participacionPct)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
