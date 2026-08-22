@@ -22,9 +22,10 @@ import {
   generarPDFVentasTransacciones,
   generarPDFVentasCierreDiario,
   generarPDFVentasRelacion,
-  generarPDFVentasPorCliente
-} from '../utils/generarReportesPDF.js';
-import { fmt } from '../utils/format.js';
+  generarPDFVentasPorCliente,
+  generarPDFLibroVentasIva,
+  generarPDFLibroComprasIva
+} from '../utils/generarReportesPDF.js';import { fmt } from '../utils/format.js';
 
 // Reportes organizados por categorias (Inventario, Vendedores, Ventas, Compras...), cada una
 // con su propio sub-menu de reportes. Los reportes de Impuestos y Etiquetas se agregan en
@@ -71,6 +72,14 @@ const CATEGORIAS = [
     items: [
       { key: 'compras', label: 'Compras' },
       { key: 'devolucionesCompras', label: 'Devoluciones de Compras' }
+    ]
+  },
+  {
+    key: 'impuestos',
+    label: 'Impuestos',
+    items: [
+      { key: 'libroVentasIva', label: 'Libro de Ventas IVA' },
+      { key: 'libroComprasIva', label: 'Libro de Compras IVA' }
     ]
   }
 ];
@@ -143,6 +152,8 @@ export default function Reportes({ currentUser }) {
       {tab === 'ventasCierreDiario' && <ReporteVentasCierreDiario />}
       {tab === 'ventasRelacion' && <ReporteVentasRelacion desde={desde} hasta={hasta} />}
       {tab === 'ventasPorCliente' && <ReporteVentasPorCliente desde={desde} hasta={hasta} />}
+      {tab === 'libroVentasIva' && <ReporteLibroVentasIva desde={desde} hasta={hasta} />}
+      {tab === 'libroComprasIva' && <ReporteLibroComprasIva desde={desde} hasta={hasta} />}
     </div>
   );
 }
@@ -2012,6 +2023,182 @@ function ReporteClientes() {
 }
 
 // ---------------- Boton reutilizable: generar, guardar y abrir PDF ----------------
+
+// ---------------- Impuestos: Libro de Ventas IVA ----------------
+
+function ReporteLibroVentasIva({ desde, hasta }) {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getLibroVentasIva(desde, hasta);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFLibroVentasIva(reporte, desde, hasta);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  if (cargando) return <p>Cargando...</p>;
+  if (!reporte) return null;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+      <p>
+        Documentos: <strong>{reporte.cantidad}</strong>{' '}
+        — Base imponible: <strong>${fmt(reporte.totalBaseUsd)}</strong>{' '}
+        — IVA: <strong>${fmt(reporte.totalIvaUsd)}</strong>{' '}
+        — Total: <strong>${fmt(reporte.totalGeneralUsd)}</strong>
+      </p>
+      {reporte.filas.length === 0 ? (
+        <p>No hay facturas en este rango de fechas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Fecha</th>
+              <th>Documento</th>
+              <th>Cliente</th>
+              <th>RIF / Cédula</th>
+              <th>Base imponible</th>
+              <th>IVA</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reporte.filas.map((f) => (
+              <tr key={f.id} style={{ borderBottom: '1px solid #eee', color: f.es_devolucion ? '#b42318' : '#111' }}>
+                <td style={{ padding: '0.5rem' }}>{f.created_at}</td>
+                <td>
+                  {f.numero_factura || String(f.id).padStart(6, '0')}
+                  {f.es_devolucion === 1 && (
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>
+                      Nota de crédito — Dev. de N° {f.numero_factura_original || f.devuelve_a_factura_id}
+                    </div>
+                  )}
+                </td>
+                <td>{f.cliente_nombre}</td>
+                <td>{f.cliente_rif}</td>
+                <td>${fmt(f.subtotal_usd)}</td>
+                <td>${fmt(f.iva_usd)}</td>
+                <td>${fmt(f.total_usd)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: '2px solid #333', fontWeight: 'bold' }}>
+              <td style={{ padding: '0.5rem' }} colSpan={4}>Totales del periodo</td>
+              <td>${fmt(reporte.totalBaseUsd)}</td>
+              <td>${fmt(reporte.totalIvaUsd)}</td>
+              <td>${fmt(reporte.totalGeneralUsd)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Impuestos: Libro de Compras IVA ----------------
+
+function ReporteLibroComprasIva({ desde, hasta }) {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getLibroComprasIva(desde, hasta);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const descargarPDF = async () => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFLibroComprasIva(reporte, desde, hasta);
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  if (cargando) return <p>Cargando...</p>;
+  if (!reporte) return null;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+      <p>
+        Documentos: <strong>{reporte.cantidad}</strong>{' '}
+        — Base imponible: <strong>${fmt(reporte.totalBaseUsd)}</strong>{' '}
+        — IVA: <strong>${fmt(reporte.totalIvaUsd)}</strong>{' '}
+        — Total: <strong>${fmt(reporte.totalGeneralUsd)}</strong>
+      </p>
+      <p style={{ fontSize: '0.85rem', color: '#667085' }}>
+        El IVA se calcula con el porcentaje que estaba configurado al momento de cada compra
+        (o el porcentaje actual, si la compra es anterior a que se empezara a guardar este dato).
+      </p>
+      {reporte.filas.length === 0 ? (
+        <p>No hay compras en este rango de fechas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Fecha</th>
+              <th>Documento</th>
+              <th>Proveedor</th>
+              <th>RIF</th>
+              <th>Base imponible</th>
+              <th>IVA (%)</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reporte.filas.map((f) => (
+              <tr key={f.id} style={{ borderBottom: '1px solid #eee', color: f.es_devolucion ? '#b42318' : '#111' }}>
+                <td style={{ padding: '0.5rem' }}>{f.created_at}</td>
+                <td>
+                  {f.numero_factura_compra}
+                  {f.es_devolucion === 1 && (
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600 }}>
+                      Nota de crédito — Dev. de N° {f.numero_factura_compra_original || f.devuelve_a_encabezado_id}
+                    </div>
+                  )}
+                </td>
+                <td>{f.proveedor}</td>
+                <td>{f.proveedor_rif}</td>
+                <td>${fmt(f.base_usd)}</td>
+                <td>${fmt(f.iva_usd)} ({fmt(f.iva_porcentaje_usado, 0)}%)</td>
+                <td>${fmt(f.total_con_iva_usd)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: '2px solid #333', fontWeight: 'bold' }}>
+              <td style={{ padding: '0.5rem' }} colSpan={4}>Totales del periodo</td>
+              <td>${fmt(reporte.totalBaseUsd)}</td>
+              <td>${fmt(reporte.totalIvaUsd)}</td>
+              <td>${fmt(reporte.totalGeneralUsd)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+}
 
 function BotonPDF({ onClick, generando }) {
   return (
