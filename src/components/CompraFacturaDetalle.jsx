@@ -4,7 +4,7 @@ import { fmt } from '../utils/format.js';
 
 const IVA_TASA = 0.16;
 
-export default function CompraFacturaDetalle({ encabezado, items, onVolver }) {
+export default function CompraFacturaDetalle({ encabezado, items, devoluciones, resumenDevolucion, onVolver }) {
   const [settings, setSettings] = useState(null);
   const [generandoPDF, setGenerandoPDF] = useState(false);
 
@@ -18,6 +18,8 @@ export default function CompraFacturaDetalle({ encabezado, items, onVolver }) {
 
   const [fechaParte, horaParte] = (encabezado.created_at || '').split(' ');
   const fecha = (fechaParte || '').split('-').reverse().join('/');
+
+  const numeroMostrado = encabezado.es_devolucion ? encabezado.numero_devolucion : encabezado.id;
 
   const descargarPDF = async () => {
     setGenerandoPDF(true);
@@ -38,6 +40,70 @@ export default function CompraFacturaDetalle({ encabezado, items, onVolver }) {
         </button>
       </div>
 
+      {/* Aviso de devolucion: solo aplica cuando se ve una compra ORIGINAL (no una devolucion en
+          si misma) que ya tuvo alguna devolucion registrada. Si fue total, aviso simple; si fue
+          parcial, se detalla producto por producto cuanto se devolvio y como cambio el costo del
+          producto desde que se compro hasta que se devolvio. */}
+      {!encabezado.es_devolucion && resumenDevolucion && resumenDevolucion.productos.length > 0 && (
+        <div
+          className="no-print"
+          style={{
+            background: resumenDevolucion.esTotal ? '#fef3f2' : '#fffaeb',
+            border: `1px solid ${resumenDevolucion.esTotal ? '#fda29b' : '#fec84b'}`,
+            color: '#b42318',
+            borderRadius: '8px',
+            padding: '0.9rem 1.1rem',
+            marginBottom: '1rem'
+          }}
+        >
+          {resumenDevolucion.esTotal ? (
+            <p style={{ margin: 0, fontWeight: 700 }}>
+              ⚠ A esta compra se le hizo una devolución completa
+              {devoluciones && devoluciones.length > 0 && (
+                <> — Devolución N° {devoluciones.map((d) => String(d.numero_devolucion).padStart(6, '0')).join(', ')}</>
+              )}
+            </p>
+          ) : (
+            <>
+              <p style={{ margin: '0 0 0.5rem', fontWeight: 700 }}>
+                ⚠ A esta compra se le hizo una devolución parcial
+                {devoluciones && devoluciones.length > 0 && (
+                  <> — Devolución N° {devoluciones.map((d) => String(d.numero_devolucion).padStart(6, '0')).join(', ')}</>
+                )}
+              </p>
+              <table style={{ width: '100%', fontSize: '0.85rem', color: '#7a271a' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left' }}>
+                    <th style={{ padding: '0.2rem 0.4rem 0.2rem 0' }}>Producto</th>
+                    <th>Devuelto / Comprado</th>
+                    <th>Costo al comprar</th>
+                    <th>Costo actual del producto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resumenDevolucion.productos.map((p) => (
+                    <tr key={p.product_id}>
+                      <td style={{ padding: '0.2rem 0.4rem 0.2rem 0' }}>{p.descripcion}</td>
+                      <td>{p.cantidad_devuelta} / {p.cantidad_original}</td>
+                      <td>${fmt(p.costo_original_usd)}</td>
+                      <td>
+                        {p.costo_actual_usd != null ? `$${fmt(p.costo_actual_usd)}` : '—'}
+                        {p.costo_actual_usd != null && p.costo_actual_usd !== p.costo_original_usd && (
+                          <span style={{ marginLeft: '4px' }}>
+                            ({p.costo_actual_usd > p.costo_original_usd ? '+' : ''}
+                            ${fmt(p.costo_actual_usd - p.costo_original_usd)})
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="print-area" style={{ background: '#fff', padding: '1.5rem', borderRadius: '8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
           <div>
@@ -45,7 +111,9 @@ export default function CompraFacturaDetalle({ encabezado, items, onVolver }) {
             {settings?.rif_tienda && <p style={{ margin: '0.2rem 0', color: '#555' }}>R.I.F.: {settings.rif_tienda}</p>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <p style={{ margin: '0.1rem 0' }}><strong>COMPRA N°:</strong> {encabezado.id}</p>
+            <p style={{ margin: '0.1rem 0' }}>
+              <strong>{encabezado.es_devolucion ? 'DEVOLUCIÓN N°:' : 'COMPRA N°:'}</strong> {String(numeroMostrado).padStart(6, '0')}
+            </p>
             <p style={{ margin: '0.1rem 0' }}><strong>FECHA:</strong> {fecha} {horaParte}</p>
             <p style={{ margin: '0.1rem 0' }}><strong>N° FACTURA PROVEEDOR:</strong> {encabezado.numero_factura_compra}</p>
           </div>
