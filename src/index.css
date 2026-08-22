@@ -101,6 +101,56 @@ body {
   background: rgba(255,255,255,0.15);
 }
 
+/* Submenu flotante de "Compras" (Generar Compras / Devolucion de Compras): aparece a la
+   derecha del boton, como un pequeno panel flotante, igual que un menu contextual. */
+.sidebar-submenu-wrap {
+  position: relative;
+}
+
+.sidebar-submenu-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 500;
+}
+
+.sidebar-submenu {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 6px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  padding: 6px;
+  min-width: 210px;
+  z-index: 501;
+}
+
+.sidebar-submenu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #1d2939;
+  padding: 10px 12px;
+  margin-bottom: 2px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.sidebar-submenu button:hover {
+  background: #eef4ff;
+}
+
+.sidebar-submenu button.active {
+  background: #dbeafe;
+  color: #0b4f9e;
+  font-weight: 600;
+}
+
 .content {
   flex: 1;
   padding: 2rem;

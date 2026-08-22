@@ -7,11 +7,15 @@ import CargosDescargos from './pages/CargosDescargos.jsx';
 import Configuracion from './pages/Configuracion.jsx';
 import Facturacion from './pages/Facturacion.jsx';
 import Compras from './pages/Compras.jsx';
+import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
 import Reportes from './pages/Reportes.jsx';
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('inicio');
+  // Submenu de Compras (Generar Compras / Devolucion de Compras), igual al menu de referencia:
+  // se abre al hacer click en "Compras" y se cierra al elegir una opcion o al hacer click afuera.
+  const [menuComprasAbierto, setMenuComprasAbierto] = useState(false);
   if (!user) {
     return <Login onLogin={setUser} />;
   }
@@ -19,6 +23,7 @@ export default function App() {
     setUser(null);
     setView('inicio');
   };
+  const vistasCompras = ['compras', 'devolucionCompras'];
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -31,7 +36,33 @@ export default function App() {
           <button className={view === 'facturacion' ? 'active' : ''} onClick={() => setView('facturacion')}>Facturar</button>
           <button className={view === 'inventario' ? 'active' : ''} onClick={() => setView('inventario')}>Inventario</button>
           {user.role === 'administrador' && (
-            <button className={view === 'compras' ? 'active' : ''} onClick={() => setView('compras')}>Compras</button>
+            <div className="sidebar-submenu-wrap">
+              <button
+                className={vistasCompras.includes(view) ? 'active' : ''}
+                onClick={() => setMenuComprasAbierto((v) => !v)}
+              >
+                Compras
+              </button>
+              {menuComprasAbierto && (
+                <>
+                  <div className="sidebar-submenu-overlay" onClick={() => setMenuComprasAbierto(false)} />
+                  <div className="sidebar-submenu">
+                    <button
+                      className={view === 'compras' ? 'active' : ''}
+                      onClick={() => { setView('compras'); setMenuComprasAbierto(false); }}
+                    >
+                      🛒 Generar Compras
+                    </button>
+                    <button
+                      className={view === 'devolucionCompras' ? 'active' : ''}
+                      onClick={() => { setView('devolucionCompras'); setMenuComprasAbierto(false); }}
+                    >
+                      ↩ Devolución de Compras
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
           {user.role === 'administrador' && (
             <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}>Categorias</button>
@@ -64,6 +95,7 @@ export default function App() {
         {view === 'facturacion' && <Facturacion currentUser={user} />}
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
+        {view === 'devolucionCompras' && user.role === 'administrador' && <DevolucionCompras currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'cargosDescargos' && user.role === 'administrador' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
