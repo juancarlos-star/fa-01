@@ -2433,7 +2433,26 @@ ipcMain.handle('reportes:facturas', (event, { desde, hasta }) => {
   ).all(desde, hasta);
   const totalUsd = facturas.reduce((acc, f) => acc + f.total_usd, 0);
   const totalBs = facturas.reduce((acc, f) => acc + f.total_bs, 0);
-  return { ok: true, desde, hasta, facturas, cantidad: facturas.length, totalUsd, totalBs };
+
+  // Mismo resumen ligero de devoluciones que ya se usa en el Reporte de Compras: para cada
+  // factura ORIGINAL (no una devolucion), se agrega el/los numero(s) de devolucion -si tiene-
+  // y si con ellas se devolvio la factura completa, para que se vea de una vez en el listado.
+  const getDevolucionesDeFactura = db.prepare(
+    'SELECT numero_devolucion, total_usd FROM facturas WHERE devuelve_a_factura_id = ? ORDER BY id'
+  );
+  const facturasConDevolucion = facturas.map((f) => {
+    if (f.es_devolucion) return f;
+    const devs = getDevolucionesDeFactura.all(f.id);
+    if (devs.length === 0) return f;
+    const devueltoUsd = devs.reduce((acc, d) => acc + Math.abs(d.total_usd), 0);
+    return {
+      ...f,
+      numerosDevolucion: devs.map((d) => d.numero_devolucion),
+      devueltoTotal: devueltoUsd >= (f.total_usd - 0.01)
+    };
+  });
+
+  return { ok: true, desde, hasta, facturas: facturasConDevolucion, cantidad: facturas.length, totalUsd, totalBs };
 });
 
 ipcMain.handle('reportes:compras', (event, { desde, hasta }) => {
