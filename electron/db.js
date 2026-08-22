@@ -297,6 +297,12 @@ function migrarDevolucionesCompraSiHaceFalta(database) {
     if (!tieneColumna(database, 'compras_encabezado', 'devuelve_a_encabezado_id')) {
       database.exec('ALTER TABLE compras_encabezado ADD COLUMN devuelve_a_encabezado_id INTEGER');
     }
+    // Numero consecutivo EXCLUSIVO de las devoluciones (1, 2, 3...), independiente del
+    // consecutivo de compras (que usa el id de la tabla). Solo se rellena para encabezados con
+    // es_devolucion = 1; para compras normales queda NULL.
+    if (!tieneColumna(database, 'compras_encabezado', 'numero_devolucion')) {
+      database.exec('ALTER TABLE compras_encabezado ADD COLUMN numero_devolucion INTEGER');
+    }
   }
   const existeComprasDetalle = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras'").get();
   if (existeComprasDetalle && !tieneColumna(database, 'compras', 'es_devolucion')) {

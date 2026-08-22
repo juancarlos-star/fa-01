@@ -1993,14 +1993,22 @@ ipcMain.handle('compras:crearDevolucion', (event, payload) => {
     let totalDevueltoUsd = 0;
 
     const transaccion = db.transaction(() => {
+      // Numero consecutivo exclusivo de devoluciones (independiente del consecutivo de
+      // compras), calculado dentro de la misma transaccion para evitar que dos devoluciones
+      // registradas casi al mismo tiempo terminen con el mismo numero.
+      const filaNumero = db.prepare(
+        'SELECT COALESCE(MAX(numero_devolucion), 0) + 1 AS proximo FROM compras_encabezado WHERE es_devolucion = 1'
+      ).get();
+      const numeroDevolucion = filaNumero.proximo;
+
       const devInfo = db.prepare(
         `INSERT INTO compras_encabezado
            (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda,
-            numero_factura_compra, total_usd, usuario, created_at, es_devolucion, devuelve_a_encabezado_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), 1, ?)`
+            numero_factura_compra, total_usd, usuario, created_at, es_devolucion, devuelve_a_encabezado_id, numero_devolucion)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), 1, ?, ?)`
       ).run(
         original.proveedor, original.proveedor_id, original.proveedor_rif, original.proveedor_telefono, original.proveedor_direccion,
-        original.moneda, `DEV-${original.numero_factura_compra}`, usuario || '', original.id
+        original.moneda, `DEV-${original.numero_factura_compra}`, usuario || '', original.id, numeroDevolucion
       );
       const devolucionId = devInfo.lastInsertRowid;
 
@@ -2049,11 +2057,11 @@ ipcMain.handle('compras:crearDevolucion', (event, payload) => {
       }
 
       db.prepare('UPDATE compras_encabezado SET total_usd = ? WHERE id = ?').run(-totalDevueltoUsd, devolucionId);
-      return devolucionId;
+      return { devolucionId, numeroDevolucion };
     });
 
-    const devolucionId = transaccion();
-    return { ok: true, devolucionId, totalDevueltoUsd };
+    const { devolucionId, numeroDevolucion } = transaccion();
+    return { ok: true, devolucionId, numeroDevolucion, totalDevueltoUsd };
   } catch (err) {
     console.error('Error en compras:crearDevolucion', err);
     return { ok: false, message: 'Error inesperado: ' + (err?.message || String(err)) };
@@ -2064,6 +2072,15 @@ ipcMain.handle('compras:crearDevolucion', (event, payload) => {
 ipcMain.handle('compras:proximoNumero', () => {
   const db = getDb();
   const fila = db.prepare('SELECT COALESCE(MAX(id), 0) + 1 AS proximo FROM compras_encabezado').get();
+  return { proximoNumero: fila.proximo };
+});
+
+// ---------- IPC: numero de devolucion consecutivo (independiente del numero de compra) ----------
+ipcMain.handle('compras:proximoNumeroDevolucion', () => {
+  const db = getDb();
+  const fila = db.prepare(
+    'SELECT COALESCE(MAX(numero_devolucion), 0) + 1 AS proximo FROM compras_encabezado WHERE es_devolucion = 1'
+  ).get();
   return { proximoNumero: fila.proximo };
 });
 
@@ -2164,7 +2181,26 @@ ipcMain.handle('reportes:compras', (event, { desde, hasta }) => {
     "SELECT * FROM compras_encabezado WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
   ).all(desde, hasta);
   const totalUsd = compras.reduce((acc, c) => acc + c.total_usd, 0);
-  return { ok: true, desde, hasta, compras, cantidad: compras.length, totalUsd };
+
+  // Para cada compra ORIGINAL de la lista (no una devolucion), se agrega un resumen ligero de
+  // sus devoluciones -si tiene- para que se vea de una vez en el listado, sin tener que entrar
+  // al detalle: el/los numero(s) de devolucion, y si con ellas se devolvio la compra completa.
+  const getDevolucionesDeCompra = db.prepare(
+    'SELECT numero_devolucion, total_usd FROM compras_encabezado WHERE devuelve_a_encabezado_id = ? ORDER BY id'
+  );
+  const comprasConDevolucion = compras.map((c) => {
+    if (c.es_devolucion) return c;
+    const devs = getDevolucionesDeCompra.all(c.id);
+    if (devs.length === 0) return c;
+    const devueltoUsd = devs.reduce((acc, d) => acc + Math.abs(d.total_usd), 0);
+    return {
+      ...c,
+      numerosDevolucion: devs.map((d) => d.numero_devolucion),
+      devueltoTotal: devueltoUsd >= (c.total_usd - 0.01)
+    };
+  });
+
+  return { ok: true, desde, hasta, compras: comprasConDevolucion, cantidad: compras.length, totalUsd };
 });
 
 ipcMain.handle('reportes:productosVendidos', (event, { desde, hasta, tipo, product_id }) => {
