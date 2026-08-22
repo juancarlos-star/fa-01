@@ -20,7 +20,9 @@ const TABS = [
   { key: 'historial', label: 'Historial de facturas' },
   { key: 'ganancias', label: 'Ventas y ganancias' },
   { key: 'compras', label: 'Compras' },
+  { key: 'devolucionesCompras', label: 'Devoluciones de Compras' },
   { key: 'facturas', label: 'Facturas' },
+  { key: 'devolucionesFacturas', label: 'Devoluciones de Facturas' },
   { key: 'productosVendidos', label: 'Productos vendidos' },
   { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' },
   { key: 'clientes', label: 'Clientes' }
@@ -63,7 +65,9 @@ export default function Reportes({ currentUser }) {
       {tab === 'historial' && <Facturas currentUser={currentUser} />}
       {tab === 'ganancias' && <ReporteGanancias desde={desde} hasta={hasta} />}
       {tab === 'compras' && <ReporteCompras desde={desde} hasta={hasta} />}
+      {tab === 'devolucionesCompras' && <ReporteDevolucionesCompras desde={desde} hasta={hasta} />}
       {tab === 'facturas' && <ReporteFacturas desde={desde} hasta={hasta} />}
+      {tab === 'devolucionesFacturas' && <ReporteDevolucionesFacturas desde={desde} hasta={hasta} />}
       {tab === 'productosVendidos' && <ReporteProductosVendidos desde={desde} hasta={hasta} />}
       {tab === 'cargosDescargos' && <ReporteCargosDescargos desde={desde} hasta={hasta} />}
       {tab === 'clientes' && <ReporteClientes />}
@@ -213,23 +217,13 @@ function ReporteCompras({ desde, hasta }) {
           </thead>
           <tbody>
             {reporte.compras.map((c) => (
-              <tr key={c.id} style={{ borderBottom: '1px solid #eee', color: c.es_devolucion ? '#b42318' : undefined }}>
-                <td style={{ padding: '0.5rem' }}>
-                  {c.es_devolucion ? `Devolución N° ${String(c.numero_devolucion).padStart(6, '0')}` : `#${c.id}`}
-                </td>
+              <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>#{c.id}</td>
                 <td>{c.created_at}</td>
                 <td>{c.proveedor}</td>
                 <td>
                   {c.numero_factura_compra}
-                  {/* Antes esto estaba escrito como "c.es_devolucion && c.devuelve_a_encabezado_id && (...)".
-                      c.es_devolucion viene de SQLite como el NUMERO 0 o 1 (no true/false). Cuando es 0,
-                      "0 && cualquier_cosa" se queda en 0 (numero), y React SI renderiza el numero 0 como
-                      texto "0" (a diferencia de false/null/undefined, que no renderizan nada) — por eso
-                      aparecia un "0" suelto debajo del N° de factura en TODAS las compras normales. */}
-                  {Boolean(c.es_devolucion) && c.devuelve_a_encabezado_id && (
-                    <div style={{ fontSize: '0.78rem', color: '#98a2b3' }}>↩ Devuelve compra #{c.devuelve_a_encabezado_id}</div>
-                  )}
-                  {!c.es_devolucion && c.numerosDevolucion && c.numerosDevolucion.length > 0 && (
+                  {c.numerosDevolucion && c.numerosDevolucion.length > 0 && (
                     <div style={{ fontSize: '0.78rem', color: '#b42318', fontWeight: 600 }}>
                       {c.devueltoTotal ? '⚠ Devuelta por completo' : '⚠ Con devolución parcial'} — N° {c.numerosDevolucion.map((n) => String(n).padStart(6, '0')).join(', ')}
                     </div>
@@ -237,6 +231,81 @@ function ReporteCompras({ desde, hasta }) {
                 </td>
                 <td>${fmt(c.total_usd)}</td>
                 <td><button onClick={() => verDetalle(c.id)}>Ver</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Devoluciones de Compras ----------------
+
+function ReporteDevolucionesCompras({ desde, hasta }) {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [detalle, setDetalle] = useState(null);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteDevolucionesCompras(desde, hasta);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta]);
+
+  useEffect(() => { cargar(); setDetalle(null); }, [cargar]);
+
+  const verDetalle = async (id) => {
+    const res = await window.api.detalleCompraEncabezado(id);
+    if (res.ok) setDetalle(res);
+  };
+
+  if (cargando) return <p>Cargando...</p>;
+  if (!reporte) return null;
+
+  if (detalle) {
+    const { encabezado, items, devoluciones, resumenDevolucion } = detalle;
+    return (
+      <CompraFacturaDetalle
+        encabezado={encabezado}
+        items={items}
+        devoluciones={devoluciones}
+        resumenDevolucion={resumenDevolucion}
+        onVolver={() => setDetalle(null)}
+      />
+    );
+  }
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <p>
+        Devoluciones registradas: <strong>{reporte.cantidad}</strong>{' '}
+        — Total devuelto: <strong>${fmt(reporte.totalUsd)}</strong>
+      </p>
+      {reporte.devoluciones.length === 0 ? (
+        <p>No hay devoluciones de compras registradas en este rango de fechas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>N° de devolución</th>
+              <th>Fecha</th>
+              <th>Proveedor</th>
+              <th>Compra devuelta</th>
+              <th>Total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {reporte.devoluciones.map((d) => (
+              <tr key={d.id} style={{ borderBottom: '1px solid #eee', color: '#b42318' }}>
+                <td style={{ padding: '0.5rem' }}>Devolución N° {String(d.numero_devolucion).padStart(6, '0')}</td>
+                <td>{d.created_at}</td>
+                <td>{d.proveedor}</td>
+                <td>{d.numero_factura_compra_original || `#${d.devuelve_a_encabezado_id}`}</td>
+                <td>${fmt(d.total_usd)}</td>
+                <td><button onClick={() => verDetalle(d.id)}>Ver</button></td>
               </tr>
             ))}
           </tbody>
@@ -354,17 +423,12 @@ function ReporteFacturas({ desde, hasta }) {
           </thead>
           <tbody>
             {reporte.facturas.map((f) => (
-              <tr key={f.id} style={{ borderBottom: '1px solid #eee', color: f.es_devolucion ? '#b42318' : undefined }}>
-                <td style={{ padding: '0.5rem' }}>
-                  {f.es_devolucion ? `Devolución N° ${String(f.numero_devolucion).padStart(6, '0')}` : `#${f.numero_factura || String(f.id).padStart(6, '0')}`}
-                </td>
+              <tr key={f.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>#{f.numero_factura || String(f.id).padStart(6, '0')}</td>
                 <td>{f.created_at}</td>
                 <td>
                   {f.cliente_nombre}
-                  {Boolean(f.es_devolucion) && f.devuelve_a_factura_id && (
-                    <div style={{ fontSize: '0.78rem', color: '#98a2b3' }}>↩ Devuelve factura #{f.devuelve_a_factura_id}</div>
-                  )}
-                  {!f.es_devolucion && f.numerosDevolucion && f.numerosDevolucion.length > 0 && (
+                  {f.numerosDevolucion && f.numerosDevolucion.length > 0 && (
                     <div style={{ fontSize: '0.78rem', color: '#b42318', fontWeight: 600 }}>
                       {f.devueltoTotal ? '⚠ Devuelta por completo' : '⚠ Con devolución parcial'} — N° {f.numerosDevolucion.map((n) => String(n).padStart(6, '0')).join(', ')}
                     </div>
@@ -373,6 +437,121 @@ function ReporteFacturas({ desde, hasta }) {
                 <td>${fmt(f.total_usd)}</td>
                 <td>Bs {fmt(f.total_bs)}</td>
                 <td><button onClick={() => verDetalle(f.id)}>Ver</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Devoluciones de Facturas ----------------
+
+function ReporteDevolucionesFacturas({ desde, hasta }) {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [detalle, setDetalle] = useState(null);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteDevolucionesFacturas(desde, hasta);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta]);
+
+  useEffect(() => { cargar(); setDetalle(null); }, [cargar]);
+
+  const verDetalle = async (id) => {
+    const res = await window.api.detalleFactura(id);
+    if (res.ok) setDetalle(res);
+  };
+
+  if (cargando) return <p>Cargando...</p>;
+  if (!reporte) return null;
+
+  if (detalle) {
+    const { factura, items } = detalle;
+    return (
+      <div style={{ marginTop: '1rem' }}>
+        <button onClick={() => setDetalle(null)}>&larr; Volver al listado</button>
+        <h3>Devolución N° {String(factura.numero_devolucion).padStart(6, '0')}</h3>
+        <p><strong>Cliente:</strong> {factura.cliente_nombre} {factura.cliente_rif ? `(${factura.cliente_rif})` : ''}</p>
+        <p><strong>Fecha:</strong> {factura.created_at}</p>
+        <p><strong>Vendedor:</strong> {factura.usuario}</p>
+        <button onClick={() => generarFacturaPDF(factura, items)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0', tableLayout: 'fixed' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem', width: '32%' }}>Producto</th>
+              <th style={{ width: '28%' }}>Codigo</th>
+              <th style={{ width: '10%' }}>Cant.</th>
+              <th style={{ width: '15%' }}>Precio unit.</th>
+              <th style={{ width: '15%' }}>Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {agruparItemsPorProducto(items).map((grupo) => (
+              <tr key={grupo.product_id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem', verticalAlign: 'top', wordBreak: 'break-word' }}>{grupo.descripcion}</td>
+                <td style={{ verticalAlign: 'top' }}>
+                  {grupo.codigos.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      {grupo.codigos.map((c) => (
+                        <span key={c} style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>{c}</span>
+                      ))}
+                    </div>
+                  ) : '—'}
+                </td>
+                <td style={{ verticalAlign: 'top' }}>{grupo.cantidad}</td>
+                <td style={{ verticalAlign: 'top' }}>${fmt(grupo.precio_unitario)}</td>
+                <td style={{ verticalAlign: 'top' }}>${fmt(grupo.subtotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="form-box" style={{ maxWidth: '320px' }}>
+          <p>Subtotal: ${fmt(factura.subtotal_usd)}</p>
+          <p>IVA ({factura.iva_porcentaje}%): ${fmt(factura.iva_usd)}</p>
+          <p><strong>Total: ${fmt(factura.total_usd)}</strong></p>
+          <p style={{ color: '#666' }}>Tasa usada: {factura.tasa_cambio} Bs/USD</p>
+          <p><strong>Total Bs: {fmt(factura.total_bs)}</strong></p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <p>
+        Devoluciones registradas: <strong>{reporte.cantidad}</strong>{' '}
+        — Total devuelto: <strong>${fmt(reporte.totalUsd)}</strong> (Bs {fmt(reporte.totalBs)})
+      </p>
+      {reporte.devoluciones.length === 0 ? (
+        <p>No hay devoluciones de facturas registradas en este rango de fechas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>N° de devolución</th>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th>Factura devuelta</th>
+              <th>Total USD</th>
+              <th>Total Bs</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {reporte.devoluciones.map((d) => (
+              <tr key={d.id} style={{ borderBottom: '1px solid #eee', color: '#b42318' }}>
+                <td style={{ padding: '0.5rem' }}>Devolución N° {String(d.numero_devolucion).padStart(6, '0')}</td>
+                <td>{d.created_at}</td>
+                <td>{d.cliente_nombre}</td>
+                <td>{d.numero_factura_original || `#${d.devuelve_a_factura_id}`}</td>
+                <td>${fmt(d.total_usd)}</td>
+                <td>Bs {fmt(d.total_bs)}</td>
+                <td><button onClick={() => verDetalle(d.id)}>Ver</button></td>
               </tr>
             ))}
           </tbody>
