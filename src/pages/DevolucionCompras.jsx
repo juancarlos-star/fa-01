@@ -101,6 +101,16 @@ export default function DevolucionCompras({ currentUser }) {
     setModalCodigosProductId(null);
   };
 
+  // Quita el producto COMPLETO de lo que se va a devolver (deja su cantidad/codigos en cero),
+  // sin necesidad de ir bajando la cantidad manualmente o desmarcando codigo por codigo.
+  const quitarProductoDevolucion = (item) => {
+    if (item.tipo === 'accesorio') {
+      setSelecciones((prev) => ({ ...prev, [item.product_id]: { cantidad: 0 } }));
+    } else {
+      setSelecciones((prev) => ({ ...prev, [item.product_id]: { codigos: [] } }));
+    }
+  };
+
   // Base imponible / IVA / Total se calculan SOLO sobre lo que esta actualmente seleccionado
   // para devolver (no sobre el total original de la compra).
   const itemsSeleccionados = (compra?.items || []).map((item) => {
@@ -318,19 +328,20 @@ export default function DevolucionCompras({ currentUser }) {
         <table className="pos-table">
           <thead>
             <tr>
-              <th style={{ width: '12%' }}>Código</th>
+              <th style={{ width: '11%' }}>Código</th>
               <th>Descripción</th>
-              <th style={{ width: '11%' }}>Comprado</th>
-              <th style={{ width: '15%' }}>A devolver</th>
-              <th style={{ width: '7%' }}>Und</th>
-              <th style={{ width: '11%' }}>Costo</th>
-              <th style={{ width: '11%' }}>Total</th>
+              <th style={{ width: '10%' }}>Comprado</th>
+              <th style={{ width: '14%' }}>A devolver</th>
+              <th style={{ width: '6%' }}>Und</th>
+              <th style={{ width: '10%' }}>Costo</th>
+              <th style={{ width: '10%' }}>Total</th>
+              <th style={{ width: '8%' }}></th>
             </tr>
           </thead>
           <tbody>
             {!compra ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', color: '#98a2b3', padding: '18px' }}>
+                <td colSpan={8} style={{ textAlign: 'center', color: '#98a2b3', padding: '18px' }}>
                   Escribe el documento de una compra y presiona Enter para ver sus productos.
                 </td>
               </tr>
@@ -381,6 +392,17 @@ export default function DevolucionCompras({ currentUser }) {
                     <td>UND</td>
                     <td className="text-right">{fmt(item.costo_unitario_usd)}</td>
                     <td className="text-right">{fmt(totalLinea)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="pos-remove-btn"
+                        onClick={() => quitarProductoDevolucion(item)}
+                        disabled={cantidad === 0}
+                        title="Quitar este producto de la devolución"
+                      >
+                        ×
+                      </button>
+                    </td>
                   </tr>
                 );
               })
