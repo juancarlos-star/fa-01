@@ -17,7 +17,7 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('COMPRA N°', 145, 15);
+  doc.text(encabezado.es_devolucion ? 'DEVOLUCIÓN N°' : 'COMPRA N°', 145, 15);
   doc.text('FECHA:', 145, 21);
   doc.text('DOCUMENTO:', 145, 27);
   doc.text('MONEDA:', 145, 33);
@@ -104,7 +104,7 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   doc.setFontSize(11);
   doc.text(fmt(total), 195, y + 10, { align: 'right' });
 
-  const nombreArchivo = `Compra-${String(encabezado.id).padStart(6, '0')}`;
+  const nombreArchivo = `${encabezado.es_devolucion ? 'Devolucion' : 'Compra'}-${String(encabezado.id).padStart(6, '0')}`;
   if (opciones.imprimir) {
     await guardarAbrirEImprimirPDF(doc, nombreArchivo, 'Compras');
   } else {
