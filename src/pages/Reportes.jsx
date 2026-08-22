@@ -221,6 +221,13 @@ function ReporteCompras({ desde, hasta }) {
                 <td>{c.proveedor}</td>
                 <td>
                   {c.numero_factura_compra}
+                  {/* DIAGNOSTICO TEMPORAL: muestra el valor exacto tal como esta guardado (con
+                      comillas y cualquier caracter invisible a la vista, por ejemplo un \n o
+                      \u0000) para encontrar de una vez por que aparecen numeros con un caracter
+                      de mas al final. Se puede quitar este bloque despues de confirmar la causa. */}
+                  <div style={{ fontSize: '0.72rem', color: '#d0d5dd', fontFamily: 'monospace' }}>
+                    {JSON.stringify(c.numero_factura_compra)} (len {(c.numero_factura_compra || '').length})
+                  </div>
                   {c.es_devolucion && c.devuelve_a_encabezado_id && (
                     <div style={{ fontSize: '0.78rem', color: '#98a2b3' }}>↩ Devuelve compra #{c.devuelve_a_encabezado_id}</div>
                   )}
