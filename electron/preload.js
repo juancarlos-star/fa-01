@@ -101,6 +101,8 @@ contextBridge.exposeInMainWorld('api', {
   getReporteCompras: (desde, hasta) => ipcRenderer.invoke('reportes:compras', { desde, hasta }),
   getReporteDevolucionesCompras: (desde, hasta) => ipcRenderer.invoke('reportes:devolucionesCompras', { desde, hasta }),
   getReporteCargosDescargos: (desde, hasta) => ipcRenderer.invoke('reportes:cargosDescargos', { desde, hasta }),
+  getReporteInventarioProductos: (depositoId) => ipcRenderer.invoke('reportes:inventarioProductos', { depositoId }),
+  getReporteInventarioFisico: (depositoId) => ipcRenderer.invoke('reportes:inventarioFisico', { depositoId }),
   getReporteProductosVendidos: (desde, hasta, tipo, productId) =>
     ipcRenderer.invoke('reportes:productosVendidos', { desde, hasta, tipo, product_id: productId }),
   // Respaldo

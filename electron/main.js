@@ -2555,6 +2555,108 @@ ipcMain.handle('reportes:productosVendidos', (event, { desde, hasta, tipo, produ
   return { ok: true, desde, hasta, tipo, items, resumen, cantidadTotal, totalUsd };
 });
 
+// ---------------- Reportes de Inventario (Parte 2) ----------------
+// A diferencia de los reportes anteriores, estos no filtran por rango de fechas: muestran
+// la existencia ACTUAL (una "foto" del stock en este momento), que es lo que tiene sentido
+// para un reporte de inventario/valorizacion.
+
+function obtenerStockPorDepositoDeProducto(db, product) {
+  if (product.tipo === 'accesorio') {
+    return db.prepare(
+      `SELECT d.id AS deposito_id, d.nombre AS deposito_nombre, COALESCE(psd.cantidad, 0) AS cantidad
+       FROM depositos d
+       LEFT JOIN product_stock_deposito psd ON psd.deposito_id = d.id AND psd.product_id = ?
+       WHERE d.activo = 1
+       ORDER BY d.nombre`
+    ).all(product.id);
+  }
+  return db.prepare(
+    `SELECT d.id AS deposito_id, d.nombre AS deposito_nombre, COUNT(u.id) AS cantidad
+     FROM depositos d
+     LEFT JOIN inventory_units u ON u.deposito_id = d.id AND u.product_id = ? AND u.estado = 'disponible'
+     WHERE d.activo = 1
+     GROUP BY d.id
+     ORDER BY d.nombre`
+  ).all(product.id);
+}
+
+// "Productos": listado valorizado de todo el inventario (stock x costo promedio y stock x
+// precio de venta), opcionalmente filtrado a un solo deposito.
+ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
+  const db = getDb();
+  const productos = db.prepare('SELECT * FROM products ORDER BY tipo, nombre').all();
+
+  const filas = productos.map((p) => {
+    const porDeposito = obtenerStockPorDepositoDeProducto(db, p);
+    const stock = depositoId
+      ? (porDeposito.find((d) => d.deposito_id === depositoId)?.cantidad || 0)
+      : porDeposito.reduce((acc, d) => acc + d.cantidad, 0);
+    return {
+      id: p.id,
+      tipo: p.tipo,
+      nombre: p.nombre,
+      categoria: p.categoria,
+      codigo_producto: p.codigo_producto,
+      codigo_barras: p.codigo_barras,
+      precio: p.precio,
+      precio2: p.precio2,
+      costo_promedio_usd: p.costo_promedio_usd,
+      stock,
+      valorCostoUsd: stock * (p.costo_promedio_usd || 0),
+      valorPrecioUsd: stock * (p.precio || 0),
+      porDeposito
+    };
+  });
+
+  const totales = filas.reduce(
+    (acc, f) => ({
+      stock: acc.stock + f.stock,
+      valorCostoUsd: acc.valorCostoUsd + f.valorCostoUsd,
+      valorPrecioUsd: acc.valorPrecioUsd + f.valorPrecioUsd
+    }),
+    { stock: 0, valorCostoUsd: 0, valorPrecioUsd: 0 }
+  );
+
+  return { ok: true, productos: filas, totales };
+});
+
+// "Inventario Fisico": hoja de conteo por deposito -- para accesorios muestra la cantidad que
+// dice el sistema (para comparar contra el conteo real); para equipo/simcard/usim lista cada
+// unidad individual (IMEI/codigo) porque el conteo fisico de esos se hace unidad por unidad.
+ipcMain.handle('reportes:inventarioFisico', (event, { depositoId }) => {
+  const db = getDb();
+  if (!depositoId) return { ok: false, message: 'Debe seleccionar un deposito' };
+
+  const deposito = db.prepare('SELECT * FROM depositos WHERE id = ?').get(depositoId);
+  if (!deposito) return { ok: false, message: 'Deposito no encontrado' };
+
+  const accesorios = db.prepare(
+    `SELECT p.id AS product_id, p.nombre, p.codigo_producto, p.codigo_barras,
+            COALESCE(psd.cantidad, 0) AS cantidadSistema
+     FROM products p
+     LEFT JOIN product_stock_deposito psd ON psd.product_id = p.id AND psd.deposito_id = ?
+     WHERE p.tipo = 'accesorio'
+     ORDER BY p.nombre`
+  ).all(depositoId);
+
+  const unidades = db.prepare(
+    `SELECT u.id AS unit_id, u.codigo, p.id AS product_id, p.nombre, p.tipo, p.codigo_producto
+     FROM inventory_units u
+     JOIN products p ON p.id = u.product_id
+     WHERE u.deposito_id = ? AND u.estado = 'disponible'
+     ORDER BY p.tipo, p.nombre, u.codigo`
+  ).all(depositoId);
+
+  return {
+    ok: true,
+    deposito,
+    accesorios,
+    unidades,
+    totalAccesorios: accesorios.reduce((acc, a) => acc + a.cantidadSistema, 0),
+    totalUnidades: unidades.length
+  };
+});
+
 ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
   const db = getDb();
   const cargos = db.prepare(
