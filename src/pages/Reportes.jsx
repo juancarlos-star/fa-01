@@ -16,42 +16,84 @@ import {
 } from '../utils/generarReportesPDF.js';
 import { fmt } from '../utils/format.js';
 
-const TABS = [
-  { key: 'historial', label: 'Historial de facturas' },
-  { key: 'ganancias', label: 'Ventas y ganancias' },
-  { key: 'compras', label: 'Compras' },
-  { key: 'devolucionesCompras', label: 'Devoluciones de Compras' },
-  { key: 'facturas', label: 'Facturas' },
-  { key: 'devolucionesFacturas', label: 'Devoluciones de Facturas' },
-  { key: 'productosVendidos', label: 'Productos vendidos' },
-  { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' },
-  { key: 'clientes', label: 'Clientes' }
+// Reportes organizados por categorias (Inventario, Vendedores, Ventas, Compras...), cada una
+// con su propio sub-menu de reportes. Los reportes de Impuestos y Etiquetas se agregan en
+// partes siguientes; por ahora solo se muestran las categorias que ya tienen contenido.
+const CATEGORIAS = [
+  {
+    key: 'inventario',
+    label: 'Inventario',
+    items: [
+      { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' }
+    ]
+  },
+  {
+    key: 'vendedores',
+    label: 'Vendedores',
+    items: [
+      { key: 'productosVendidos', label: 'Ventas de productos' }
+    ]
+  },
+  {
+    key: 'ventas',
+    label: 'Ventas',
+    items: [
+      { key: 'historial', label: 'Historial de facturas' },
+      { key: 'ganancias', label: 'Ventas y ganancias' },
+      { key: 'facturas', label: 'Transacciones procesadas' },
+      { key: 'devolucionesFacturas', label: 'Devoluciones de Facturas' },
+      { key: 'clientes', label: 'Clientes' }
+    ]
+  },
+  {
+    key: 'compras',
+    label: 'Compras',
+    items: [
+      { key: 'compras', label: 'Compras' },
+      { key: 'devolucionesCompras', label: 'Devoluciones de Compras' }
+    ]
+  }
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
 const SIN_FILTRO_FECHA = ['clientes', 'historial'];
 
 export default function Reportes({ currentUser }) {
+  const [categoria, setCategoria] = useState('ventas');
   const [tab, setTab] = useState('ganancias');
   const [desde, setDesde] = useState(primerDiaDelMesStr());
   const [hasta, setHasta] = useState(hoyStr());
+
+  const categoriaActiva = CATEGORIAS.find((c) => c.key === categoria) || CATEGORIAS[0];
+
+  const irACategoria = (catKey) => {
+    setCategoria(catKey);
+    const cat = CATEGORIAS.find((c) => c.key === catKey);
+    if (cat && cat.items.length > 0) setTab(cat.items[0].key);
+  };
 
   return (
     <div>
       <h1>Reportes</h1>
 
-      <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
-        {TABS.map((t) => (
+      <div className="reportes-categorias">
+        {CATEGORIAS.map((c) => (
+          <button
+            key={c.key}
+            className={categoria === c.key ? 'active' : ''}
+            onClick={() => irACategoria(c.key)}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="reportes-subtabs">
+        {categoriaActiva.items.map((t) => (
           <button
             key={t.key}
+            className={tab === t.key ? 'active' : ''}
             onClick={() => setTab(t.key)}
-            style={{
-              padding: '0.5rem 1rem',
-              fontWeight: tab === t.key ? 'bold' : 'normal',
-              backgroundColor: tab === t.key ? '#0b4f9e' : '#e2e8f0',
-              color: tab === t.key ? '#fff' : '#111',
-              border: 'none', borderRadius: '4px', cursor: 'pointer'
-            }}
           >
             {t.label}
           </button>
