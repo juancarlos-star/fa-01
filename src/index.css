@@ -102,7 +102,14 @@ body {
 }
 
 /* Submenu flotante de "Compras" (Generar Compras / Devolucion de Compras): aparece a la
-   derecha del boton, como un pequeno panel flotante, igual que un menu contextual. */
+   derecha del boton, como un pequeno panel flotante, igual que un menu contextual.
+   IMPORTANTE: como este submenu vive DENTRO de <nav> (para que el click-fuera y el overlay
+   funcionen bien), la regla general ".sidebar nav button" (texto blanco, para el menu
+   principal sobre fondo azul) tambien coincide con estos botones y gana por especificidad CSS
+   sobre ".sidebar-submenu button" -> el texto quedaba blanco sobre el fondo blanco del
+   submenu, es decir invisible. Por eso las reglas de abajo usan ".sidebar .sidebar-submenu
+   button" (dos clases) para tener MAS especificidad que ".sidebar nav button" (una clase) y
+   asegurar que ganen siempre, sin importar el orden en que aparezcan en este archivo. */
 .sidebar-submenu-wrap {
   position: relative;
 }
@@ -126,7 +133,7 @@ body {
   z-index: 501;
 }
 
-.sidebar-submenu button {
+.sidebar .sidebar-submenu button {
   display: block;
   width: 100%;
   text-align: left;
@@ -141,11 +148,12 @@ body {
   white-space: nowrap;
 }
 
-.sidebar-submenu button:hover {
+.sidebar .sidebar-submenu button:hover {
   background: #eef4ff;
+  color: #1d2939;
 }
 
-.sidebar-submenu button.active {
+.sidebar .sidebar-submenu button.active {
   background: #dbeafe;
   color: #0b4f9e;
   font-weight: 600;
