@@ -154,7 +154,7 @@ export default function DevolucionFacturas({ currentUser }) {
       const detalle = await window.api.detalleFactura(res.devolucionId);
       if (detalle.ok) {
         try {
-          await generarFacturaPDF(detalle.factura, detalle.items, { imprimir: true });
+          await generarFacturaPDF(detalle.factura, detalle.items, settings, { imprimir: true });
         } catch (errImpresion) {
           console.error('Error al imprimir la devolucion automaticamente:', errImpresion);
         }
@@ -189,7 +189,7 @@ export default function DevolucionFacturas({ currentUser }) {
     if (!confirmacion?.detalle) return;
     setImprimiendo(true);
     try {
-      await generarFacturaPDF(confirmacion.detalle.factura, confirmacion.detalle.items, { imprimir: true });
+      await generarFacturaPDF(confirmacion.detalle.factura, confirmacion.detalle.items, settings, { imprimir: true });
     } finally {
       setImprimiendo(false);
     }

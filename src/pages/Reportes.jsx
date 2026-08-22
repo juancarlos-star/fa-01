@@ -94,6 +94,15 @@ const CATEGORIAS = [
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
 const SIN_FILTRO_FECHA = ['clientes', 'historial', 'inventarioProductos', 'inventarioFisico', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
 
+// Hook compartido para traer la configuracion de la tienda (nombre, RIF, logo, etc.), usado por
+// las pestañas de Reportes que generan el PDF de una factura individual (necesitan pasarsela a
+// generarFacturaPDF para que el documento muestre los datos de la tienda).
+function useSettings() {
+  const [settings, setSettings] = useState(null);
+  useEffect(() => { window.api.getSettings().then(setSettings); }, []);
+  return settings;
+}
+
 export default function Reportes({ currentUser }) {
   const [categoria, setCategoria] = useState('ventas');
   const [tab, setTab] = useState('ganancias');
@@ -411,6 +420,7 @@ function ReporteDevolucionesCompras({ desde, hasta }) {
 function ReporteFacturas({ desde, hasta }) {
   const [reporte, setReporte] = useState(null);
   const [cargando, setCargando] = useState(false);
+  const settings = useSettings();
   const [detalle, setDetalle] = useState(null);
   const [generandoPDF, setGenerandoPDF] = useState(false);
 
@@ -449,7 +459,7 @@ function ReporteFacturas({ desde, hasta }) {
         <p><strong>Cliente:</strong> {factura.cliente_nombre} {factura.cliente_rif ? `(${factura.cliente_rif})` : ''}</p>
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
-        <button onClick={() => generarFacturaPDF(factura, items)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0', tableLayout: 'fixed' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
@@ -542,6 +552,7 @@ function ReporteFacturas({ desde, hasta }) {
 function ReporteDevolucionesFacturas({ desde, hasta }) {
   const [reporte, setReporte] = useState(null);
   const [cargando, setCargando] = useState(false);
+  const settings = useSettings();
   const [detalle, setDetalle] = useState(null);
 
   const cargar = useCallback(async () => {
@@ -570,7 +581,7 @@ function ReporteDevolucionesFacturas({ desde, hasta }) {
         <p><strong>Cliente:</strong> {factura.cliente_nombre} {factura.cliente_rif ? `(${factura.cliente_rif})` : ''}</p>
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
-        <button onClick={() => generarFacturaPDF(factura, items)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0', tableLayout: 'fixed' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
@@ -1657,6 +1668,7 @@ function ReporteVentasPorCliente({ desde, hasta }) {
   const [clienteId, setClienteId] = useState(null);
   const [todasFacturas, setTodasFacturas] = useState([]);
   const [detalle, setDetalle] = useState(null);
+  const settings = useSettings();
   const [cargando, setCargando] = useState(false);
   const [generandoPDF, setGenerandoPDF] = useState(false);
 
@@ -1709,7 +1721,7 @@ function ReporteVentasPorCliente({ desde, hasta }) {
         <button onClick={() => setDetalle(null)}>&larr; Volver</button>
         <h3>Factura N° {factura.numero_factura || String(factura.id).padStart(6, '0')}</h3>
         <p><strong>Fecha:</strong> {factura.created_at} — <strong>Vendedor:</strong> {factura.usuario}</p>
-        <button onClick={() => generarFacturaPDF(factura, items)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>

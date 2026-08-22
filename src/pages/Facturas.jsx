@@ -5,6 +5,7 @@ import { fmt } from '../utils/format.js';
 export default function Facturas({ currentUser }) {
   const [facturas, setFacturas] = useState([]);
   const [detalle, setDetalle] = useState(null);
+  const [settings, setSettings] = useState(null);
   const esAdmin = currentUser?.role === 'administrador';
 
   const cargar = useCallback(async () => {
@@ -13,6 +14,7 @@ export default function Facturas({ currentUser }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => { window.api.getSettings().then(setSettings); }, []);
 
   const verDetalle = async (id) => {
     const res = await window.api.detalleFactura(id);
@@ -39,7 +41,7 @@ export default function Facturas({ currentUser }) {
         <p><strong>Cliente:</strong> {factura.cliente_nombre} {factura.cliente_rif ? `(${factura.cliente_rif})` : ''}</p>
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
-        <button onClick={() => generarFacturaPDF(factura, items)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         {esAdmin && !factura.es_devolucion && (
           <button onClick={() => handleEliminar(factura.id)} style={{ marginBottom: '1rem', marginLeft: '8px', color: '#b42318' }}>
             Eliminar factura
