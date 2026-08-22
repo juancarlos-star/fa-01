@@ -243,3 +243,90 @@ export async function generarPDFClientes(clientes) {
 
   await guardarYAbrirPDF(doc, `Reporte-Clientes_${fechaParaNombreArchivo()}`, 'Reportes');
 }
+
+// ---------------- Inventario: Productos (valorizado) ----------------
+
+const TIPO_LABEL = { equipo: 'Equipo', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
+
+export async function generarPDFInventarioProductos(reporte, depositoLabel) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('Reporte de Inventario — Productos', 10, 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Deposito: ${depositoLabel}`, 10, 22);
+  doc.setDrawColor(200);
+  doc.line(10, 26, 200, 26);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(
+    `Stock total: ${reporte.totales.stock}   —   Valor al costo: $${fmt(reporte.totales.valorCostoUsd)}   —   Valor a precio de venta: $${fmt(reporte.totales.valorPrecioUsd)}`,
+    10,
+    32
+  );
+
+  autoTable(doc, {
+    startY: 38,
+    head: [['Tipo', 'Codigo', 'Producto', 'Stock', 'Costo prom.', 'Valor costo', 'Precio', 'Valor precio']],
+    body: reporte.productos.map((p) => [
+      TIPO_LABEL[p.tipo] || p.tipo,
+      p.codigo_producto || '—',
+      p.nombre,
+      String(p.stock),
+      `$${fmt(p.costo_promedio_usd)}`,
+      `$${fmt(p.valorCostoUsd)}`,
+      `$${fmt(p.precio)}`,
+      `$${fmt(p.valorPrecioUsd)}`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Reporte-Inventario-Productos_${fechaParaNombreArchivo()}`, 'Reportes');
+}
+
+// ---------------- Inventario: Fisico (hoja de conteo) ----------------
+
+export async function generarPDFInventarioFisico(reporte) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('Hoja de Conteo Fisico de Inventario', 10, 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Deposito: ${reporte.deposito.nombre}`, 10, 22);
+  doc.setDrawColor(200);
+  doc.line(10, 26, 200, 26);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Accesorios (por cantidad)', 10, 33);
+
+  autoTable(doc, {
+    startY: 37,
+    head: [['Codigo', 'Producto', 'Cant. en sistema', 'Conteo fisico']],
+    body: reporte.accesorios.map((a) => [a.codigo_producto || '—', a.nombre, String(a.cantidadSistema), '']),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  const y2 = (doc.lastAutoTable?.finalY || 40) + 10;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Equipos, SIM y USIM (por unidad — IMEI / codigo)', 10, y2);
+
+  autoTable(doc, {
+    startY: y2 + 4,
+    head: [['Tipo', 'Producto', 'Codigo/IMEI', 'Contado (Si/No)']],
+    body: reporte.unidades.map((u) => [TIPO_LABEL[u.tipo] || u.tipo, u.nombre, u.codigo, '']),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Inventario-Fisico_${fechaParaNombreArchivo()}`, 'Reportes');
+}
