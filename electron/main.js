@@ -2426,22 +2426,23 @@ ipcMain.handle('units:writeOffRange', (event, { product_id, codigoInicio, codigo
 });
 
 // ---------- IPC: Reportes adicionales (facturas, compras, cargos y descargos) ----------
+// Solo facturas ORIGINALES (es_devolucion = 0); las devoluciones ahora tienen su propio
+// apartado ("reportes:devolucionesFacturas"), pero cada factura original que haya sido
+// devuelta sigue mostrando aqui el aviso con el numero de devolucion.
 ipcMain.handle('reportes:facturas', (event, { desde, hasta }) => {
   const db = getDb();
   const facturas = db.prepare(
-    "SELECT * FROM facturas WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
+    "SELECT * FROM facturas WHERE es_devolucion = 0 AND date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
   ).all(desde, hasta);
   const totalUsd = facturas.reduce((acc, f) => acc + f.total_usd, 0);
   const totalBs = facturas.reduce((acc, f) => acc + f.total_bs, 0);
 
-  // Mismo resumen ligero de devoluciones que ya se usa en el Reporte de Compras: para cada
-  // factura ORIGINAL (no una devolucion), se agrega el/los numero(s) de devolucion -si tiene-
-  // y si con ellas se devolvio la factura completa, para que se vea de una vez en el listado.
+  // Resumen ligero de devoluciones por factura: el/los numero(s) de devolucion -si tiene- y si
+  // con ellas se devolvio la factura completa, para que se vea de una vez en el listado.
   const getDevolucionesDeFactura = db.prepare(
     'SELECT numero_devolucion, total_usd FROM facturas WHERE devuelve_a_factura_id = ? ORDER BY id'
   );
   const facturasConDevolucion = facturas.map((f) => {
-    if (f.es_devolucion) return f;
     const devs = getDevolucionesDeFactura.all(f.id);
     if (devs.length === 0) return f;
     const devueltoUsd = devs.reduce((acc, d) => acc + Math.abs(d.total_usd), 0);
@@ -2455,21 +2456,40 @@ ipcMain.handle('reportes:facturas', (event, { desde, hasta }) => {
   return { ok: true, desde, hasta, facturas: facturasConDevolucion, cantidad: facturas.length, totalUsd, totalBs };
 });
 
+// Apartado propio de Devoluciones de Facturas: solo las filas es_devolucion = 1, con el numero
+// de la factura de venta original que devuelven, para poder ubicarla facilmente.
+ipcMain.handle('reportes:devolucionesFacturas', (event, { desde, hasta }) => {
+  const db = getDb();
+  const devoluciones = db.prepare(
+    "SELECT * FROM facturas WHERE es_devolucion = 1 AND date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
+  ).all(desde, hasta);
+  const getOriginal = db.prepare('SELECT numero_factura FROM facturas WHERE id = ?');
+  const conOriginal = devoluciones.map((d) => ({
+    ...d,
+    numero_factura_original: d.devuelve_a_factura_id ? (getOriginal.get(d.devuelve_a_factura_id)?.numero_factura || null) : null
+  }));
+  const totalUsd = devoluciones.reduce((acc, d) => acc + d.total_usd, 0);
+  const totalBs = devoluciones.reduce((acc, d) => acc + d.total_bs, 0);
+  return { ok: true, desde, hasta, devoluciones: conOriginal, cantidad: devoluciones.length, totalUsd, totalBs };
+});
+
+// Solo compras ORIGINALES (es_devolucion = 0); las devoluciones ahora tienen su propio
+// apartado ("reportes:devolucionesCompras"), pero cada compra original que haya sido devuelta
+// sigue mostrando aqui el aviso con el numero de devolucion.
 ipcMain.handle('reportes:compras', (event, { desde, hasta }) => {
   const db = getDb();
   const compras = db.prepare(
-    "SELECT * FROM compras_encabezado WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
+    "SELECT * FROM compras_encabezado WHERE es_devolucion = 0 AND date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
   ).all(desde, hasta);
   const totalUsd = compras.reduce((acc, c) => acc + c.total_usd, 0);
 
-  // Para cada compra ORIGINAL de la lista (no una devolucion), se agrega un resumen ligero de
-  // sus devoluciones -si tiene- para que se vea de una vez en el listado, sin tener que entrar
+  // Para cada compra ORIGINAL de la lista, se agrega un resumen ligero de sus devoluciones -si
+  // tiene- para que se vea de una vez en el listado, sin tener que entrar
   // al detalle: el/los numero(s) de devolucion, y si con ellas se devolvio la compra completa.
   const getDevolucionesDeCompra = db.prepare(
     'SELECT numero_devolucion, total_usd FROM compras_encabezado WHERE devuelve_a_encabezado_id = ? ORDER BY id'
   );
   const comprasConDevolucion = compras.map((c) => {
-    if (c.es_devolucion) return c;
     const devs = getDevolucionesDeCompra.all(c.id);
     if (devs.length === 0) return c;
     const devueltoUsd = devs.reduce((acc, d) => acc + Math.abs(d.total_usd), 0);
@@ -2481,6 +2501,22 @@ ipcMain.handle('reportes:compras', (event, { desde, hasta }) => {
   });
 
   return { ok: true, desde, hasta, compras: comprasConDevolucion, cantidad: compras.length, totalUsd };
+});
+
+// Apartado propio de Devoluciones de Compras: solo las filas es_devolucion = 1, con el numero
+// del documento de la compra original que devuelven, para poder ubicarla facilmente.
+ipcMain.handle('reportes:devolucionesCompras', (event, { desde, hasta }) => {
+  const db = getDb();
+  const devoluciones = db.prepare(
+    "SELECT * FROM compras_encabezado WHERE es_devolucion = 1 AND date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
+  ).all(desde, hasta);
+  const getOriginal = db.prepare('SELECT numero_factura_compra FROM compras_encabezado WHERE id = ?');
+  const conOriginal = devoluciones.map((d) => ({
+    ...d,
+    numero_factura_compra_original: d.devuelve_a_encabezado_id ? (getOriginal.get(d.devuelve_a_encabezado_id)?.numero_factura_compra || null) : null
+  }));
+  const totalUsd = devoluciones.reduce((acc, d) => acc + d.total_usd, 0);
+  return { ok: true, desde, hasta, devoluciones: conOriginal, cantidad: devoluciones.length, totalUsd };
 });
 
 ipcMain.handle('reportes:productosVendidos', (event, { desde, hasta, tipo, product_id }) => {

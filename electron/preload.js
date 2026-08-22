@@ -97,7 +97,9 @@ contextBridge.exposeInMainWorld('api', {
   // Reportes
   getReporteGanancias: (desde, hasta) => ipcRenderer.invoke('reportes:ganancias', { desde, hasta }),
   getReporteFacturas: (desde, hasta) => ipcRenderer.invoke('reportes:facturas', { desde, hasta }),
+  getReporteDevolucionesFacturas: (desde, hasta) => ipcRenderer.invoke('reportes:devolucionesFacturas', { desde, hasta }),
   getReporteCompras: (desde, hasta) => ipcRenderer.invoke('reportes:compras', { desde, hasta }),
+  getReporteDevolucionesCompras: (desde, hasta) => ipcRenderer.invoke('reportes:devolucionesCompras', { desde, hasta }),
   getReporteCargosDescargos: (desde, hasta) => ipcRenderer.invoke('reportes:cargosDescargos', { desde, hasta }),
   getReporteProductosVendidos: (desde, hasta, tipo, productId) =>
     ipcRenderer.invoke('reportes:productosVendidos', { desde, hasta, tipo, product_id: productId }),
