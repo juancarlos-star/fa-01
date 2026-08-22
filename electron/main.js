@@ -1893,14 +1893,18 @@ ipcMain.handle('compras:buscarPorDocumento', (event, { documento }) => {
   const texto = (documento || '').trim();
   if (!texto) return { ok: false, message: 'Escribe el numero de documento de compra' };
 
-  // IMPORTANTE: la busqueda ya NO filtra "AND es_devolucion = 0" directo en el SQL. Se busca
-  // el documento SIN esa condicion y se valida despues en JS, para poder devolver un mensaje
-  // especifico si lo que se encontro es en realidad una devolucion (en vez de un generico "no
-  // encontrado", que no ayudaba a entender que estaba pasando). TRIM() en ambos lados evita
-  // fallos por espacios invisibles que se hayan colado al escribir el documento originalmente.
-  const encabezado = db.prepare(
-    `SELECT * FROM compras_encabezado WHERE TRIM(numero_factura_compra) = TRIM(?) COLLATE NOCASE ORDER BY id DESC LIMIT 1`
-  ).get(texto);
+  // La comparacion se hace en JS (no en el SQL con TRIM/COLLATE) porque TRIM() en SQLite solo
+  // quita espacios normales, no tabulaciones ni saltos de linea. Si el documento se guardo con
+  // algun caracter invisible de esos (por ejemplo, pegado desde otro programa), la comparacion
+  // en SQL fallaba aunque en pantalla se viera identico (el navegador colapsa esos espacios al
+  // mostrar texto, por eso "se veia igual" pero no coincidia). normalizar() quita CUALQUIER
+  // espacio en blanco (espacios, tabs, saltos de linea) de ambos lados antes de comparar, para
+  // que esto no vuelva a fallar sin importar como haya quedado guardado el texto.
+  const normalizar = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
+  const objetivo = normalizar(texto);
+
+  const candidatos = db.prepare('SELECT * FROM compras_encabezado ORDER BY id DESC').all();
+  const encabezado = candidatos.find((c) => normalizar(c.numero_factura_compra) === objetivo);
   if (!encabezado) return { ok: false, message: `No se encontro ninguna compra con el documento "${texto}"` };
   if (encabezado.es_devolucion) {
     return {
