@@ -2796,3 +2796,64 @@ ipcMain.handle('reportes:vendedoresEstadisticas', (event, { desde, hasta }) => {
 
   return { ok: true, desde, hasta, filas: conDetalle, totalGeneral };
 });
+
+// ---------------- Reportes de Ventas (Parte 4) ----------------
+
+// "Transacciones": resumen diario de facturas (cantidad y total) dentro del rango.
+ipcMain.handle('reportes:ventasTransacciones', (event, { desde, hasta }) => {
+  const db = getDb();
+  const filas = db.prepare(
+    `SELECT date(created_at) AS fecha, COUNT(*) AS cantidadFacturas,
+            SUM(total_usd) AS totalUsd, SUM(total_bs) AS totalBs
+     FROM facturas
+     WHERE es_devolucion = 0 AND date(created_at) BETWEEN date(?) AND date(?)
+     GROUP BY fecha
+     ORDER BY fecha ASC`
+  ).all(desde, hasta);
+
+  const totales = filas.reduce(
+    (acc, f) => ({ cantidadFacturas: acc.cantidadFacturas + f.cantidadFacturas, totalUsd: acc.totalUsd + f.totalUsd, totalBs: acc.totalBs + f.totalBs }),
+    { cantidadFacturas: 0, totalUsd: 0, totalBs: 0 }
+  );
+
+  return { ok: true, desde, hasta, filas, totales };
+});
+
+// "Cierre de ventas diario": por producto y unidades vendidas, para UN dia especifico.
+ipcMain.handle('reportes:ventasCierreDiario', (event, { fecha }) => {
+  const db = getDb();
+  const filas = db.prepare(
+    `SELECT fi.descripcion, fi.tipo, fi.codigo, SUM(fi.cantidad) AS unidades, SUM(fi.subtotal_usd) AS totalUsd
+     FROM factura_items fi
+     JOIN facturas f ON f.id = fi.factura_id
+     WHERE f.es_devolucion = 0 AND date(f.created_at) = date(?)
+     GROUP BY fi.descripcion, fi.tipo
+     ORDER BY totalUsd DESC`
+  ).all(fecha);
+
+  const resumenFacturas = db.prepare(
+    `SELECT COUNT(*) AS cantidadFacturas, COALESCE(SUM(total_usd), 0) AS totalUsd, COALESCE(SUM(total_bs), 0) AS totalBs
+     FROM facturas WHERE es_devolucion = 0 AND date(created_at) = date(?)`
+  ).get(fecha);
+
+  const totalUnidades = filas.reduce((acc, f) => acc + f.unidades, 0);
+
+  return { ok: true, fecha, filas, totalUnidades, ...resumenFacturas };
+});
+
+// "Relacion de ventas": resumen diario o mensual con subtotal/IVA/total (en USD y Bs).
+ipcMain.handle('reportes:ventasRelacion', (event, { desde, hasta, agrupacion }) => {
+  const db = getDb();
+  const formato = FORMATO_PERIODO[agrupacion] || FORMATO_PERIODO.dia;
+  const filas = db.prepare(
+    `SELECT strftime(?, created_at) AS periodo, COUNT(*) AS cantidadFacturas,
+            SUM(subtotal_usd) AS subtotalUsd, SUM(iva_usd) AS ivaUsd, SUM(total_usd) AS totalUsd,
+            SUM(subtotal_bs) AS subtotalBs, SUM(iva_bs) AS ivaBs, SUM(total_bs) AS totalBs
+     FROM facturas
+     WHERE es_devolucion = 0 AND date(created_at) BETWEEN date(?) AND date(?)
+     GROUP BY periodo
+     ORDER BY periodo ASC`
+  ).all(formato, desde, hasta);
+
+  return { ok: true, desde, hasta, agrupacion: agrupacion || 'dia', filas };
+});
