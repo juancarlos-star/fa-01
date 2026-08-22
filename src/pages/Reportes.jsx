@@ -178,8 +178,16 @@ function ReporteCompras({ desde, hasta }) {
   if (!reporte) return null;
 
   if (detalle) {
-    const { encabezado, items } = detalle;
-    return <CompraFacturaDetalle encabezado={encabezado} items={items} onVolver={() => setDetalle(null)} />;
+    const { encabezado, items, devoluciones, resumenDevolucion } = detalle;
+    return (
+      <CompraFacturaDetalle
+        encabezado={encabezado}
+        items={items}
+        devoluciones={devoluciones}
+        resumenDevolucion={resumenDevolucion}
+        onVolver={() => setDetalle(null)}
+      />
+    );
   }
 
   return (
@@ -205,11 +213,23 @@ function ReporteCompras({ desde, hasta }) {
           </thead>
           <tbody>
             {reporte.compras.map((c) => (
-              <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>#{c.id}</td>
+              <tr key={c.id} style={{ borderBottom: '1px solid #eee', color: c.es_devolucion ? '#b42318' : undefined }}>
+                <td style={{ padding: '0.5rem' }}>
+                  {c.es_devolucion ? `Devolución N° ${String(c.numero_devolucion).padStart(6, '0')}` : `#${c.id}`}
+                </td>
                 <td>{c.created_at}</td>
                 <td>{c.proveedor}</td>
-                <td>{c.numero_factura_compra}</td>
+                <td>
+                  {c.numero_factura_compra}
+                  {c.es_devolucion && c.devuelve_a_encabezado_id && (
+                    <div style={{ fontSize: '0.78rem', color: '#98a2b3' }}>↩ Devuelve compra #{c.devuelve_a_encabezado_id}</div>
+                  )}
+                  {!c.es_devolucion && c.numerosDevolucion && c.numerosDevolucion.length > 0 && (
+                    <div style={{ fontSize: '0.78rem', color: '#b42318', fontWeight: 600 }}>
+                      {c.devueltoTotal ? '⚠ Devuelta por completo' : '⚠ Con devolución parcial'} — N° {c.numerosDevolucion.map((n) => String(n).padStart(6, '0')).join(', ')}
+                    </div>
+                  )}
+                </td>
                 <td>${fmt(c.total_usd)}</td>
                 <td><button onClick={() => verDetalle(c.id)}>Ver</button></td>
               </tr>

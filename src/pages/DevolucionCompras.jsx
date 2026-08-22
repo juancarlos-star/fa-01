@@ -19,6 +19,10 @@ export default function DevolucionCompras({ currentUser }) {
   const [compra, setCompra] = useState(null); // { encabezado, items }
   const [error, setError] = useState('');
 
+  // Numero consecutivo de devolucion (independiente del numero de compra), se muestra como
+  // vista previa antes de registrar, igual que "Compra N°" en el modulo de Compras.
+  const [proximoNumeroDevolucion, setProximoNumeroDevolucion] = useState(null);
+
   // selecciones[product_id] = { cantidad } para accesorios, o { codigos: [...] } para
   // equipos/SIM/USIM. Se inicializa con TODO lo disponible marcado (devolucion total por
   // defecto); el usuario puede bajar la cantidad o desmarcar codigos para una devolucion parcial.
@@ -35,6 +39,11 @@ export default function DevolucionCompras({ currentUser }) {
   useEffect(() => { window.api.getSettings().then(setSettings); }, []);
   useEffect(() => { window.api.listDepositos().then(setDepositos); }, []);
   useEffect(() => { setTimeout(() => documentoRef.current?.focus(), 0); }, []);
+
+  const cargarProximoNumeroDevolucion = () => {
+    window.api.proximoNumeroDevolucion().then((res) => setProximoNumeroDevolucion(res.proximoNumero));
+  };
+  useEffect(() => { cargarProximoNumeroDevolucion(); }, []);
 
   const nombreDeposito = (depositoId) => {
     const d = depositos.find((dep) => dep.id === depositoId);
@@ -145,10 +154,11 @@ export default function DevolucionCompras({ currentUser }) {
         }
       }
 
-      setConfirmacion({ devolucionId: res.devolucionId, totalUsd: res.totalDevueltoUsd, detalle: detalle.ok ? detalle : null });
+      setConfirmacion({ devolucionId: res.devolucionId, numeroDevolucion: res.numeroDevolucion, totalUsd: res.totalDevueltoUsd, detalle: detalle.ok ? detalle : null });
       setCompra(null);
       setSelecciones({});
       setDocumento('');
+      cargarProximoNumeroDevolucion();
     } catch (err) {
       console.error('Error al registrar la devolucion:', err);
       setError('Ocurrio un error inesperado: ' + (err?.message || String(err)));
@@ -189,7 +199,7 @@ export default function DevolucionCompras({ currentUser }) {
         <div className="pos-receipt-body">
           <div className="pos-receipt-row">
             <span>N° de devolución</span>
-            <strong>{String(confirmacion.devolucionId).padStart(6, '0')}</strong>
+            <strong>{String(confirmacion.numeroDevolucion ?? confirmacion.devolucionId).padStart(6, '0')}</strong>
           </div>
           <div className="pos-receipt-row">
             <span>Total devuelto (USD)</span>
@@ -231,6 +241,13 @@ export default function DevolucionCompras({ currentUser }) {
               disabled={!!compra || buscando}
             />
           </div>
+
+          {compra && (
+            <div className="pos-field">
+              <label>Compra N°</label>
+              <input value={String(encabezado.id).padStart(6, '0')} disabled />
+            </div>
+          )}
 
           <div className="pos-field">
             <label>Vendedor</label>
@@ -275,9 +292,7 @@ export default function DevolucionCompras({ currentUser }) {
         </div>
 
         <div className="pos-right">
-          <div className="pos-right-header">
-            {encabezado ? `Devolución - Compra N° ${String(encabezado.id).padStart(6, '0')}` : 'Devolución de Compra'}
-          </div>
+          <div className="pos-right-header">Devolución N° {proximoNumeroDevolucion != null ? String(proximoNumeroDevolucion).padStart(6, '0') : '------'}</div>
           <div className="pos-right-row">
             <span>Base imponible</span>
             <span>{fmt(subtotal)}</span>
