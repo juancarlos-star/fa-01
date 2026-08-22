@@ -101,6 +101,17 @@ body {
   background: rgba(255,255,255,0.15);
 }
 
+/* Cuando el submenu de "Compras" esta abierto, el resto de los botones del menu principal
+   quedan sombreados (opacos) para que el submenu flotante sea lo unico que resalte. Solo
+   afecta a los <button> que son hijos DIRECTOS de <nav> (Inicio, Facturar, Inventario,
+   Categorias, etc.) — el boton "Compras" vive dentro de ".sidebar-submenu-wrap" (un <div>, no
+   un <button> directo de nav), asi que no se ve afectado por esta regla y se mantiene visible. */
+.sidebar nav.submenu-open > button {
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
 /* Submenu flotante de "Compras" (Generar Compras / Devolucion de Compras): aparece a la
    derecha del boton, como un pequeno panel flotante, igual que un menu contextual.
    IMPORTANTE: como este submenu vive DENTRO de <nav> (para que el click-fuera y el overlay

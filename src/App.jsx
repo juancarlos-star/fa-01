@@ -31,7 +31,7 @@ export default function App() {
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
-        <nav>
+        <nav className={menuComprasAbierto ? 'submenu-open' : ''}>
           <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}>Inicio</button>
           <button className={view === 'facturacion' ? 'active' : ''} onClick={() => setView('facturacion')}>Facturar</button>
           <button className={view === 'inventario' ? 'active' : ''} onClick={() => setView('inventario')}>Inventario</button>
