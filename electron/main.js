@@ -1226,6 +1226,12 @@ ipcMain.handle('settings:get', () => {
 
 ipcMain.handle('settings:update', (event, values) => {
   const db = getDb();
+  // El logo (si viene) se guarda como texto (data URL base64) en la misma tabla key/value; se
+  // limita su tamano aqui tambien (ademas de la validacion en el formulario) para que un archivo
+  // corrupto o manipulado no infle la base de datos sin control.
+  if (values.logo_base64 && String(values.logo_base64).length > 600000) {
+    return { ok: false, message: 'El logo es demasiado grande. Usa una imagen de menos de 400KB.' };
+  }
   const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
   const transaccion = db.transaction((vals) => {
     Object.keys(vals).forEach((k) => stmt.run(k, String(vals[k])));
