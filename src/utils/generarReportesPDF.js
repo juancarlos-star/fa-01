@@ -440,3 +440,120 @@ export async function generarPDFVendedoresEstadisticas(reporte) {
 
   await guardarYAbrirPDF(doc, `Vendedores-Estadisticas_${fechaParaNombreArchivo()}`, 'Reportes');
 }
+
+// ---------------- Ventas: Transacciones ----------------
+
+export async function generarPDFVentasTransacciones(reporte) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  encabezado(doc, 'Transacciones — Resumen Diario', reporte.desde, reporte.hasta);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(
+    `Facturas: ${reporte.totales.cantidadFacturas}   —   Total: $${fmt(reporte.totales.totalUsd)} (Bs ${fmt(reporte.totales.totalBs)})`,
+    10,
+    34
+  );
+
+  autoTable(doc, {
+    startY: 40,
+    head: [['Fecha', 'Facturas', 'Total USD', 'Total Bs']],
+    body: reporte.filas.map((f) => [f.fecha, String(f.cantidadFacturas), `$${fmt(f.totalUsd)}`, `Bs ${fmt(f.totalBs)}`]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Ventas-Transacciones_${fechaParaNombreArchivo()}`, 'Reportes');
+}
+
+// ---------------- Ventas: Cierre diario ----------------
+
+export async function generarPDFVentasCierreDiario(reporte) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('Cierre de Ventas Diario', 10, 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Fecha: ${reporte.fecha}`, 10, 22);
+  doc.setDrawColor(200);
+  doc.line(10, 26, 200, 26);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text(
+    `Facturas: ${reporte.cantidadFacturas}   —   Unidades vendidas: ${reporte.totalUnidades}   —   Total: $${fmt(reporte.totalUsd)} (Bs ${fmt(reporte.totalBs)})`,
+    10,
+    32
+  );
+
+  autoTable(doc, {
+    startY: 38,
+    head: [['Producto', 'Tipo', 'Codigo', 'Unidades', 'Total']],
+    body: reporte.filas.map((f) => [f.descripcion, TIPO_LABEL[f.tipo] || f.tipo || '—', f.codigo || '—', String(f.unidades), `$${fmt(f.totalUsd)}`]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Cierre-Ventas-Diario_${fechaParaNombreArchivo()}`, 'Reportes');
+}
+
+// ---------------- Ventas: Relacion de ventas ----------------
+
+export async function generarPDFVentasRelacion(reporte) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  encabezado(doc, `Relación de Ventas — ${AGRUPACION_LABEL[reporte.agrupacion] || ''}`, reporte.desde, reporte.hasta);
+
+  autoTable(doc, {
+    startY: 34,
+    head: [['Periodo', 'Facturas', 'Subtotal', 'IVA', 'Total USD', 'Total Bs']],
+    body: reporte.filas.map((f) => [
+      f.periodo,
+      String(f.cantidadFacturas),
+      `$${fmt(f.subtotalUsd)}`,
+      `$${fmt(f.ivaUsd)}`,
+      `$${fmt(f.totalUsd)}`,
+      `Bs ${fmt(f.totalBs)}`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Ventas-Relacion_${fechaParaNombreArchivo()}`, 'Reportes');
+}
+
+// ---------------- Ventas: Transacciones por cliente ----------------
+
+export async function generarPDFVentasPorCliente(cliente, facturas) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(`Transacciones de ${cliente.nombre}`, 10, 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Cedula/RIF: ${cliente.rif_cedula || '—'}   —   Facturas encontradas: ${facturas.length}`, 10, 22);
+  doc.setDrawColor(200);
+  doc.line(10, 26, 200, 26);
+
+  autoTable(doc, {
+    startY: 32,
+    head: [['Fecha', 'N° factura', 'Vendedor', 'Total USD', 'Total Bs']],
+    body: facturas.map((f) => [
+      f.created_at,
+      f.numero_factura || String(f.id).padStart(6, '0'),
+      f.usuario || '—',
+      `$${fmt(f.total_usd)}`,
+      `Bs ${fmt(f.total_bs)}`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  await guardarYAbrirPDF(doc, `Transacciones-Cliente_${fechaParaNombreArchivo()}`, 'Reportes');
+}
