@@ -1828,7 +1828,17 @@ ipcMain.handle('compras:detalleEncabezado', (event, { id }) => {
   const encabezado = db.prepare('SELECT * FROM compras_encabezado WHERE id = ?').get(id);
   if (!encabezado) return { ok: false, message: 'Compra no encontrada' };
   const items = db.prepare('SELECT * FROM compras WHERE compra_encabezado_id = ?').all(id);
-  const getCodigos = db.prepare('SELECT codigo FROM inventory_units WHERE compra_encabezado_id = ? AND product_id = ? ORDER BY id');
+  // Los codigos/IMEI de una unidad se buscan por columnas DISTINTAS segun si este encabezado
+  // es una compra normal o una devolucion: al comprar, la unidad guarda compra_encabezado_id
+  // (de donde entro); al devolverla, esa columna NO cambia (sigue apuntando a la compra
+  // ORIGINAL para siempre), lo que cambia es devolucion_encabezado_id (que se llena en ese
+  // momento). Por eso, al pedir el detalle de una DEVOLUCION, hay que buscar por
+  // devolucion_encabezado_id en vez de compra_encabezado_id — si no, no aparecia ningun
+  // codigo/IMEI en la devolucion (ni en su pantalla de confirmacion ni en su PDF), aunque la
+  // devolucion se hubiera registrado bien.
+  const getCodigos = encabezado.es_devolucion
+    ? db.prepare('SELECT codigo FROM inventory_units WHERE devolucion_encabezado_id = ? AND product_id = ? ORDER BY id')
+    : db.prepare('SELECT codigo FROM inventory_units WHERE compra_encabezado_id = ? AND product_id = ? ORDER BY id');
   const itemsConCodigos = items.map((item) => ({
     ...item,
     codigos: item.tipo === 'accesorio' ? [] : getCodigos.all(id, item.product_id).map((r) => r.codigo)
@@ -1900,7 +1910,14 @@ ipcMain.handle('compras:buscarPorDocumento', (event, { documento }) => {
   // mostrar texto, por eso "se veia igual" pero no coincidia). normalizar() quita CUALQUIER
   // espacio en blanco (espacios, tabs, saltos de linea) de ambos lados antes de comparar, para
   // que esto no vuelva a fallar sin importar como haya quedado guardado el texto.
-  const normalizar = (s) => (s || '').replace(/\s+/g, '').toLowerCase();
+  // La comparacion se hace en JS (no en el SQL) porque el problema no era solo espacios: al
+  // ESCRIBIR el documento funcionaba, pero al PEGARLO (Ctrl+V) fallaba, lo que confirma que el
+  // portapapeles trae algun caracter invisible que no es un espacio comun (puede ser un salto
+  // de linea, tabulacion, o un caracter de formato invisible tipo BOM/zero-width). En vez de
+  // tratar de adivinar cual caracter es, se quita TODO lo que no sea letra o numero de ambos
+  // lados antes de comparar — asi no importa que caracter invisible se haya colado al copiar y
+  // pegar, la comparacion sigue funcionando igual que si se hubiera escrito a mano.
+  const normalizar = (s) => (s || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
   const objetivo = normalizar(texto);
 
   const candidatos = db.prepare('SELECT * FROM compras_encabezado ORDER BY id DESC').all();
