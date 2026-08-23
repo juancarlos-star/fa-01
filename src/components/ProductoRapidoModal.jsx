@@ -8,9 +8,11 @@ import { fmt } from '../utils/format.js';
 // copiar el formato de codigo que se viene usando.
 //
 // Tambien se reutiliza, con el mismo diseno, para EDITAR un producto existente: cuando se pasa
-// "productoEditar", el titulo cambia a "EDITAR PRODUCTO", los campos se precargan con sus datos
-// actuales, el checkbox de tipo queda fijo (no se puede cambiar el tipo de un producto que ya
-// tiene inventario/unidades asociadas) y al guardar se actualiza en vez de crear.
+// "productoEditar", el titulo cambia a "EDITAR PRODUCTO" y los campos se precargan con sus datos
+// actuales. El checkbox de tipo ("se vende por unidad") se puede seguir cambiando MIENTRAS el
+// producto todavia no tenga compras, ventas ni unidades (IMEI/codigo) registradas -en ese caso
+// no hay ningun dato que se vuelva inconsistente al cambiarlo-; una vez que ya tiene movimientos,
+// el checkbox se bloquea para no dejar datos huerfanos o contradictorios.
 export default function ProductoRapidoModal({ codigoInicial, productoEditar, onConfirm, onCancel }) {
   const editando = !!productoEditar;
   const [form, setForm] = useState({
@@ -19,7 +21,11 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
     costo_inicial: editando ? String(productoEditar.costo_promedio_usd ?? '0') : '',
     precio: editando ? String(productoEditar.precio ?? '') : '',
     precio2: editando ? String(productoEditar.precio2 ?? '') : '',
-    seVendePorUnidad: editando ? productoEditar.tipo !== 'accesorio' : false // false = accesorio (cantidad general) | true = requiere codigo/IMEI individual
+    // Por defecto viene TILDADO ("se vende por unidad"): la gran mayoria de los productos que se
+    // registran al vuelo desde Compras son equipos/SIM/USIM con IMEI o codigo individual, asi que
+    // conviene que el usuario tenga que destildar para el caso menos comun (accesorio por
+    // cantidad) en vez de tener que acordarse de tildar cada vez.
+    seVendePorUnidad: editando ? productoEditar.tipo !== 'accesorio' : true
   });
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -27,9 +33,28 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
   const [productos, setProductos] = useState([]);
   const [filtroLista, setFiltroLista] = useState('');
 
+  // Mientras se confirma si el producto tiene movimientos, se asume que SI (mas conservador) para
+  // no dejar destildar por un instante algo que en realidad esta bloqueado.
+  const [tieneMovimientos, setTieneMovimientos] = useState(true);
+  const [verificandoMovimientos, setVerificandoMovimientos] = useState(editando);
+
   useEffect(() => {
     window.api.listProducts().then(setProductos);
   }, []);
+
+  useEffect(() => {
+    if (!editando) { setVerificandoMovimientos(false); return; }
+    let cancelado = false;
+    window.api.productoTieneMovimientos(productoEditar.id).then((res) => {
+      if (!cancelado) {
+        setTieneMovimientos(res.tieneMovimientos);
+        setVerificandoMovimientos(false);
+      }
+    });
+    return () => { cancelado = true; };
+  }, [editando, productoEditar]);
+
+  const checkboxBloqueado = editando && (verificandoMovimientos || tieneMovimientos);
 
   const set = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
 
@@ -47,13 +72,17 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
     setGuardando(true);
     try {
       if (editando) {
+        const tipoCambio = tipo !== productoEditar.tipo;
         const res = await window.api.updateProduct(productoEditar.id, {
+          tipo,
           nombre: form.nombre.trim(),
-          categoria: productoEditar.categoria || '',
+          // Si el tipo cambia, la categoria vieja (pensada para el tipo anterior) ya no aplica;
+          // se limpia para que no choque con la validacion de categoria-vs-tipo del backend.
+          categoria: tipoCambio ? '' : (productoEditar.categoria || ''),
           precio: parseFloat(form.precio) || 0,
           precio2: parseFloat(form.precio2) || 0,
           stock_minimo: productoEditar.stock_minimo ?? 0,
-          codigo_barras: productoEditar.codigo_barras || '',
+          codigo_barras: tipo === 'accesorio' ? (productoEditar.codigo_barras || '') : '',
           codigo_producto: codigoLimpio || ''
         });
         if (!res.ok) {
@@ -71,6 +100,8 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
         }
         onConfirm({
           ...productoEditar,
+          tipo,
+          categoria: tipoCambio ? '' : (productoEditar.categoria || ''),
           nombre: form.nombre.trim(),
           codigo_producto: codigoLimpio || null,
           precio: parseFloat(form.precio) || 0,
@@ -158,18 +189,23 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
             </div>
 
             <div style={{ margin: '10px 0' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: editando ? '#98a2b3' : '#333', cursor: editando ? 'default' : 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: checkboxBloqueado ? '#98a2b3' : '#333', cursor: checkboxBloqueado ? 'default' : 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={form.seVendePorUnidad}
-                  disabled={editando}
+                  disabled={checkboxBloqueado}
                   onChange={(e) => setForm({ ...form, seVendePorUnidad: e.target.checked })}
                 />
                 Se vende por unidad (requiere código/IMEI individual, ej. equipos, SIM, USIM)
               </label>
-              {editando && (
+              {editando && tieneMovimientos && (
                 <p style={{ fontSize: '0.75rem', color: '#98a2b3', margin: '4px 0 0' }}>
-                  El tipo de producto no se puede cambiar una vez creado.
+                  El tipo de producto no se puede cambiar: ya tiene compras, ventas o unidades registradas.
+                </p>
+              )}
+              {editando && !verificandoMovimientos && !tieneMovimientos && (
+                <p style={{ fontSize: '0.75rem', color: '#0b8f4e', margin: '4px 0 0' }}>
+                  Puedes cambiar esta opción: el producto todavía no tiene compras, ventas ni unidades registradas.
                 </p>
               )}
             </div>
@@ -204,11 +240,11 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                   <thead>
-                    <tr style={{ textAlign: 'left', position: 'sticky', top: 0, background: '#f4f6f8' }}>
+                    <tr style={{ position: 'sticky', top: 0, background: '#f4f6f8' }}>
                       <th style={thStyle}>Código</th>
                       <th style={thStyle}>Descripción</th>
-                      <th style={thStyle}>Costo</th>
-                      <th style={thStyle}>Precio</th>
+                      <th style={thStyleCentrado}>Costo</th>
+                      <th style={thStyleCentrado}>Precio</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -216,8 +252,8 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
                       <tr key={p.id} style={{ borderBottom: '1px solid #f0f2f5' }}>
                         <td style={tdStyle}>{p.codigo_producto || '—'}</td>
                         <td style={tdStyle}>{p.nombre}</td>
-                        <td style={tdStyle}>${fmt(p.costo_promedio_usd)}</td>
-                        <td style={tdStyle}>{fmt(p.precio)}</td>
+                        <td style={tdStyleCentrado}>${fmt(p.costo_promedio_usd)}</td>
+                        <td style={tdStyleCentrado}>{fmt(p.precio)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -328,6 +364,16 @@ const thStyle = {
   color: '#475467'
 };
 
+const thStyleCentrado = {
+  ...thStyle,
+  textAlign: 'center'
+};
+
 const tdStyle = {
   padding: '5px 6px'
+};
+
+const tdStyleCentrado = {
+  ...tdStyle,
+  textAlign: 'center'
 };
