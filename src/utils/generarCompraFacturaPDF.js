@@ -27,7 +27,8 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   doc.text('FECHA:', 145, 21);
   doc.text('DOCUMENTO:', 145, 27);
   doc.text('MONEDA:', 145, 33);
-  doc.text('VENDEDOR:', 145, 39);
+  doc.text('TASA DEL DIA:', 145, 39);
+  doc.text('VENDEDOR:', 145, 45);
 
   // El numero mostrado y el del nombre del archivo son distintos segun el tipo de documento:
   // una compra usa su propio id consecutivo, pero una devolucion usa su numero_devolucion
@@ -44,8 +45,10 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   const fecha = (fechaParte || '').split('-').reverse().join('/');
   doc.text(`${fecha}${horaParte ? '  ' + horaParte : ''}`, xValor, 21);
   doc.text(encabezado.numero_factura_compra || '-', xValor, 27);
-  doc.text(encabezado.moneda === 'Dolares' ? 'Dólares' : 'Bs.', xValor, 33);
-  doc.text(encabezado.usuario || '-', xValor, 39);
+  const monedaTexto = encabezado.moneda === 'Dolares' ? 'Dólares' : encabezado.moneda === 'Mixta' ? 'Mixta ($ y Bs.)' : 'Bs.';
+  doc.text(monedaTexto, xValor, 33);
+  doc.text(encabezado.tasa_cambio ? `${fmt(encabezado.tasa_cambio)} Bs/USD` : '-', xValor, 39);
+  doc.text(encabezado.usuario || '-', xValor, 45);
 
   doc.setFont('helvetica', 'bold');
   doc.text('PROVEEDOR:', 10, yProveedor);
