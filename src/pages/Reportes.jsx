@@ -113,27 +113,9 @@ export default function Reportes({ currentUser, categoriaInicial }) {
 
   const categoriaActiva = CATEGORIAS.find((c) => c.key === categoria) || CATEGORIAS[0];
 
-  const irACategoria = (catKey) => {
-    setCategoria(catKey);
-    const cat = CATEGORIAS.find((c) => c.key === catKey);
-    if (cat && cat.items.length > 0) setTab(cat.items[0].key);
-  };
-
   return (
     <div>
-      <h1>Reportes</h1>
-
-      <div className="reportes-categorias">
-        {CATEGORIAS.map((c) => (
-          <button
-            key={c.key}
-            className={categoria === c.key ? 'active' : ''}
-            onClick={() => irACategoria(c.key)}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
+      <h1>Reportes · {categoriaActiva.label}</h1>
 
       <div className="reportes-subtabs">
         {categoriaActiva.items.map((t) => (
