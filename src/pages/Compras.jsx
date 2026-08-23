@@ -18,10 +18,15 @@ export default function Compras({ currentUser }) {
   const [depositos, setDepositos] = useState([]);
   const [depositoId, setDepositoId] = useState('');
 
-  // Moneda en la que se esta registrando el costo de esta compra (solo informativo/para el
-  // PDF; no cambia como se calculan los totales, que siempre se guardan en USD como el resto
-  // del sistema).
-  const [moneda, setMoneda] = useState('Bs');
+  // La moneda en la que se compra cada producto ya NO se elige a mano: se decide sola segun
+  // el tipo de producto (SimCard y USIM siempre se compran en Bs.; Equipo y Accesorio siempre
+  // en Dolares), que es como este negocio realmente trabaja con sus proveedores. El campo
+  // "Costo" de la fila de entrada se etiqueta segun corresponda, y si es Bs. se convierte a $
+  // automaticamente usando la tasa de cambio del dia (settings.tasa_cambio) ANTES de guardar,
+  // para que el costo promedio, el valor del inventario y las ganancias sigan siempre en
+  // dolares (que no cambian de valor de un dia a otro) y no se corrompan con montos en Bs.
+  const monedaDeTipo = (tipo) => (tipo === 'simcard' || tipo === 'usim') ? 'Bs' : 'Dolares';
+  const tasaCambio = settings ? (parseFloat(settings.tasa_cambio) || 1) : 1;
 
   // Documento de compra: numero de factura/nota de entrega del proveedor.
   const [documentoCompra, setDocumentoCompra] = useState('');
@@ -176,9 +181,18 @@ export default function Compras({ currentUser }) {
     setMostrarModalCodigosNuevos(false);
   };
 
+  // El costo promedio del producto (costo_promedio_usd) siempre esta guardado en dolares. Si
+  // el producto se compra en Bs. (SimCard/USIM), se convierte a Bs. con la tasa del dia para
+  // prellenar el campo "Costo" con un numero que tiene sentido en la moneda que se va a
+  // escribir; si se compra en dolares, se deja tal cual.
+  const prefillCosto = (p) => {
+    const costoUsd = p.costo_promedio_usd != null ? Number(p.costo_promedio_usd) : 0;
+    return monedaDeTipo(p.tipo) === 'Bs' ? String(Math.round(costoUsd * tasaCambio * 100) / 100) : String(costoUsd);
+  };
+
   const seleccionarProductoEnFila = (p) => {
     setFilaProducto(p);
-    setFilaCosto(p.costo_promedio_usd != null ? String(p.costo_promedio_usd) : '0');
+    setFilaCosto(prefillCosto(p));
     setFilaCantidad(1);
     setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
   };
@@ -194,7 +208,7 @@ export default function Compras({ currentUser }) {
     // Refleja de inmediato los cambios en la fila de entrada, sin tener que volver a buscar
     // el producto. El costo de la fila tambien se actualiza si cambio el costo promedio.
     setFilaProducto(productoActualizado);
-    setFilaCosto(String(productoActualizado.costo_promedio_usd ?? 0));
+    setFilaCosto(prefillCosto(productoActualizado));
   };
 
   const buscarProductoPorCodigoEnter = async () => {
@@ -232,7 +246,15 @@ export default function Compras({ currentUser }) {
     seleccionarProductoEnFila(producto);
   };
 
-  const totalFila = () => (parseFloat(filaCosto) || 0) * (parseInt(filaCantidad, 10) || 0);
+  // Costo de la fila actual, siempre convertido a dolares: si el producto se compra en Bs.
+  // (SimCard/USIM), se divide entre la tasa del dia; si se compra en dolares, se usa tal cual.
+  const costoUsdFila = () => {
+    if (!filaProducto) return 0;
+    const c = parseFloat(filaCosto) || 0;
+    return monedaDeTipo(filaProducto.tipo) === 'Bs' ? c / tasaCambio : c;
+  };
+
+  const totalFila = () => costoUsdFila() * (parseInt(filaCantidad, 10) || 0);
 
   // Confirma la cantidad (Enter en Cantidad o en Costo). Para accesorios se agrega directo a
   // la compra (solo hace falta la cantidad total). Para equipos/SIM/USIM se abre la ventana
@@ -254,7 +276,9 @@ export default function Compras({ currentUser }) {
           tipo: 'accesorio',
           descripcion: filaProducto.nombre,
           producto_codigo: filaProducto.codigo_producto || null,
-          costoUnitario: costo,
+          costoUnitario: costoUsdFila(),
+          costoOriginalUnitario: costo,
+          monedaItem: monedaDeTipo('accesorio'),
           cantidad: cant,
           codigos: null
         }
@@ -275,7 +299,9 @@ export default function Compras({ currentUser }) {
         tipo: filaProducto.tipo,
         descripcion: filaProducto.nombre,
         producto_codigo: filaProducto.codigo_producto || null,
-        costoUnitario: parseFloat(filaCosto) || 0,
+        costoUnitario: costoUsdFila(),
+        costoOriginalUnitario: parseFloat(filaCosto) || 0,
+        monedaItem: monedaDeTipo(filaProducto.tipo),
         cantidad: codigosNuevos.length,
         codigos: codigosNuevos
       }
@@ -309,6 +335,17 @@ export default function Compras({ currentUser }) {
   const iva = baseImponible * (ivaPorcentaje / 100);
   const total = baseImponible + iva;
   const totalPiezas = carrito.reduce((acc, i) => acc + (parseInt(i.cantidad, 10) || 0), 0);
+
+  // Moneda del documento completo, derivada automaticamente de lo que hay en el carrito (ya
+  // no se elige a mano): si todos los renglones son Bs. o todos son Dolares, se muestra esa;
+  // si hay de ambas (por ejemplo SimCards en Bs. junto con un equipo en dolares en la misma
+  // compra), se muestra "Mixta".
+  const monedasEnCarrito = new Set(carrito.map((i) => i.monedaItem));
+  const monedaDocumento = monedasEnCarrito.size === 0
+    ? 'Dolares'
+    : monedasEnCarrito.size > 1
+      ? 'Mixta'
+      : [...monedasEnCarrito][0];
   const numeroCompraPreview = proximoNumeroCompra != null ? String(proximoNumeroCompra).padStart(6, '0') : '------';
 
   // Mismo guard que en Facturacion: evita que la compra se pueda registrar/imprimir dos veces
@@ -344,7 +381,8 @@ export default function Compras({ currentUser }) {
         proveedorRif: proveedorSeleccionado.rif,
         proveedorTelefono: proveedorSeleccionado.telefono,
         proveedorDireccion: proveedorSeleccionado.direccion,
-        moneda,
+        moneda: monedaDocumento,
+        tasaCambio,
         numeroFacturaCompra: documentoCompra.trim(),
         items: carrito.map((i) => ({
           product_id: i.product_id,
@@ -491,14 +529,6 @@ export default function Compras({ currentUser }) {
           </div>
 
           <div className="pos-field">
-            <label>Moneda</label>
-            <select value={moneda} onChange={(e) => setMoneda(e.target.value)}>
-              <option value="Bs">Bs.</option>
-              <option value="Dolares">Dólares</option>
-            </select>
-          </div>
-
-          <div className="pos-field">
             <label>Documento de compra <span className="required-mark">*</span></label>
             <input
               placeholder="N° de factura o nota de entrega"
@@ -588,8 +618,10 @@ export default function Compras({ currentUser }) {
               <th>Descripción</th>
               <th style={{ width: '8%' }}>Cantidad</th>
               <th style={{ width: '6%' }}>Und</th>
-              <th style={{ width: '11%', textAlign: 'right' }}>Costo</th>
-              <th style={{ width: '11%', textAlign: 'right' }}>Total</th>
+              <th style={{ width: '11%', textAlign: 'right' }}>
+                Costo {filaProducto ? (monedaDeTipo(filaProducto.tipo) === 'Bs' ? '(Bs.)' : '($)') : ''}
+              </th>
+              <th style={{ width: '11%', textAlign: 'right' }}>Total ($)</th>
               <th style={{ width: '17%', textAlign: 'right' }}>
                 <button type="button" className="pos-ver-todo-btn pos-ver-todo-btn-header" onClick={() => setMostrarModalVerTodo(true)}>
                   Ver todo
@@ -635,15 +667,22 @@ export default function Compras({ currentUser }) {
               <td>{filaProducto ? 'UND' : ''}</td>
               <td className="text-right">
                 {filaProducto ? (
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={filaCosto}
-                    onChange={(e) => setFilaCosto(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); } }}
-                    style={{ width: '90px', textAlign: 'right' }}
-                  />
+                  <>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={filaCosto}
+                      onChange={(e) => setFilaCosto(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); } }}
+                      style={{ width: '90px', textAlign: 'right' }}
+                    />
+                    {monedaDeTipo(filaProducto.tipo) === 'Bs' && (
+                      <div style={{ fontSize: '0.7rem', color: '#667085' }}>
+                        ≈ ${fmt(costoUsdFila())} c/u (tasa {fmt(tasaCambio)})
+                      </div>
+                    )}
+                  </>
                 ) : ''}
               </td>
               <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
@@ -689,8 +728,17 @@ export default function Compras({ currentUser }) {
                   </td>
                   <td>{item.cantidad}</td>
                   <td>UND</td>
-                  <td className="text-right">{fmt(item.costoUnitario)}</td>
-                  <td className="text-right">{fmt(item.costoUnitario * item.cantidad)}</td>
+                  <td className="text-right">
+                    {item.monedaItem === 'Bs' ? `Bs. ${fmt(item.costoOriginalUnitario)}` : `$${fmt(item.costoOriginalUnitario)}`}
+                  </td>
+                  <td className="text-right">
+                    ${fmt(item.costoUnitario * item.cantidad)}
+                    {item.monedaItem === 'Bs' && (
+                      <div style={{ fontSize: '0.7rem', color: '#667085' }}>
+                        Bs. {fmt(item.costoOriginalUnitario * item.cantidad)}
+                      </div>
+                    )}
+                  </td>
                   <td>
                     {keyPendienteQuitar === item.key ? (
                       <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
@@ -710,7 +758,8 @@ export default function Compras({ currentUser }) {
 
       <div className="pos-footer-actions">
         <span style={{ marginRight: '16px', color: '#667085', fontSize: '0.85rem', alignSelf: 'center' }}>
-          Moneda: {moneda === 'Dolares' ? 'Dólares' : 'Bs.'}
+          Moneda: {monedaDocumento === 'Mixta' ? 'Mixta ($ y Bs.)' : monedaDocumento === 'Bs' ? 'Bs.' : 'Dólares'}
+          {' '}— Tasa: {fmt(tasaCambio)} Bs/USD
         </span>
         <button type="button" className="pos-btn-totalizar" onClick={handleRegistrarCompra} disabled={emitiendo}>
           {emitiendo ? 'Registrando...' : 'F10 Registrar compra'}
@@ -789,8 +838,17 @@ export default function Compras({ currentUser }) {
                         </td>
                         <td>{item.cantidad}</td>
                         <td>UND</td>
-                        <td className="text-right">{fmt(item.costoUnitario)}</td>
-                        <td className="text-right">{fmt(item.costoUnitario * item.cantidad)}</td>
+                        <td className="text-right">
+                          {item.monedaItem === 'Bs' ? `Bs. ${fmt(item.costoOriginalUnitario)}` : `$${fmt(item.costoOriginalUnitario)}`}
+                        </td>
+                        <td className="text-right">
+                          ${fmt(item.costoUnitario * item.cantidad)}
+                          {item.monedaItem === 'Bs' && (
+                            <div style={{ fontSize: '0.7rem', color: '#667085' }}>
+                              Bs. {fmt(item.costoOriginalUnitario * item.cantidad)}
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
