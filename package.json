@@ -1,5 +1,5 @@
 {
-  "name": "facturacion-movistar",
+  "name": "movisync",
   "version": "1.0.0",
   "description": "Sistema de facturacion e inventario para tienda Movistar",
   "main": "electron/main.js",
@@ -24,8 +24,8 @@
     "vite": "^5.4.1"
   },
   "build": {
-    "appId": "com.jctecnologia.facturacionmovistar",
-    "productName": "Facturacion Movistar",
+    "appId": "com.jctecnologia.movisync",
+    "productName": "MoviSync",
     "files": [
       "dist/**/*",
       "electron/**/*"
