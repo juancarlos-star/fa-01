@@ -8,7 +8,7 @@ import { fmt } from './format.js';
 export async function generarCargoDescargoPDF(registro, tipoDocumento, settings, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   const esCargo = tipoDocumento === 'cargo';
-  const colorAcento = esCargo ? [2, 122, 72] : [180, 35, 24];
+  const colorAcento = esCargo ? [11, 79, 158] : [180, 35, 24];
   const titulo = esCargo ? 'COMPROBANTE DE CARGO DE INVENTARIO' : 'COMPROBANTE DE DESCARGO DE INVENTARIO';
   const prefijo = esCargo ? 'CAR' : 'DES';
   const numeroDocumento = registro.secuencia != null ? registro.secuencia : registro.id;
@@ -91,7 +91,7 @@ export async function generarCargoDescargoLotePDF(registros, tipoDocumento, sett
   if (!registros || registros.length === 0) return;
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   const esCargo = tipoDocumento === 'cargo';
-  const colorAcento = esCargo ? [2, 122, 72] : [180, 35, 24];
+  const colorAcento = esCargo ? [11, 79, 158] : [180, 35, 24];
   const titulo = esCargo ? 'COMPROBANTE DE CARGO POR LOTE' : 'COMPROBANTE DE DESCARGO POR LOTE';
 
   dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88 });
@@ -179,7 +179,7 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
   if (!registros || registros.length === 0) return;
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   const esCargo = tipoDocumento === 'cargo';
-  const colorAcento = esCargo ? [2, 122, 72] : [180, 35, 24];
+  const colorAcento = esCargo ? [11, 79, 158] : [180, 35, 24];
   const titulo = esCargo ? 'COMPROBANTE DE CARGO DE INVENTARIO' : 'COMPROBANTE DE DESCARGO DE INVENTARIO';
   const prefijo = esCargo ? 'CAR' : 'DES';
 
@@ -222,20 +222,55 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
   }
   y += 3;
 
-  const filasTabla = registros.map((r) => {
+  const filasTabla = [];
+  // Agrupa los registros por producto + tipo (+ costo unitario en cargos, ya que un mismo
+  // producto podria cargarse con costos distintos en el mismo documento). Antes cada
+  // codigo/IMEI generaba su propia fila completa (Producto, Tipo, Codigo, Cant., Costo, Total)
+  // repitiendo el producto una y otra vez; ahora se muestra una sola fila por grupo con la
+  // cantidad total y el total acumulado, y justo debajo (ocupando todo el ancho de la tabla)
+  // se listan, ordenados, todos los codigos/IMEI que componen ese grupo.
+  const grupos = [];
+  const indicePorClave = new Map();
+  registros.forEach((r) => {
     const producto = r.producto_nombre || r.descripcion || '—';
     const tipoProducto = r.tipo || r.producto_tipo || '—';
-    const codigo = r.unidad_codigo || '—';
-    const cantidad = String(r.cantidad ?? 1);
-    if (esCargo) {
-      return [producto, tipoProducto, codigo, cantidad, `$${fmt(r.costo_unitario_usd)}`, `$${fmt(r.total_usd)}`];
+    const costoUnitario = esCargo ? (r.costo_unitario_usd || 0) : 0;
+    const clave = `${producto}\u0001${tipoProducto}\u0001${costoUnitario}`;
+    let grupo = indicePorClave.get(clave);
+    if (!grupo) {
+      grupo = { producto, tipoProducto, costoUnitario, cantidad: 0, total: 0, codigos: [] };
+      indicePorClave.set(clave, grupo);
+      grupos.push(grupo);
     }
-    return [producto, tipoProducto, codigo, cantidad];
+    grupo.cantidad += r.cantidad != null ? r.cantidad : 1;
+    grupo.total += r.total_usd || 0;
+    if (r.unidad_codigo) grupo.codigos.push(r.unidad_codigo);
+  });
+
+  const numColumnas = esCargo ? 5 : 3;
+  grupos.forEach((g) => {
+    if (esCargo) {
+      filasTabla.push([g.producto, g.tipoProducto, String(g.cantidad), `$${fmt(g.costoUnitario)}`, `$${fmt(g.total)}`]);
+    } else {
+      filasTabla.push([g.producto, g.tipoProducto, String(g.cantidad)]);
+    }
+    if (g.codigos.length > 0) {
+      const codigosOrdenados = [...g.codigos].sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+      );
+      filasTabla.push([
+        {
+          content: `Codigos / IMEI: ${codigosOrdenados.join(', ')}`,
+          colSpan: numColumnas,
+          styles: { fontStyle: 'italic', fontSize: 7, textColor: [90, 90, 90], fillColor: [248, 249, 251] }
+        }
+      ]);
+    }
   });
 
   const head = esCargo
-    ? [['Producto', 'Tipo', 'Codigo / IMEI', 'Cant.', 'Costo unit.', 'Total']]
-    : [['Producto', 'Tipo', 'Codigo / IMEI', 'Cant.']];
+    ? [['Producto', 'Tipo', 'Cant.', 'Costo unit.', 'Total']]
+    : [['Producto', 'Tipo', 'Cant.']];
 
   autoTable(doc, {
     startY: y,
