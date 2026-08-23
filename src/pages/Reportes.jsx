@@ -103,9 +103,11 @@ function useSettings() {
   return settings;
 }
 
-export default function Reportes({ currentUser }) {
-  const [categoria, setCategoria] = useState('ventas');
-  const [tab, setTab] = useState('ganancias');
+export default function Reportes({ currentUser, categoriaInicial }) {
+  const categoriaDefault = categoriaInicial && CATEGORIAS.some((c) => c.key === categoriaInicial) ? categoriaInicial : 'ventas';
+  const catDefaultObj = CATEGORIAS.find((c) => c.key === categoriaDefault);
+  const [categoria, setCategoria] = useState(categoriaDefault);
+  const [tab, setTab] = useState(catDefaultObj.items[0].key);
   const [desde, setDesde] = useState(primerDiaDelMesStr());
   const [hasta, setHasta] = useState(hoyStr());
 
