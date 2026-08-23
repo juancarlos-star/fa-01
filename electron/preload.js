@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('api', {
   listProductNames: (tipo, categoria) => ipcRenderer.invoke('products:names', { tipo, categoria }),
   createProduct: (data) => ipcRenderer.invoke('products:create', data),
   updateProduct: (id, data) => ipcRenderer.invoke('products:update', { id, ...data }),
+  productoTieneMovimientos: (id) => ipcRenderer.invoke('products:tieneMovimientos', { id }),
   deleteProduct: (id) => ipcRenderer.invoke('products:delete', { id }),
   buscarProductoPorCodigo: (codigo, depositoId) => ipcRenderer.invoke('products:buscarPorCodigo', { codigo, depositoId }),
   listUnidadesDisponibles: (productId) => ipcRenderer.invoke('products:unidadesDisponibles', { productId }),

@@ -576,9 +576,27 @@ ipcMain.handle('products:create', (event, data) => {
   return { ok: true, id: productId };
 });
 
+// Indica si un producto ya tiene algun movimiento asociado (compras, ventas o unidades de
+// inventario con IMEI/codigo ya creadas). Se usa para decidir si todavia se puede cambiar su
+// tipo (accesorio <-> equipo/SIM/USIM) al editarlo: una vez que ya hay movimientos, cambiar el
+// tipo dejaria datos inconsistentes (por ejemplo, unidades con IMEI de un producto que ahora
+// se maneja "por cantidad"), asi que a partir de ahi el tipo queda fijo.
+ipcMain.handle('products:tieneMovimientos', (event, { id }) => {
+  const db = getDb();
+  const fila = db.prepare(
+    `SELECT
+       (SELECT COUNT(*) FROM compras WHERE product_id = ?) +
+       (SELECT COUNT(*) FROM factura_items WHERE product_id = ?) +
+       (SELECT COUNT(*) FROM inventory_units WHERE product_id = ?) AS total`
+  ).get(id, id, id);
+  return { tieneMovimientos: fila.total > 0 };
+});
+
 // Permite editar nombre, categoria, precio, stock minimo y (para accesorios) el codigo de
-// barras de un producto ya existente, desde la propia pantalla de Inventario.
-ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, precio2, stock_minimo, codigo_barras, codigo_producto }) => {
+// barras de un producto ya existente, desde la propia pantalla de Inventario. Tambien permite
+// cambiar el TIPO (accesorio <-> equipo/SIM/USIM), pero solo mientras el producto no tenga
+// compras, ventas ni unidades de inventario registradas todavia (ver products:tieneMovimientos).
+ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, precio2, stock_minimo, codigo_barras, codigo_producto, tipo }) => {
   const db = getDb();
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
   if (!product) return { ok: false, message: 'Producto no encontrado' };
@@ -586,10 +604,24 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
   const nombreLimpio = (nombre || '').trim();
   if (!nombreLimpio) return { ok: false, message: 'El nombre es obligatorio' };
 
+  let tipoFinal = product.tipo;
+  if (tipo && tipo !== product.tipo) {
+    const movimientos = db.prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM compras WHERE product_id = ?) +
+         (SELECT COUNT(*) FROM factura_items WHERE product_id = ?) +
+         (SELECT COUNT(*) FROM inventory_units WHERE product_id = ?) AS total`
+    ).get(id, id, id);
+    if (movimientos.total > 0) {
+      return { ok: false, message: 'No se puede cambiar el tipo: este producto ya tiene compras, ventas o unidades registradas' };
+    }
+    tipoFinal = tipo;
+  }
+
   const categoriaLimpia = (categoria || '').trim();
   if (categoriaLimpia) {
     const cat = db.prepare('SELECT tipo FROM categorias WHERE nombre = ?').get(categoriaLimpia);
-    if (!cat || cat.tipo !== product.tipo) {
+    if (!cat || cat.tipo !== tipoFinal) {
       return { ok: false, message: `La categoria "${categoriaLimpia}" no corresponde a este tipo de producto` };
     }
   }
@@ -608,12 +640,14 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
   if (isNaN(stockMinNum) || stockMinNum < 0) return { ok: false, message: 'Stock minimo invalido' };
 
   let codigoBarras = product.codigo_barras;
-  if (product.tipo === 'accesorio') {
+  if (tipoFinal === 'accesorio') {
     codigoBarras = (codigo_barras || '').trim();
     if (codigoBarras) {
       const existente = db.prepare('SELECT id FROM products WHERE codigo_barras = ? AND id != ?').get(codigoBarras, id);
       if (existente) return { ok: false, message: 'Ese codigo de barras ya esta asignado a otro producto' };
     }
+  } else {
+    codigoBarras = null; // equipos/SIM/USIM no usan codigo de barras, usan codigo_producto
   }
 
   // codigo_producto: si el campo viene en el payload (aunque sea vacio) se actualiza; si no
@@ -622,7 +656,7 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
   let codigoProducto = product.codigo_producto;
   if (codigo_producto !== undefined) {
     const codigoProductoLimpio = (codigo_producto || '').trim();
-    if (product.tipo !== 'accesorio' && !codigoProductoLimpio) {
+    if (tipoFinal !== 'accesorio' && !codigoProductoLimpio) {
       return { ok: false, message: 'El codigo de producto es obligatorio para equipos, SIM y USIM' };
     }
     if (codigoProductoLimpio) {
@@ -630,13 +664,13 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
       if (existenteCodigo) return { ok: false, message: 'Ese codigo de producto ya esta en uso' };
     }
     codigoProducto = codigoProductoLimpio || null;
-  } else if (product.tipo !== 'accesorio' && !codigoProducto) {
+  } else if (tipoFinal !== 'accesorio' && !codigoProducto) {
     return { ok: false, message: 'El codigo de producto es obligatorio para equipos, SIM y USIM' };
   }
 
   db.prepare(
-    'UPDATE products SET nombre = ?, categoria = ?, precio = ?, precio2 = ?, stock_minimo = ?, codigo_barras = ?, codigo_producto = ? WHERE id = ?'
-  ).run(nombreLimpio, categoriaLimpia, precioNum, precio2Num, stockMinNum, codigoBarras, codigoProducto, id);
+    'UPDATE products SET tipo = ?, nombre = ?, categoria = ?, precio = ?, precio2 = ?, stock_minimo = ?, codigo_barras = ?, codigo_producto = ? WHERE id = ?'
+  ).run(tipoFinal, nombreLimpio, categoriaLimpia, precioNum, precio2Num, stockMinNum, codigoBarras, codigoProducto, id);
 
   return { ok: true };
 });
