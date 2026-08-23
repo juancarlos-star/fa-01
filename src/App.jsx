@@ -19,6 +19,12 @@ export default function App() {
   // Submenu de Compras (Generar Compras / Devolucion de Compras), igual al menu de referencia:
   // se abre al hacer click en "Compras" y se cierra al elegir una opcion o al hacer click afuera.
   const [menuComprasAbierto, setMenuComprasAbierto] = useState(false);
+  // Submenu de Reportes (Inventario / Ventas / Compras / Impuestos / Etiquetas / Vendedores),
+  // igual patron que Facturar y Compras. categoriaReportes decide con que categoria se abre la
+  // pantalla de Reportes; se pasa como "key" para forzar que Reportes se vuelva a montar con esa
+  // categoria activa cada vez que se elige una opcion distinta del submenu.
+  const [menuReportesAbierto, setMenuReportesAbierto] = useState(false);
+  const [categoriaReportes, setCategoriaReportes] = useState('ventas');
   if (!user) {
     return <Login onLogin={setUser} />;
   }
@@ -28,11 +34,16 @@ export default function App() {
   };
   const vistasFacturacion = ['facturacion', 'devolucionFacturas'];
   const vistasCompras = ['compras', 'devolucionCompras'];
-  // Si hay CUALQUIER submenu abierto (Facturar o Compras), los botones que no son el que se
-  // abrio deben quedar apagados -- incluyendo el otro boton con submenu (Facturar/Compras),
-  // que antes se quedaba brillante porque vive dentro de un <div> y no es hijo directo de
-  // <nav>, por lo que la regla CSS que apaga al resto del menu no lo alcanzaba.
-  const algunSubmenuAbierto = menuFacturacionAbierto || menuComprasAbierto;
+  // Si hay CUALQUIER submenu abierto (Facturar, Compras o Reportes), los botones que no son el
+  // que se abrio deben quedar apagados -- incluyendo los otros botones con submenu, que antes se
+  // quedaban brillantes porque viven dentro de un <div> y no son hijos directos de <nav>, por lo
+  // que la regla CSS que apaga al resto del menu no los alcanzaba.
+  const algunSubmenuAbierto = menuFacturacionAbierto || menuComprasAbierto || menuReportesAbierto;
+  const irAReporte = (catKey) => {
+    setCategoriaReportes(catKey);
+    setView('reportes');
+    setMenuReportesAbierto(false);
+  };
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -109,7 +120,39 @@ export default function App() {
             <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}>Gastos</button>
           )}
           {user.role === 'administrador' && (
-            <button className={view === 'reportes' ? 'active' : ''} onClick={() => setView('reportes')}>Reportes</button>
+            <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuReportesAbierto ? ' dimmed' : ''}`}>
+              <button
+                className={view === 'reportes' ? 'active' : ''}
+                onClick={() => setMenuReportesAbierto((v) => !v)}
+              >
+                Reportes
+              </button>
+              {menuReportesAbierto && (
+                <>
+                  <div className="sidebar-submenu-overlay" onClick={() => setMenuReportesAbierto(false)} />
+                  <div className="sidebar-submenu">
+                    <button className={view === 'reportes' && categoriaReportes === 'inventario' ? 'active' : ''} onClick={() => irAReporte('inventario')}>
+                      📦 Inventario
+                    </button>
+                    <button className={view === 'reportes' && categoriaReportes === 'ventas' ? 'active' : ''} onClick={() => irAReporte('ventas')}>
+                      💰 Ventas
+                    </button>
+                    <button className={view === 'reportes' && categoriaReportes === 'compras' ? 'active' : ''} onClick={() => irAReporte('compras')}>
+                      🛒 Compras
+                    </button>
+                    <button className={view === 'reportes' && categoriaReportes === 'impuestos' ? 'active' : ''} onClick={() => irAReporte('impuestos')}>
+                      🧾 Impuestos
+                    </button>
+                    <button className={view === 'reportes' && categoriaReportes === 'etiquetas' ? 'active' : ''} onClick={() => irAReporte('etiquetas')}>
+                      🏷️ Etiquetas
+                    </button>
+                    <button className={view === 'reportes' && categoriaReportes === 'vendedores' ? 'active' : ''} onClick={() => irAReporte('vendedores')}>
+                      🧑‍💼 Vendedores
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
           {user.role === 'administrador' && (
             <button className={view === 'configuracion' ? 'active' : ''} onClick={() => setView('configuracion')}>Configuracion</button>
@@ -135,7 +178,7 @@ export default function App() {
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'cargosDescargos' && user.role === 'administrador' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
-        {view === 'reportes' && user.role === 'administrador' && <Reportes currentUser={user} />}
+        {view === 'reportes' && user.role === 'administrador' && <Reportes key={categoriaReportes} currentUser={user} categoriaInicial={categoriaReportes} />}
         {view === 'configuracion' && user.role === 'administrador' && <Configuracion />}
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
