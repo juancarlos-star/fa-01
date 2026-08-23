@@ -295,6 +295,18 @@ function migrarIvaPorcentajeComprasSiHaceFalta(database) {
   }
 }
 
+// Guarda la tasa de cambio (Bs por 1 USD) vigente el dia en que se registro la compra. Los
+// costos siempre se guardan en dolares (costo_unitario_usd), pero cuando un renglon se compra
+// en Bs. (SimCard/USIM) esta tasa es la que se uso para convertirlo a $ en ese momento, y sirve
+// para poder mostrar de vuelta el monto en Bs. real de esa compra sin depender de la tasa de
+// HOY (que cambia a diario y ya no coincidiria con lo que realmente se pago).
+function migrarTasaCambioComprasSiHaceFalta(database) {
+  const existeCompras = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras_encabezado'").get();
+  if (existeCompras && !tieneColumna(database, 'compras_encabezado', 'tasa_cambio')) {
+    database.exec('ALTER TABLE compras_encabezado ADD COLUMN tasa_cambio REAL');
+  }
+}
+
 // Modulo de Devolucion de Compras: una devolucion se guarda como su PROPIO encabezado de
 // compra (con total NEGATIVO), enlazado al encabezado original que se esta devolviendo. Asi,
 // los reportes que ya suman compras_encabezado.total_usd por rango de fechas reflejan la
@@ -525,6 +537,7 @@ function initDb() {
   migrarIvaPorcentajeComprasSiHaceFalta(database);
   migrarDevolucionesCompraSiHaceFalta(database);
   migrarDevolucionesFacturaSiHaceFalta(database);
+  migrarTasaCambioComprasSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');

@@ -2015,7 +2015,7 @@ ipcMain.handle('inventario:buscarPorCodigo', (event, { codigo }) => {
 ipcMain.handle('compras:crearLote', (event, payload) => {
   const db = getDb();
   try {
-    const { proveedor, proveedorId, proveedorRif, proveedorTelefono, proveedorDireccion, moneda, numeroFacturaCompra, items, usuario, depositoId } = payload;
+    const { proveedor, proveedorId, proveedorRif, proveedorTelefono, proveedorDireccion, moneda, tasaCambio, numeroFacturaCompra, items, usuario, depositoId } = payload;
 
     if (!proveedor || !proveedor.trim()) return { ok: false, message: 'El nombre del proveedor es obligatorio' };
     if (!numeroFacturaCompra || !numeroFacturaCompra.trim()) return { ok: false, message: 'El numero de documento de compra es obligatorio' };
@@ -2058,11 +2058,11 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
       const ivaPorcentajeActual = obtenerIvaPorcentajeActual(db);
       const encabezadoInfo = db.prepare(
         `INSERT INTO compras_encabezado
-           (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda, numero_factura_compra, total_usd, usuario, created_at, iva_porcentaje)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), ?)`
+           (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda, numero_factura_compra, total_usd, usuario, created_at, iva_porcentaje, tasa_cambio)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), ?, ?)`
       ).run(
         proveedor.trim(), proveedorId || null, proveedorRif || '', proveedorTelefono || '', proveedorDireccion || '',
-        moneda || 'Bs', numeroFacturaCompra.trim(), usuario || '', ivaPorcentajeActual
+        moneda || 'Dolares', numeroFacturaCompra.trim(), usuario || '', ivaPorcentajeActual, parseFloat(tasaCambio) || 1
       );
       const encabezadoId = encabezadoInfo.lastInsertRowid;
 
@@ -2326,12 +2326,13 @@ ipcMain.handle('compras:crearDevolucion', (event, payload) => {
       const devInfo = db.prepare(
         `INSERT INTO compras_encabezado
            (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda,
-            numero_factura_compra, total_usd, usuario, created_at, es_devolucion, devuelve_a_encabezado_id, numero_devolucion, iva_porcentaje)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), 1, ?, ?, ?)`
+            numero_factura_compra, total_usd, usuario, created_at, es_devolucion, devuelve_a_encabezado_id, numero_devolucion, iva_porcentaje, tasa_cambio)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now','localtime'), 1, ?, ?, ?, ?)`
       ).run(
         original.proveedor, original.proveedor_id, original.proveedor_rif, original.proveedor_telefono, original.proveedor_direccion,
         original.moneda, `DEV-${original.numero_factura_compra}`, usuario || '', original.id, numeroDevolucion,
-        original.iva_porcentaje !== null && original.iva_porcentaje !== undefined ? original.iva_porcentaje : obtenerIvaPorcentajeActual(db)
+        original.iva_porcentaje !== null && original.iva_porcentaje !== undefined ? original.iva_porcentaje : obtenerIvaPorcentajeActual(db),
+        original.tasa_cambio || 1
       );
       const devolucionId = devInfo.lastInsertRowid;
 
