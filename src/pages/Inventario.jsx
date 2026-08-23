@@ -48,6 +48,11 @@ export default function Inventario({ currentUser }) {
 
   const [productoAEliminar, setProductoAEliminar] = useState(null);
 
+  // Modal centrado para "Crear producto": antes el formulario completo se mostraba siempre
+  // debajo de las pestañas; ahora solo aparece dentro de esta ventana emergente al presionar
+  // el boton "+ Crear producto".
+  const [mostrarModalCrear, setMostrarModalCrear] = useState(false);
+
   // ---- Edicion completa de un producto (nombre, categoria, precio, stock minimo, codigo de barras) ----
   const [editandoProductoId, setEditandoProductoId] = useState(null);
   const [formEdicionProducto, setFormEdicionProducto] = useState({
@@ -158,6 +163,7 @@ export default function Inventario({ currentUser }) {
       nombre: '', categoria: esAccesorio ? tab.categoria || '' : '', precio: '', precio2: '',
       stock_minimo: '', codigo_barras: '', codigo_producto: '', costo_inicial: ''
     });
+    setMostrarModalCrear(false);
     cargarProductos();
     cargarNombresSugeridos();
   };
@@ -291,117 +297,173 @@ export default function Inventario({ currentUser }) {
         ))}
       </div>
 
-      <form
-        onSubmit={handleCrearProducto}
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '0.5rem',
-          alignItems: 'flex-end',
-          marginBottom: '1.5rem',
-          background: '#fff',
-          padding: '1rem',
-          borderRadius: '6px'
-        }}
-      >
-        <div>
-          <label>Nombre</label><br />
-          <input
-            list="nombres-sugeridos"
-            value={form.nombre}
-            onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-            placeholder="Ej: iPhone 13 128GB"
-          />
-          <datalist id="nombres-sugeridos">
-            {nombresSugeridos.map((n) => (
-              <option key={n} value={n} />
-            ))}
-          </datalist>
-        </div>
-        {!esAccesorio && (
-          <div>
-            <label>Categoria</label><br />
-            <select
-              value={form.categoria}
-              onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-              disabled={categoriasDelTipo.length <= 1}
-            >
-              {categoriasDelTipo.length === 0 && <option value="">-- Sin categorias para este tipo --</option>}
-              {categoriasDelTipo.map((c) => (
-                <option key={c.id} value={c.nombre}>{c.nombre}</option>
-              ))}
-            </select>
-          </div>
-        )}
-        <div>
-          <label>Precio 1 - Bs. (USD)</label><br />
-          <input
-            type="number"
-            step="0.01"
-            value={form.precio}
-            onChange={(e) => setForm({ ...form, precio: e.target.value })}
-          />
-        </div>
-        <div>
-          <label>Precio 2 - Dolares (USD)</label><br />
-          <input
-            type="number"
-            step="0.01"
-            value={form.precio2}
-            onChange={(e) => setForm({ ...form, precio2: e.target.value })}
-          />
-        </div>
-        <div>
-          <label>
-            Codigo de producto (filtro Facturacion){!esAccesorio && <span style={{ color: '#d92d20' }}> *</span>}
-          </label><br />
-          <input
-            value={form.codigo_producto}
-            onChange={(e) => setForm({ ...form, codigo_producto: e.target.value })}
-            placeholder={esAccesorio ? 'Opcional, ej: aud01' : 'Obligatorio, ej: ss24'}
-          />
-        </div>
-        <div>
-          <label>Stock minimo (alerta)</label><br />
-          <input
-            type="number"
-            value={form.stock_minimo}
-            onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })}
-          />
-        </div>
-        {esAccesorio && (
-          <>
-            <div>
-              <label>Codigo de barras</label><br />
-              <input
-                value={form.codigo_barras}
-                onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
-              />
-            </div>
-            <div>
-              <label>Costo unitario de compra (USD)</label><br />
-              <input
-                type="number"
-                step="0.01"
-                value={form.costo_inicial}
-                onChange={(e) => setForm({ ...form, costo_inicial: e.target.value })}
-              />
-            </div>
-          </>
-        )}
-        <button type="submit" style={{ padding: '0.5rem 1rem' }}>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <button
+          type="button"
+          onClick={() => setMostrarModalCrear(true)}
+          style={{
+            padding: '0.6rem 1.2rem',
+            background: '#0b4f9e',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontWeight: 'bold'
+          }}
+        >
           + Crear producto
         </button>
-      </form>
+      </div>
 
-      {esAccesorio && (
-        <p style={{ color: '#666', fontSize: '0.8rem', marginTop: '-1rem' }}>
-          El stock inicial no se define aqui: toda entrada de stock se registra desde{' '}
-          <strong>Compras</strong> o desde <strong>Cargos y Descargos</strong>.
-        </p>
+      {mostrarModalCrear && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', zIndex: 1000
+          }}
+          onClick={() => setMostrarModalCrear(false)}
+        >
+          <div
+            style={{
+              background: '#fff', padding: '1.5rem', borderRadius: '8px',
+              width: 'min(720px, 92vw)', maxHeight: '90vh', overflowY: 'auto',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.25)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ margin: 0 }}>Crear producto</h2>
+              <button
+                type="button"
+                onClick={() => setMostrarModalCrear(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer', lineHeight: 1 }}
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleCrearProducto}
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0.5rem',
+                alignItems: 'flex-end'
+              }}
+            >
+              <div>
+                <label>Nombre</label><br />
+                <input
+                  list="nombres-sugeridos"
+                  value={form.nombre}
+                  onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                  placeholder="Ej: iPhone 13 128GB"
+                  autoFocus
+                />
+                <datalist id="nombres-sugeridos">
+                  {nombresSugeridos.map((n) => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
+              </div>
+              {!esAccesorio && (
+                <div>
+                  <label>Categoria</label><br />
+                  <select
+                    value={form.categoria}
+                    onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+                    disabled={categoriasDelTipo.length <= 1}
+                  >
+                    {categoriasDelTipo.length === 0 && <option value="">-- Sin categorias para este tipo --</option>}
+                    {categoriasDelTipo.map((c) => (
+                      <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label>Precio 1 - Bs. (USD)</label><br />
+                <input
+                  type="number"
+                  step="0.01"
+                  value={form.precio}
+                  onChange={(e) => setForm({ ...form, precio: e.target.value })}
+                />
+              </div>
+              <div>
+                <label>Precio 2 - Dolares (USD)</label><br />
+                <input
+                  type="number"
+                  step="0.01"
+                  value={form.precio2}
+                  onChange={(e) => setForm({ ...form, precio2: e.target.value })}
+                />
+              </div>
+              <div>
+                <label>
+                  Codigo de producto (filtro Facturacion){!esAccesorio && <span style={{ color: '#d92d20' }}> *</span>}
+                </label><br />
+                <input
+                  value={form.codigo_producto}
+                  onChange={(e) => setForm({ ...form, codigo_producto: e.target.value })}
+                  placeholder={esAccesorio ? 'Opcional, ej: aud01' : 'Obligatorio, ej: ss24'}
+                />
+              </div>
+              <div>
+                <label>Stock minimo (alerta)</label><br />
+                <input
+                  type="number"
+                  value={form.stock_minimo}
+                  onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })}
+                />
+              </div>
+              {esAccesorio && (
+                <>
+                  <div>
+                    <label>Codigo de barras</label><br />
+                    <input
+                      value={form.codigo_barras}
+                      onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label>Costo unitario de compra (USD)</label><br />
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={form.costo_inicial}
+                      onChange={(e) => setForm({ ...form, costo_inicial: e.target.value })}
+                    />
+                  </div>
+                </>
+              )}
+
+              {esAccesorio && (
+                <p style={{ color: '#666', fontSize: '0.8rem', width: '100%', margin: '0.25rem 0 0' }}>
+                  El stock inicial no se define aqui: toda entrada de stock se registra desde{' '}
+                  <strong>Compras</strong> o desde <strong>Cargos y Descargos</strong>.
+                </p>
+              )}
+              {error && <p style={{ color: '#d92d20', width: '100%', margin: '0.25rem 0 0' }}>{error}</p>}
+
+              <div style={{ display: 'flex', gap: '0.5rem', width: '100%', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setMostrarModalCrear(false)} style={{ padding: '0.5rem 1rem' }}>
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: '0.5rem 1rem', background: '#0b4f9e', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  + Crear producto
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
 
       <div style={{ margin: '0.75rem 0' }}>
         <input
