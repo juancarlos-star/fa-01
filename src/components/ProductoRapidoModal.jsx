@@ -18,6 +18,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
   const [form, setForm] = useState({
     codigo_producto: editando ? (productoEditar.codigo_producto || '') : (codigoInicial || ''),
     nombre: editando ? (productoEditar.nombre || '') : '',
+    categoria: editando ? (productoEditar.categoria || '') : '',
     costo_inicial: editando ? String(productoEditar.costo_promedio_usd ?? '0') : '',
     precio: editando ? String(productoEditar.precio ?? '') : '',
     precio2: editando ? String(productoEditar.precio2 ?? '') : '',
@@ -29,6 +30,11 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
   });
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
+
+  const [categorias, setCategorias] = useState([]);
+  useEffect(() => {
+    window.api.listCategories().then(setCategorias);
+  }, []);
 
   const [productos, setProductos] = useState([]);
   const [filtroLista, setFiltroLista] = useState('');
@@ -76,9 +82,8 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
         const res = await window.api.updateProduct(productoEditar.id, {
           tipo,
           nombre: form.nombre.trim(),
-          // Si el tipo cambia, la categoria vieja (pensada para el tipo anterior) ya no aplica;
-          // se limpia para que no choque con la validacion de categoria-vs-tipo del backend.
-          categoria: tipoCambio ? '' : (productoEditar.categoria || ''),
+          // Si el tipo cambia, la categoria vieja (pensada para el tipo anterior) ya no aplica.
+          categoria: tipoCambio ? '' : form.categoria,
           precio: parseFloat(form.precio) || 0,
           precio2: parseFloat(form.precio2) || 0,
           stock_minimo: productoEditar.stock_minimo ?? 0,
@@ -101,7 +106,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
         onConfirm({
           ...productoEditar,
           tipo,
-          categoria: tipoCambio ? '' : (productoEditar.categoria || ''),
+          categoria: tipoCambio ? '' : form.categoria,
           nombre: form.nombre.trim(),
           codigo_producto: codigoLimpio || null,
           precio: parseFloat(form.precio) || 0,
@@ -114,6 +119,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
       const res = await window.api.createProduct({
         tipo,
         nombre: form.nombre.trim(),
+        categoria: form.categoria,
         precio: parseFloat(form.precio) || 0,
         precio2: parseFloat(form.precio2) || 0,
         costo_inicial: parseFloat(form.costo_inicial) || 0,
@@ -130,6 +136,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
         id: res.id,
         tipo,
         nombre: form.nombre.trim(),
+        categoria: form.categoria,
         codigo_producto: codigoLimpio || null,
         precio: parseFloat(form.precio) || 0,
         precio2: parseFloat(form.precio2) || 0,
@@ -168,6 +175,21 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
                 placeholder="Nombre del producto" style={inputStyle} />
             </Campo>
 
+            <Campo label="Categoría (opcional)">
+              <select
+                value={form.categoria}
+                onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+                style={inputStyle}
+              >
+                <option value="">-- Sin categoría --</option>
+                {categorias
+                  .filter((c) => c.tipo === (form.seVendePorUnidad ? 'equipo' : 'accesorio'))
+                  .map((c) => (
+                    <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                  ))}
+              </select>
+            </Campo>
+
             <Campo label="Costo">
               <input type="number" step="0.01" min="0" value={form.costo_inicial} onChange={set('costo_inicial')}
                 placeholder="0.00" style={inputStyle} />
@@ -194,7 +216,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
                   type="checkbox"
                   checked={form.seVendePorUnidad}
                   disabled={checkboxBloqueado}
-                  onChange={(e) => setForm({ ...form, seVendePorUnidad: e.target.checked })}
+                  onChange={(e) => setForm({ ...form, seVendePorUnidad: e.target.checked, categoria: '' })}
                 />
                 Se vende por unidad (requiere código/IMEI individual, ej. equipos, SIM, USIM)
               </label>
