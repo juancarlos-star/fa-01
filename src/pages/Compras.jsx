@@ -584,13 +584,13 @@ export default function Compras({ currentUser }) {
         <table className="pos-table">
           <thead>
             <tr>
-              <th style={{ width: '14%' }}>Código</th>
+              <th style={{ width: '13%' }}>Código</th>
               <th>Descripción</th>
-              <th style={{ width: '9%' }}>Cantidad</th>
-              <th style={{ width: '7%' }}>Und</th>
-              <th style={{ width: '12%' }}>Costo</th>
-              <th style={{ width: '12%' }}>Total</th>
-              <th style={{ width: '13%' }}></th>
+              <th style={{ width: '8%' }}>Cantidad</th>
+              <th style={{ width: '6%' }}>Und</th>
+              <th style={{ width: '11%', textAlign: 'right' }}>Costo</th>
+              <th style={{ width: '11%', textAlign: 'right' }}>Total</th>
+              <th style={{ width: '17%' }}></th>
             </tr>
           </thead>
           <tbody>

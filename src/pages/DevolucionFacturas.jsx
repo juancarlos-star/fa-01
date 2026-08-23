@@ -323,8 +323,8 @@ export default function DevolucionFacturas({ currentUser }) {
               <th style={{ width: '10%' }}>Vendido</th>
               <th style={{ width: '14%' }}>A devolver</th>
               <th style={{ width: '6%' }}>Und</th>
-              <th style={{ width: '10%' }}>Precio</th>
-              <th style={{ width: '10%' }}>Total</th>
+              <th style={{ width: '10%', textAlign: 'right' }}>Precio</th>
+              <th style={{ width: '10%', textAlign: 'right' }}>Total</th>
               <th style={{ width: '8%' }}></th>
             </tr>
           </thead>

@@ -333,8 +333,8 @@ export default function DevolucionCompras({ currentUser }) {
               <th style={{ width: '10%' }}>Comprado</th>
               <th style={{ width: '14%' }}>A devolver</th>
               <th style={{ width: '6%' }}>Und</th>
-              <th style={{ width: '10%' }}>Costo</th>
-              <th style={{ width: '10%' }}>Total</th>
+              <th style={{ width: '10%', textAlign: 'right' }}>Costo</th>
+              <th style={{ width: '10%', textAlign: 'right' }}>Total</th>
               <th style={{ width: '8%' }}></th>
             </tr>
           </thead>

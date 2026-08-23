@@ -651,8 +651,8 @@ export default function Facturacion({ currentUser }) {
               <th>Descripción</th>
               <th style={{ width: '9%' }}>Cantidad</th>
               <th style={{ width: '7%' }}>Und</th>
-              <th style={{ width: '12%' }}>Precio</th>
-              <th style={{ width: '12%' }}>Total</th>
+              <th style={{ width: '12%', textAlign: 'right' }}>Precio</th>
+              <th style={{ width: '12%', textAlign: 'right' }}>Total</th>
               <th style={{ width: '13%' }}></th>
             </tr>
           </thead>
@@ -794,8 +794,8 @@ export default function Facturacion({ currentUser }) {
                       <th>Descripción</th>
                       <th>Cantidad</th>
                       <th>Und</th>
-                      <th>Precio</th>
-                      <th>Total</th>
+                      <th style={{ textAlign: 'right' }}>Precio</th>
+                      <th style={{ textAlign: 'right' }}>Total</th>
                     </tr>
                   </thead>
                   <tbody>
