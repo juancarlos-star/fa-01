@@ -1049,7 +1049,8 @@ function ReporteInventarioProductos() {
       <p>
         Stock total: <strong>{reporte.totales.stock}</strong>
         {' '}— Valor al costo: <strong>${fmt(reporte.totales.valorCostoUsd)}</strong>
-        {' '}— Valor a precio de venta: <strong>${fmt(reporte.totales.valorPrecioUsd)}</strong>
+        {' '}— Valor Total $: <strong>${fmt(reporte.totales.valorTotalUsd)}</strong>
+        {' '}— Tasa del dia: <strong>{fmt(reporte.tasaCambio)} Bs/USD</strong>
       </p>
 
       {productosFiltrados.length === 0 ? (
@@ -1062,10 +1063,10 @@ function ReporteInventarioProductos() {
               <th>Codigo</th>
               <th>Producto</th>
               <th>Stock</th>
-              <th>Costo prom.</th>
-              <th>Valor costo</th>
-              <th>Precio</th>
-              <th>Valor precio</th>
+              <th>Costo</th>
+              <th>Precio Bs.</th>
+              <th>Precio $.</th>
+              <th>Valor Total $.</th>
             </tr>
           </thead>
           <tbody>
@@ -1076,9 +1077,9 @@ function ReporteInventarioProductos() {
                 <td>{p.nombre}</td>
                 <td>{p.stock}</td>
                 <td>${fmt(p.costo_promedio_usd)}</td>
-                <td>${fmt(p.valorCostoUsd)}</td>
-                <td>${fmt(p.precio)}</td>
-                <td>${fmt(p.valorPrecioUsd)}</td>
+                <td>Bs. {fmt(p.precioBs)}</td>
+                <td>${fmt(p.precioUsd)}</td>
+                <td>${fmt(p.valorTotalUsd)}</td>
               </tr>
             ))}
           </tbody>
