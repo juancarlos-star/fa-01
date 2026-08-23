@@ -737,16 +737,17 @@ th {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
 }
 
 .pos-ver-todo-btn {
   background: #fff;
   border: 1px solid #0b4f9e;
   color: #0b4f9e;
-  padding: 4px 9px;
+  padding: 4px 8px;
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
@@ -754,6 +755,32 @@ th {
 
 .pos-ver-todo-btn:hover {
   background: #eaf1fb;
+}
+
+/* Variante del boton "Ver todo" cuando va DENTRO de la franja azul del encabezado de la tabla
+   (en vez de en la fila de entrada), para que quede bien alineado verticalmente con el resto
+   de los titulos de columna. */
+.pos-ver-todo-btn-header {
+  vertical-align: middle;
+  margin: -2px 0;
+}
+
+/* Boton para confirmar/agregar la fila de entrada a la compra o factura actual. Se usa como
+   alternativa visible y explicita a tener que adivinar que hay que presionar Enter. */
+.pos-agregar-btn {
+  background: #0b8f4e;
+  border: 1px solid #0b8f4e;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-agregar-btn:hover {
+  background: #097a42;
 }
 
 /* ---------- Facturacion: ventana "Ver todo" (vista ampliada de la factura) ---------- */
