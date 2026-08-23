@@ -2720,12 +2720,17 @@ function obtenerStockPorDepositoDeProducto(db, product) {
 ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
   const db = getDb();
   const productos = db.prepare('SELECT * FROM products ORDER BY tipo, nombre').all();
+  // Cotizacion del dia (Bs por 1 USD), tomada de settings. "Precio Bs." de cada producto se
+  // calcula multiplicando esta tasa por el precio en dolares (precio2), en vez de venir de un
+  // campo cargado a mano -- asi siempre refleja la tasa vigente al momento de ver el reporte.
+  const tasaCambio = parseFloat(db.prepare("SELECT value FROM settings WHERE key = 'tasa_cambio'").get()?.value) || 1;
 
   const filas = productos.map((p) => {
     const porDeposito = obtenerStockPorDepositoDeProducto(db, p);
     const stock = depositoId
       ? (porDeposito.find((d) => d.deposito_id === depositoId)?.cantidad || 0)
       : porDeposito.reduce((acc, d) => acc + d.cantidad, 0);
+    const precioUsd = p.precio2 || 0;
     return {
       id: p.id,
       tipo: p.tipo,
@@ -2733,12 +2738,12 @@ ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
       categoria: p.categoria,
       codigo_producto: p.codigo_producto,
       codigo_barras: p.codigo_barras,
-      precio: p.precio,
-      precio2: p.precio2,
       costo_promedio_usd: p.costo_promedio_usd,
+      precioUsd,
+      precioBs: precioUsd * tasaCambio,
       stock,
       valorCostoUsd: stock * (p.costo_promedio_usd || 0),
-      valorPrecioUsd: stock * (p.precio || 0),
+      valorTotalUsd: stock * precioUsd,
       porDeposito
     };
   });
@@ -2747,12 +2752,12 @@ ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
     (acc, f) => ({
       stock: acc.stock + f.stock,
       valorCostoUsd: acc.valorCostoUsd + f.valorCostoUsd,
-      valorPrecioUsd: acc.valorPrecioUsd + f.valorPrecioUsd
+      valorTotalUsd: acc.valorTotalUsd + f.valorTotalUsd
     }),
-    { stock: 0, valorCostoUsd: 0, valorPrecioUsd: 0 }
+    { stock: 0, valorCostoUsd: 0, valorTotalUsd: 0 }
   );
 
-  return { ok: true, productos: filas, totales };
+  return { ok: true, productos: filas, totales, tasaCambio };
 });
 
 // "Inventario Fisico": hoja de conteo por deposito -- para accesorios muestra la cantidad que
