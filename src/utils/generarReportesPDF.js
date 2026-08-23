@@ -261,23 +261,23 @@ export async function generarPDFInventarioProductos(reporte, depositoLabel) {
 
   doc.setFont('helvetica', 'bold');
   doc.text(
-    `Stock total: ${reporte.totales.stock}   —   Valor al costo: $${fmt(reporte.totales.valorCostoUsd)}   —   Valor a precio de venta: $${fmt(reporte.totales.valorPrecioUsd)}`,
+    `Stock total: ${reporte.totales.stock}   —   Valor al costo: $${fmt(reporte.totales.valorCostoUsd)}   —   Valor Total $: $${fmt(reporte.totales.valorTotalUsd)}   —   Tasa del dia: ${fmt(reporte.tasaCambio)} Bs/USD`,
     10,
     32
   );
 
   autoTable(doc, {
     startY: 38,
-    head: [['Tipo', 'Codigo', 'Producto', 'Stock', 'Costo prom.', 'Valor costo', 'Precio', 'Valor precio']],
+    head: [['Tipo', 'Codigo', 'Producto', 'Stock', 'Costo', 'Precio Bs.', 'Precio $.', 'Valor Total $.']],
     body: reporte.productos.map((p) => [
       TIPO_LABEL[p.tipo] || p.tipo,
       p.codigo_producto || '—',
       p.nombre,
       String(p.stock),
       `$${fmt(p.costo_promedio_usd)}`,
-      `$${fmt(p.valorCostoUsd)}`,
-      `$${fmt(p.precio)}`,
-      `$${fmt(p.valorPrecioUsd)}`
+      `Bs. ${fmt(p.precioBs)}`,
+      `$${fmt(p.precioUsd)}`,
+      `$${fmt(p.valorTotalUsd)}`
     ]),
     theme: 'grid',
     styles: { fontSize: 7.5, cellPadding: 2 },
