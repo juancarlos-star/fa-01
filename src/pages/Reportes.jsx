@@ -963,6 +963,8 @@ function ReporteInventarioProductos() {
   const [reporte, setReporte] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [generandoPDF, setGenerandoPDF] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
+  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
 
   useEffect(() => { window.api.listDepositos(true).then(setDepositos); }, []);
 
@@ -990,16 +992,57 @@ function ReporteInventarioProductos() {
 
   if (cargando || !reporte) return <p>Cargando...</p>;
 
+  const busquedaLower = busqueda.trim().toLowerCase();
+  const coincide = (p) =>
+    (p.nombre || '').toLowerCase().includes(busquedaLower) ||
+    (p.codigo_producto || '').toLowerCase().includes(busquedaLower);
+  const productosFiltrados = busquedaLower ? reporte.productos.filter(coincide) : reporte.productos;
+  const sugerencias = busquedaLower ? productosFiltrados.slice(0, 8) : [];
+
   return (
     <div style={{ marginTop: '1rem' }}>
-      <div className="form-box" style={{ maxWidth: '360px' }}>
-        <label>Deposito</label>
-        <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
-          <option value="">-- Todos los depositos --</option>
-          {depositos.map((d) => (
-            <option key={d.id} value={d.id}>{d.nombre}</option>
-          ))}
-        </select>
+      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        <div className="form-box" style={{ maxWidth: '360px' }}>
+          <label>Deposito</label>
+          <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
+            <option value="">-- Todos los depositos --</option>
+            {depositos.map((d) => (
+              <option key={d.id} value={d.id}>{d.nombre}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-box" style={{ maxWidth: '360px', position: 'relative' }}>
+          <label>Buscar producto (nombre o código)</label>
+          <input
+            value={busqueda}
+            onChange={(e) => { setBusqueda(e.target.value); setMostrarSugerencias(true); }}
+            onFocus={() => setMostrarSugerencias(true)}
+            onBlur={() => setTimeout(() => setMostrarSugerencias(false), 150)}
+            placeholder="Escribe para filtrar..."
+          />
+          {mostrarSugerencias && busquedaLower && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
+              background: '#fff', border: '1px solid #d0d5dd', borderRadius: '6px',
+              boxShadow: '0 6px 16px rgba(0,0,0,0.12)', maxHeight: '220px', overflowY: 'auto', marginTop: '2px'
+            }}>
+              {sugerencias.length === 0 ? (
+                <div style={{ padding: '8px 10px', color: '#98a2b3', fontSize: '0.85rem' }}>Sin coincidencias.</div>
+              ) : (
+                sugerencias.map((p) => (
+                  <div
+                    key={p.id}
+                    onMouseDown={() => { setBusqueda(p.nombre); setMostrarSugerencias(false); }}
+                    style={{ padding: '7px 10px', cursor: 'pointer', borderBottom: '1px solid #f0f2f5', fontSize: '0.85rem' }}
+                  >
+                    <strong>{p.nombre}</strong>{p.codigo_producto ? ` — ${p.codigo_producto}` : ''}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
@@ -1009,8 +1052,8 @@ function ReporteInventarioProductos() {
         {' '}— Valor a precio de venta: <strong>${fmt(reporte.totales.valorPrecioUsd)}</strong>
       </p>
 
-      {reporte.productos.length === 0 ? (
-        <p>No hay productos cargados.</p>
+      {productosFiltrados.length === 0 ? (
+        <p>{busquedaLower ? 'Ningun producto coincide con la busqueda.' : 'No hay productos cargados.'}</p>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
           <thead>
@@ -1026,7 +1069,7 @@ function ReporteInventarioProductos() {
             </tr>
           </thead>
           <tbody>
-            {reporte.productos.map((p) => (
+            {productosFiltrados.map((p) => (
               <tr key={p.id} style={{ borderBottom: '1px solid #eee' }}>
                 <td style={{ padding: '0.5rem' }}>{TIPO_LABEL_INV[p.tipo] || p.tipo}</td>
                 <td>{p.codigo_producto || '—'}</td>
