@@ -11,6 +11,45 @@ import Compras from './pages/Compras.jsx';
 import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
 import Reportes from './pages/Reportes.jsx';
+
+// Iconos del submenu de Reportes: se usan SVG en linea (en vez de emojis) para que todos
+// tengan exactamente el mismo color (heredan "currentColor" del boton), ya que los emojis
+// de Compras (🛒) e Impuestos (🧾) se veian con colores distintos a los demas.
+const RIcon = {
+  Inventario: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, verticalAlign: -2 }}>
+      <path d="M21 8l-9-5-9 5 9 5 9-5z" /><path d="M3 8v8l9 5 9-5V8" /><path d="M12 13v8" />
+    </svg>
+  ),
+  Ventas: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, verticalAlign: -2 }}>
+      <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  ),
+  Compras: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, verticalAlign: -2 }}>
+      <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+    </svg>
+  ),
+  Impuestos: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, verticalAlign: -2 }}>
+      <path d="M4 2h13l3 3v17H4z" /><path d="M9 8h6" /><path d="M9 12h6" /><path d="M9 16h4" />
+    </svg>
+  ),
+  Etiquetas: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, verticalAlign: -2 }}>
+      <path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L3 3v6.59a2 2 0 0 0 .59 1.41l9.59 9.59a2 2 0 0 0 2.82 0l4.59-4.59a2 2 0 0 0 0-2.82z" />
+      <circle cx="7.5" cy="7.5" r="1.5" />
+    </svg>
+  ),
+  Vendedores: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, verticalAlign: -2 }}>
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+    </svg>
+  )
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('inicio');
@@ -47,7 +86,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <h2>Facturacion Movistar</h2>
+        <h2>MoviSync</h2>
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
@@ -132,22 +171,22 @@ export default function App() {
                   <div className="sidebar-submenu-overlay" onClick={() => setMenuReportesAbierto(false)} />
                   <div className="sidebar-submenu">
                     <button className={view === 'reportes' && categoriaReportes === 'inventario' ? 'active' : ''} onClick={() => irAReporte('inventario')}>
-                      📦 Inventario
+                      <RIcon.Inventario /> Inventario
                     </button>
                     <button className={view === 'reportes' && categoriaReportes === 'ventas' ? 'active' : ''} onClick={() => irAReporte('ventas')}>
-                      💰 Ventas
+                      <RIcon.Ventas /> Ventas
                     </button>
                     <button className={view === 'reportes' && categoriaReportes === 'compras' ? 'active' : ''} onClick={() => irAReporte('compras')}>
-                      🛒 Compras
+                      <RIcon.Compras /> Compras
                     </button>
                     <button className={view === 'reportes' && categoriaReportes === 'impuestos' ? 'active' : ''} onClick={() => irAReporte('impuestos')}>
-                      🧾 Impuestos
+                      <RIcon.Impuestos /> Impuestos
                     </button>
                     <button className={view === 'reportes' && categoriaReportes === 'etiquetas' ? 'active' : ''} onClick={() => irAReporte('etiquetas')}>
-                      🏷️ Etiquetas
+                      <RIcon.Etiquetas /> Etiquetas
                     </button>
                     <button className={view === 'reportes' && categoriaReportes === 'vendedores' ? 'active' : ''} onClick={() => irAReporte('vendedores')}>
-                      🧑‍💼 Vendedores
+                      <RIcon.Vendedores /> Vendedores
                     </button>
                   </div>
                 </>
