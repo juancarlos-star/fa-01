@@ -6,14 +6,20 @@ import { fmt } from '../utils/format.js';
 // A la derecha se muestra una lista chica de los productos ya registrados (codigo, descripcion,
 // costo y precio) para poder confirmar de un vistazo que en efecto no existe todavia, o para
 // copiar el formato de codigo que se viene usando.
-export default function ProductoRapidoModal({ codigoInicial, onConfirm, onCancel }) {
+//
+// Tambien se reutiliza, con el mismo diseno, para EDITAR un producto existente: cuando se pasa
+// "productoEditar", el titulo cambia a "EDITAR PRODUCTO", los campos se precargan con sus datos
+// actuales, el checkbox de tipo queda fijo (no se puede cambiar el tipo de un producto que ya
+// tiene inventario/unidades asociadas) y al guardar se actualiza en vez de crear.
+export default function ProductoRapidoModal({ codigoInicial, productoEditar, onConfirm, onCancel }) {
+  const editando = !!productoEditar;
   const [form, setForm] = useState({
-    codigo_producto: codigoInicial || '',
-    nombre: '',
-    costo_inicial: '',
-    precio: '',
-    precio2: '',
-    seVendePorUnidad: false // false = accesorio (cantidad general) | true = requiere codigo/IMEI individual
+    codigo_producto: editando ? (productoEditar.codigo_producto || '') : (codigoInicial || ''),
+    nombre: editando ? (productoEditar.nombre || '') : '',
+    costo_inicial: editando ? String(productoEditar.costo_promedio_usd ?? '0') : '',
+    precio: editando ? String(productoEditar.precio ?? '') : '',
+    precio2: editando ? String(productoEditar.precio2 ?? '') : '',
+    seVendePorUnidad: editando ? productoEditar.tipo !== 'accesorio' : false // false = accesorio (cantidad general) | true = requiere codigo/IMEI individual
   });
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -40,6 +46,40 @@ export default function ProductoRapidoModal({ codigoInicial, onConfirm, onCancel
 
     setGuardando(true);
     try {
+      if (editando) {
+        const res = await window.api.updateProduct(productoEditar.id, {
+          nombre: form.nombre.trim(),
+          categoria: productoEditar.categoria || '',
+          precio: parseFloat(form.precio) || 0,
+          precio2: parseFloat(form.precio2) || 0,
+          stock_minimo: productoEditar.stock_minimo ?? 0,
+          codigo_barras: productoEditar.codigo_barras || '',
+          codigo_producto: codigoLimpio || ''
+        });
+        if (!res.ok) {
+          setError(res.message || 'No se pudo guardar el producto');
+          return;
+        }
+        // El costo (costo promedio) se guarda por una via separada del resto de los datos.
+        const nuevoCosto = parseFloat(form.costo_inicial) || 0;
+        if (nuevoCosto !== (productoEditar.costo_promedio_usd || 0)) {
+          const resCosto = await window.api.updateProductCosto(productoEditar.id, nuevoCosto);
+          if (!resCosto.ok) {
+            setError(resCosto.message || 'No se pudo actualizar el costo');
+            return;
+          }
+        }
+        onConfirm({
+          ...productoEditar,
+          nombre: form.nombre.trim(),
+          codigo_producto: codigoLimpio || null,
+          precio: parseFloat(form.precio) || 0,
+          precio2: parseFloat(form.precio2) || 0,
+          costo_promedio_usd: nuevoCosto
+        });
+        return;
+      }
+
       const res = await window.api.createProduct({
         tipo,
         nombre: form.nombre.trim(),
@@ -84,7 +124,7 @@ export default function ProductoRapidoModal({ codigoInicial, onConfirm, onCancel
   return (
     <div style={overlayStyle} onKeyDown={handleKeyDown}>
       <div style={boxStyle}>
-        <div style={headerStyle}>PRODUCTO NUEVO</div>
+        <div style={headerStyle}>{editando ? 'EDITAR PRODUCTO' : 'PRODUCTO NUEVO'}</div>
         <div style={{ display: 'flex' }}>
           <form onSubmit={handleSubmit} style={{ padding: '1rem 1.2rem 1.2rem', width: '360px', flexShrink: 0 }}>
             <Campo label="Codigo">
@@ -118,14 +158,20 @@ export default function ProductoRapidoModal({ codigoInicial, onConfirm, onCancel
             </div>
 
             <div style={{ margin: '10px 0' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: '#333', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: editando ? '#98a2b3' : '#333', cursor: editando ? 'default' : 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={form.seVendePorUnidad}
+                  disabled={editando}
                   onChange={(e) => setForm({ ...form, seVendePorUnidad: e.target.checked })}
                 />
                 Se vende por unidad (requiere código/IMEI individual, ej. equipos, SIM, USIM)
               </label>
+              {editando && (
+                <p style={{ fontSize: '0.75rem', color: '#98a2b3', margin: '4px 0 0' }}>
+                  El tipo de producto no se puede cambiar una vez creado.
+                </p>
+              )}
             </div>
 
             {error && <p style={{ color: '#b42318', fontSize: '0.85rem', marginTop: '4px' }}>{error}</p>}
@@ -135,7 +181,7 @@ export default function ProductoRapidoModal({ codigoInicial, onConfirm, onCancel
                 ESC &nbsp;Cancelar
               </button>
               <button type="submit" disabled={guardando} style={btnAceptar}>
-                {guardando ? 'Guardando...' : 'Guardar'}
+                {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Guardar'}
               </button>
             </div>
           </form>
