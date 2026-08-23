@@ -647,13 +647,17 @@ export default function Facturacion({ currentUser }) {
         <table className="pos-table">
           <thead>
             <tr>
-              <th style={{ width: '14%' }}>Código</th>
+              <th style={{ width: '13%' }}>Código</th>
               <th>Descripción</th>
-              <th style={{ width: '9%' }}>Cantidad</th>
-              <th style={{ width: '7%' }}>Und</th>
-              <th style={{ width: '12%', textAlign: 'right' }}>Precio</th>
-              <th style={{ width: '12%', textAlign: 'right' }}>Total</th>
-              <th style={{ width: '13%' }}></th>
+              <th style={{ width: '8%' }}>Cantidad</th>
+              <th style={{ width: '6%' }}>Und</th>
+              <th style={{ width: '11%', textAlign: 'right' }}>Precio</th>
+              <th style={{ width: '11%', textAlign: 'right' }}>Total</th>
+              <th style={{ width: '17%', textAlign: 'right' }}>
+                <button type="button" className="pos-ver-todo-btn pos-ver-todo-btn-header" onClick={() => setMostrarModalVerTodo(true)}>
+                  Ver todo
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -697,9 +701,6 @@ export default function Facturacion({ currentUser }) {
               <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
               <td>
                 <div className="pos-entrada-acciones">
-                  <button type="button" className="pos-ver-todo-btn" onClick={() => setMostrarModalVerTodo(true)}>
-                    Ver todo
-                  </button>
                   {filaProducto && (
                     <button type="button" className="pos-remove-btn"
                       onClick={() => { limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }}>×</button>

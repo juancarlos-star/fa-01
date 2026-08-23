@@ -590,7 +590,11 @@ export default function Compras({ currentUser }) {
               <th style={{ width: '6%' }}>Und</th>
               <th style={{ width: '11%', textAlign: 'right' }}>Costo</th>
               <th style={{ width: '11%', textAlign: 'right' }}>Total</th>
-              <th style={{ width: '17%' }}></th>
+              <th style={{ width: '17%', textAlign: 'right' }}>
+                <button type="button" className="pos-ver-todo-btn pos-ver-todo-btn-header" onClick={() => setMostrarModalVerTodo(true)}>
+                  Ver todo
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -645,9 +649,11 @@ export default function Compras({ currentUser }) {
               <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
               <td>
                 <div className="pos-entrada-acciones">
-                  <button type="button" className="pos-ver-todo-btn" onClick={() => setMostrarModalVerTodo(true)}>
-                    Ver todo
-                  </button>
+                  {filaProducto && (
+                    <button type="button" className="pos-agregar-btn" onClick={confirmarFila}>
+                      Agregar
+                    </button>
+                  )}
                   {filaProducto && (
                     <button type="button" className="pos-ver-todo-btn" onClick={abrirEdicionProducto}>
                       ✎ Editar
