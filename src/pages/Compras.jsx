@@ -55,6 +55,17 @@ export default function Compras({ currentUser }) {
   const [mostrarModalProductoNuevo, setMostrarModalProductoNuevo] = useState(false);
   const [mostrarModalCodigosNuevos, setMostrarModalCodigosNuevos] = useState(false);
 
+  // ---- Editar el producto que esta actualmente en la fila de entrada ----
+  // Permite corregir nombre/categoria/precios/codigo sin salir de Compras, por si al escribir
+  // el codigo se nota que el producto quedo mal cargado (ej: precio en 0, nombre con error).
+  const [mostrarModalEditarProducto, setMostrarModalEditarProducto] = useState(false);
+  const [categorias, setCategorias] = useState([]);
+  const [formEdicionProducto, setFormEdicionProducto] = useState({
+    nombre: '', categoria: '', precio: '', precio2: '', stock_minimo: '', codigo_barras: '', codigo_producto: ''
+  });
+  const [errorEdicionProducto, setErrorEdicionProducto] = useState('');
+  const [guardandoEdicionProducto, setGuardandoEdicionProducto] = useState(false);
+
   const codigoRef = useRef(null);
   const cantidadRef = useRef(null);
   const proveedorRef = useRef(null);
@@ -86,6 +97,11 @@ export default function Compras({ currentUser }) {
     window.api.proximoNumeroCompra().then((res) => setProximoNumeroCompra(res.proximoNumero));
   };
   useEffect(() => { cargarProximoNumeroCompra(); }, []);
+
+  // Categorias para el select del modal de edicion de producto (igual que en Inventario).
+  useEffect(() => {
+    window.api.listCategories().then(setCategorias);
+  }, []);
 
   // Al abrir el modulo de Compras el foco debe estar en el RIF del proveedor, listo para
   // empezar a registrar la compra.
@@ -175,6 +191,64 @@ export default function Compras({ currentUser }) {
     setFilaCosto(p.costo_promedio_usd != null ? String(p.costo_promedio_usd) : '0');
     setFilaCantidad(1);
     setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
+  };
+
+  // ---- Editar el producto de la fila de entrada (mismo formulario que Inventario) ----
+  const abrirEdicionProducto = () => {
+    if (!filaProducto) return;
+    setErrorEdicionProducto('');
+    setFormEdicionProducto({
+      nombre: filaProducto.nombre || '',
+      categoria: filaProducto.categoria || '',
+      precio: String(filaProducto.precio ?? ''),
+      precio2: String(filaProducto.precio2 ?? ''),
+      stock_minimo: String(filaProducto.stock_minimo ?? ''),
+      codigo_barras: filaProducto.codigo_barras || '',
+      codigo_producto: filaProducto.codigo_producto || ''
+    });
+    setMostrarModalEditarProducto(true);
+  };
+
+  const cerrarEdicionProducto = () => {
+    setMostrarModalEditarProducto(false);
+    setErrorEdicionProducto('');
+  };
+
+  const guardarEdicionProducto = async () => {
+    setErrorEdicionProducto('');
+    if (!formEdicionProducto.nombre.trim()) {
+      setErrorEdicionProducto('El nombre es obligatorio');
+      return;
+    }
+    const esAccesorio = filaProducto.tipo === 'accesorio';
+    if (!esAccesorio && !formEdicionProducto.codigo_producto.trim()) {
+      setErrorEdicionProducto('El codigo de producto es obligatorio para este tipo (se usa para ubicarlo en Facturacion)');
+      return;
+    }
+    setGuardandoEdicionProducto(true);
+    try {
+      const res = await window.api.updateProduct(filaProducto.id, {
+        nombre: formEdicionProducto.nombre.trim(),
+        categoria: formEdicionProducto.categoria.trim(),
+        precio: parseFloat(formEdicionProducto.precio) || 0,
+        precio2: parseFloat(formEdicionProducto.precio2) || 0,
+        stock_minimo: parseInt(formEdicionProducto.stock_minimo, 10) || 0,
+        codigo_barras: formEdicionProducto.codigo_barras.trim(),
+        codigo_producto: formEdicionProducto.codigo_producto.trim()
+      });
+      if (!res.ok) {
+        setErrorEdicionProducto(res.message);
+        return;
+      }
+      // Refleja de inmediato los cambios en la fila de entrada, sin tener que volver a
+      // buscar el producto.
+      setFilaProducto((prev) => (prev ? { ...prev, ...formEdicionProducto } : prev));
+      setMostrarModalEditarProducto(false);
+    } catch (err) {
+      setErrorEdicionProducto('Ocurrio un error inesperado: ' + (err?.message || String(err)));
+    } finally {
+      setGuardandoEdicionProducto(false);
+    }
   };
 
   const buscarProductoPorCodigoEnter = async () => {
@@ -629,6 +703,11 @@ export default function Compras({ currentUser }) {
                     Ver todo
                   </button>
                   {filaProducto && (
+                    <button type="button" className="pos-ver-todo-btn" onClick={abrirEdicionProducto}>
+                      ✎ Editar
+                    </button>
+                  )}
+                  {filaProducto && (
                     <button type="button" className="pos-remove-btn"
                       onClick={() => { limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }}>×</button>
                   )}
@@ -710,6 +789,130 @@ export default function Compras({ currentUser }) {
           onConfirm={confirmarCodigosNuevos}
           onCancel={cancelarCodigosNuevos}
         />
+      )}
+
+      {mostrarModalEditarProducto && filaProducto && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', zIndex: 1000
+          }}
+          onClick={cerrarEdicionProducto}
+        >
+          <div
+            style={{
+              background: '#fff', padding: '1.5rem', borderRadius: '8px',
+              width: 'min(720px, 92vw)', maxHeight: '90vh', overflowY: 'auto',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.25)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ margin: 0 }}>Editar producto</h2>
+              <button
+                type="button"
+                onClick={cerrarEdicionProducto}
+                style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer', lineHeight: 1 }}
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => { e.preventDefault(); guardarEdicionProducto(); }}
+              style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end' }}
+            >
+              <div>
+                <label>Nombre</label><br />
+                <input
+                  value={formEdicionProducto.nombre}
+                  onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, nombre: e.target.value })}
+                  autoFocus
+                />
+              </div>
+              {filaProducto.tipo !== 'accesorio' && (
+                <div>
+                  <label>Categoria</label><br />
+                  <select
+                    value={formEdicionProducto.categoria}
+                    onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, categoria: e.target.value })}
+                  >
+                    <option value="">-- Sin categoria --</option>
+                    {categorias
+                      .filter((c) => c.tipo === filaProducto.tipo)
+                      .map((c) => (
+                        <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                      ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label>Precio 1 - Bs. (USD)</label><br />
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formEdicionProducto.precio}
+                  onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, precio: e.target.value })}
+                />
+              </div>
+              <div>
+                <label>Precio 2 - Dolares (USD)</label><br />
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formEdicionProducto.precio2}
+                  onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, precio2: e.target.value })}
+                />
+              </div>
+              <div>
+                <label>
+                  Codigo de producto (filtro Facturacion)
+                  {filaProducto.tipo !== 'accesorio' && <span style={{ color: '#d92d20' }}> *</span>}
+                </label><br />
+                <input
+                  value={formEdicionProducto.codigo_producto}
+                  onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, codigo_producto: e.target.value })}
+                />
+              </div>
+              <div>
+                <label>Stock minimo (alerta)</label><br />
+                <input
+                  type="number"
+                  value={formEdicionProducto.stock_minimo}
+                  onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, stock_minimo: e.target.value })}
+                />
+              </div>
+              {filaProducto.tipo === 'accesorio' && (
+                <div>
+                  <label>Codigo de barras</label><br />
+                  <input
+                    value={formEdicionProducto.codigo_barras}
+                    onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, codigo_barras: e.target.value })}
+                  />
+                </div>
+              )}
+
+              {errorEdicionProducto && (
+                <p style={{ color: '#d92d20', width: '100%', margin: '0.25rem 0 0' }}>{errorEdicionProducto}</p>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.5rem', width: '100%', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button type="button" onClick={cerrarEdicionProducto} style={{ padding: '0.5rem 1rem' }}>
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoEdicionProducto}
+                  style={{ padding: '0.5rem 1rem', background: '#0b4f9e', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  {guardandoEdicionProducto ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {mostrarModalVerTodo && (
