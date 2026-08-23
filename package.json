@@ -26,6 +26,7 @@
   "build": {
     "appId": "com.jctecnologia.movisync",
     "productName": "MoviSync",
+    "compression": "store",
     "files": [
       "dist/**/*",
       "electron/**/*"
