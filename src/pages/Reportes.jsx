@@ -5,6 +5,7 @@ import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
 import Facturas from './Facturas.jsx';
 import Etiquetas from './Etiquetas.jsx';
 import SelectorProducto from '../components/SelectorProducto.jsx';
+import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { agruparItemsPorProducto } from '../utils/agruparFacturaItems.js';
 import {
@@ -966,6 +967,24 @@ function ReporteInventarioProductos() {
   const [busqueda, setBusqueda] = useState('');
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
 
+  // ---- Editar producto directo desde este reporte (misma ventana "PRODUCTO NUEVO"/"EDITAR") ----
+  const [productoEnEdicion, setProductoEnEdicion] = useState(null);
+  const [cargandoEdicion, setCargandoEdicion] = useState(false);
+
+  const abrirEdicionProducto = async (id) => {
+    setCargandoEdicion(true);
+    try {
+      // El reporte solo trae un resumen de cada producto (para la tabla); antes de editar se
+      // busca el registro completo (incluye stock_minimo, codigo_barras, etc.) para no perder
+      // esos datos al guardar.
+      const todos = await window.api.listProducts();
+      const completo = todos.find((p) => p.id === id);
+      if (completo) setProductoEnEdicion(completo);
+    } finally {
+      setCargandoEdicion(false);
+    }
+  };
+
   useEffect(() => { window.api.listDepositos(true).then(setDepositos); }, []);
 
   const cargar = useCallback(async () => {
@@ -1067,6 +1086,7 @@ function ReporteInventarioProductos() {
               <th>Precio Bs.</th>
               <th>Precio $.</th>
               <th>Valor Total $.</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -1080,10 +1100,31 @@ function ReporteInventarioProductos() {
                 <td>Bs. {fmt(p.precioBs)}</td>
                 <td>${fmt(p.precioUsd)}</td>
                 <td>${fmt(p.valorTotalUsd)}</td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => abrirEdicionProducto(p.id)}
+                    disabled={cargandoEdicion}
+                    style={{
+                      padding: '4px 10px', fontSize: '0.78rem', background: '#fff',
+                      border: '1px solid #0b4f9e', color: '#0b4f9e', borderRadius: '4px', cursor: 'pointer'
+                    }}
+                  >
+                    ✎ Editar
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+
+      {productoEnEdicion && (
+        <ProductoRapidoModal
+          productoEditar={productoEnEdicion}
+          onConfirm={() => { setProductoEnEdicion(null); cargar(); }}
+          onCancel={() => setProductoEnEdicion(null)}
+        />
       )}
     </div>
   );
