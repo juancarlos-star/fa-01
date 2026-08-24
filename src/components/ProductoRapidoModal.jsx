@@ -7,26 +7,26 @@ import { fmt } from '../utils/format.js';
 // costo y precio) para poder confirmar de un vistazo que en efecto no existe todavia, o para
 // copiar el formato de codigo que se viene usando.
 //
-// Tambien se reutiliza, con el mismo diseno, para EDITAR un producto existente: cuando se pasa
-// "productoEditar", el titulo cambia a "EDITAR PRODUCTO" y los campos se precargan con sus datos
-// actuales. El checkbox de tipo ("se vende por unidad") se puede seguir cambiando MIENTRAS el
-// producto todavia no tenga compras, ventas ni unidades (IMEI/codigo) registradas -en ese caso
-// no hay ningun dato que se vuelva inconsistente al cambiarlo-; una vez que ya tiene movimientos,
-// el checkbox se bloquea para no dejar datos huerfanos o contradictorios.
+// Tambien se reutiliza, con el mismo diseno, para EDITAR un producto existente (incluye la
+// pantalla de Reportes > Inventario > Productos): cuando se pasa "productoEditar", el titulo
+// cambia a "EDITAR PRODUCTO" y los campos se precargan con sus datos actuales.
 //
-// IMPORTANTE sobre el tipo exacto: "se vende por unidad" es un solo checkbox que agrupa tres
-// tipos reales (equipo, simcard, usim) bajo un mismo "SI". Si el usuario NO toca ese checkbox
-// al editar, hay que conservar el tipo EXACTO que ya tenia el producto (por ejemplo "simcard"),
-// en vez de recalcularlo desde el checkbox -que solo sabe distinguir accesorio vs. "equipo"
-// generico-, porque si no, CUALQUIER edicion (aunque sea solo cambiar el precio) reescribia por
-// error el tipo de un SimCard o USIM a "equipo" sin que el usuario lo pidiera. Ese fue justamente
-// el bug que corrompio un producto real: se guardaba "tipo: form.seVendePorUnidad ? 'equipo' :
-// 'accesorio'" siempre, sin comparar contra el estado ORIGINAL del checkbox.
+// El tipo tiene dos controles separados, con reglas distintas:
+//  - El checkbox "Se vende por unidad" decide entre Accesorio y "por unidad". Cruzar esa
+//    frontera SI puede romper datos si el producto ya tiene compras/ventas/unidades (accesorio
+//    usa una cantidad agregada; los otros usan unidades individuales), asi que se bloquea una
+//    vez que ya hay movimientos (products:tieneMovimientos).
+//  - El selector "Tipo especifico" (Equipo/SIM/USIM), que aparece cuando el checkbox esta
+//    tildado, deja elegir/corregir CUAL de los tres es. Cambiar entre esos tres SIEMPRE es
+//    seguro, tenga o no movimientos, porque los tres se guardan exactamente igual (unidades
+//    individuales) y solo cambia la etiqueta — por eso este selector nunca se bloquea, y sirve
+//    para corregir un producto que quedo con el subtipo equivocado.
 export default function ProductoRapidoModal({ codigoInicial, productoEditar, onConfirm, onCancel }) {
   const editando = !!productoEditar;
-  // Se guarda aparte (no en el estado "form", que si cambia con cada tecla) para poder comparar
-  // mas adelante si el usuario realmente TOCO el checkbox o lo dejo como estaba.
   const seVendePorUnidadInicial = editando ? productoEditar.tipo !== 'accesorio' : null;
+  // Si el producto ya es equipo/simcard/usim, el selector arranca en ESE tipo exacto (para no
+  // perderlo); si es accesorio o se esta creando, arranca en "equipo" por ser el mas comun.
+  const subtipoInicial = editando && productoEditar.tipo !== 'accesorio' ? productoEditar.tipo : 'equipo';
   const [form, setForm] = useState({
     codigo_producto: editando ? (productoEditar.codigo_producto || '') : (codigoInicial || ''),
     nombre: editando ? (productoEditar.nombre || '') : '',
@@ -37,7 +37,8 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
     // registran al vuelo desde Compras son equipos/SIM/USIM con IMEI o codigo individual, asi que
     // conviene que el usuario tenga que destildar para el caso menos comun (accesorio por
     // cantidad) en vez de tener que acordarse de tildar cada vez.
-    seVendePorUnidad: editando ? seVendePorUnidadInicial : true
+    seVendePorUnidad: editando ? seVendePorUnidadInicial : true,
+    subtipo: subtipoInicial
   });
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -88,14 +89,11 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
     if (e) e.preventDefault();
     setError('');
     if (!form.nombre.trim()) { setError('La descripcion es obligatoria'); return; }
-    // Si se esta editando y el checkbox quedo EXACTAMENTE como estaba al abrir la ventana, se
-    // conserva el tipo original tal cual (equipo/simcard/usim), sin recalcularlo — para no
-    // perder la distincion entre esos tres al guardar cambios que no tienen nada que ver con el
-    // tipo (precio, costo, categoria, etc.). Solo si el usuario de verdad TOCO el checkbox se
-    // resuelve el nuevo tipo a partir de el (unicamente distingue accesorio vs. "equipo").
-    const tipo = editando && form.seVendePorUnidad === seVendePorUnidadInicial
-      ? productoEditar.tipo
-      : (form.seVendePorUnidad ? 'equipo' : 'accesorio');
+    // "por unidad" usa el subtipo elegido en el selector (Equipo/SIM/USIM); como ese selector
+    // arranca precargado con el tipo EXACTO que ya tenia el producto y solo cambia si el usuario
+    // lo toca a proposito, guardar sin tocar nada conserva el tipo original tal cual (nunca se
+    // "recalcula" a ciegas como pasaba antes, que era lo que corrompia simcard/usim a "equipo").
+    const tipo = form.seVendePorUnidad ? form.subtipo : 'accesorio';
     const codigoLimpio = form.codigo_producto.trim();
     if (tipo !== 'accesorio' && !codigoLimpio) {
       setError('El codigo es obligatorio para productos que se venden por unidad (requieren IMEI/codigo individual)');
@@ -261,6 +259,25 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
                 <p style={{ fontSize: '0.75rem', color: '#0b8f4e', margin: '4px 0 0' }}>
                   Puedes cambiar esta opción: el producto todavía no tiene compras, ventas ni unidades registradas.
                 </p>
+              )}
+              {form.seVendePorUnidad && (
+                <div style={{ marginTop: '8px' }}>
+                  <Campo label="Tipo específico">
+                    <select
+                      value={form.subtipo}
+                      onChange={(e) => setForm({ ...form, subtipo: e.target.value })}
+                      style={inputStyle}
+                    >
+                      <option value="equipo">Equipo (IMEI)</option>
+                      <option value="simcard">SIM (ICCID)</option>
+                      <option value="usim">USIM</option>
+                    </select>
+                  </Campo>
+                  <p style={{ fontSize: '0.72rem', color: '#98a2b3', margin: '-6px 0 0' }}>
+                    Cambiar entre Equipo/SIM/USIM siempre se puede, tenga o no movimientos — solo
+                    cambia la etiqueta, no cómo se guarda el inventario.
+                  </p>
+                </div>
               )}
             </div>
 
