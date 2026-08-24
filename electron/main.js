@@ -604,16 +604,26 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
   const nombreLimpio = (nombre || '').trim();
   if (!nombreLimpio) return { ok: false, message: 'El nombre es obligatorio' };
 
+  // Cambiar el TIPO se permite en dos escenarios distintos:
+  //  - Entre equipo/simcard/usim (los tres se manejan igual: unidades individuales con
+  //    codigo/IMEI propio). Esto es SIEMPRE seguro, sin importar si el producto ya tiene
+  //    compras/ventas/unidades, porque no cambia como se guarda su inventario.
+  //  - Entre "accesorio" y cualquiera de esos tres. Este SI es un cambio de fondo (accesorio usa
+  //    una cantidad agregada; los otros usan unidades individuales), asi que solo se permite
+  //    mientras el producto no tenga ningun movimiento registrado todavia.
   let tipoFinal = product.tipo;
   if (tipo && tipo !== product.tipo) {
-    const movimientos = db.prepare(
-      `SELECT
-         (SELECT COUNT(*) FROM compras WHERE product_id = ?) +
-         (SELECT COUNT(*) FROM factura_items WHERE product_id = ?) +
-         (SELECT COUNT(*) FROM inventory_units WHERE product_id = ?) AS total`
-    ).get(id, id, id);
-    if (movimientos.total > 0) {
-      return { ok: false, message: 'No se puede cambiar el tipo: este producto ya tiene compras, ventas o unidades registradas' };
+    const cruzaFronteraAccesorio = tipo === 'accesorio' || product.tipo === 'accesorio';
+    if (cruzaFronteraAccesorio) {
+      const movimientos = db.prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM compras WHERE product_id = ?) +
+           (SELECT COUNT(*) FROM factura_items WHERE product_id = ?) +
+           (SELECT COUNT(*) FROM inventory_units WHERE product_id = ?) AS total`
+      ).get(id, id, id);
+      if (movimientos.total > 0) {
+        return { ok: false, message: 'No se puede cambiar el tipo: este producto ya tiene compras, ventas o unidades registradas' };
+      }
     }
     tipoFinal = tipo;
   }
