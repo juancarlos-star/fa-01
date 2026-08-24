@@ -20,7 +20,6 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
     nombre: editando ? (productoEditar.nombre || '') : '',
     categoria: editando ? (productoEditar.categoria || '') : '',
     costo_inicial: editando ? String(productoEditar.costo_promedio_usd ?? '0') : '',
-    precio: editando ? String(productoEditar.precio ?? '') : '',
     precio2: editando ? String(productoEditar.precio2 ?? '') : '',
     // Por defecto viene TILDADO ("se vende por unidad"): la gran mayoria de los productos que se
     // registran al vuelo desde Compras son equipos/SIM/USIM con IMEI o codigo individual, asi que
@@ -30,6 +29,15 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
   });
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
+
+  // Tasa del dia (Bs por 1 USD): el "Precio Bs." ya NO se escribe a mano -se calcula solo,
+  // multiplicando el Precio Dolares por esta tasa- para que nunca quede desactualizado si el
+  // dolar sube o baja de un dia a otro.
+  const [tasaCambio, setTasaCambio] = useState(1);
+  useEffect(() => {
+    window.api.getSettings().then((s) => setTasaCambio(parseFloat(s?.tasa_cambio) || 1));
+  }, []);
+  const precioBsCalculado = (parseFloat(form.precio2) || 0) * tasaCambio;
 
   const [categorias, setCategorias] = useState([]);
   useEffect(() => {
@@ -84,7 +92,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
           nombre: form.nombre.trim(),
           // Si el tipo cambia, la categoria vieja (pensada para el tipo anterior) ya no aplica.
           categoria: tipoCambio ? '' : form.categoria,
-          precio: parseFloat(form.precio) || 0,
+          precio: precioBsCalculado,
           precio2: parseFloat(form.precio2) || 0,
           stock_minimo: productoEditar.stock_minimo ?? 0,
           codigo_barras: tipo === 'accesorio' ? (productoEditar.codigo_barras || '') : '',
@@ -109,7 +117,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
           categoria: tipoCambio ? '' : form.categoria,
           nombre: form.nombre.trim(),
           codigo_producto: codigoLimpio || null,
-          precio: parseFloat(form.precio) || 0,
+          precio: precioBsCalculado,
           precio2: parseFloat(form.precio2) || 0,
           costo_promedio_usd: nuevoCosto
         });
@@ -120,7 +128,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
         tipo,
         nombre: form.nombre.trim(),
         categoria: form.categoria,
-        precio: parseFloat(form.precio) || 0,
+        precio: precioBsCalculado,
         precio2: parseFloat(form.precio2) || 0,
         costo_inicial: parseFloat(form.costo_inicial) || 0,
         codigo_producto: codigoLimpio || null
@@ -138,7 +146,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
         nombre: form.nombre.trim(),
         categoria: form.categoria,
         codigo_producto: codigoLimpio || null,
-        precio: parseFloat(form.precio) || 0,
+        precio: precioBsCalculado,
         precio2: parseFloat(form.precio2) || 0,
         costo_promedio_usd: parseFloat(form.costo_inicial) || 0,
         stock_disponible: 0
@@ -197,18 +205,23 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <div style={{ flex: 1 }}>
-                <Campo label="Precio Bs.">
-                  <input type="number" step="0.01" min="0" value={form.precio} onChange={set('precio')}
-                    placeholder="0.00" style={inputStyle} />
+                <Campo label="Precio Dólares">
+                  <input type="number" step="0.01" min="0" value={form.precio2} onChange={set('precio2')}
+                    placeholder="0.00" style={inputStyle} autoFocus={editando} />
                 </Campo>
               </div>
               <div style={{ flex: 1 }}>
-                <Campo label="Precio Dólares">
-                  <input type="number" step="0.01" min="0" value={form.precio2} onChange={set('precio2')}
-                    placeholder="0.00" style={inputStyle} />
+                <Campo label={`Precio Bs. (tasa ${fmt(tasaCambio)})`}>
+                  <div style={{ ...inputStyle, background: '#f4f6f8', color: '#475467' }}>
+                    Bs {fmt(precioBsCalculado)}
+                  </div>
                 </Campo>
               </div>
             </div>
+            <p style={{ fontSize: '0.72rem', color: '#98a2b3', margin: '-6px 0 10px' }}>
+              El Precio Bs. se calcula solo (Precio Dólares × tasa del día) y se actualiza cada
+              vez que cambie la tasa. No se guarda un monto fijo en bolívares.
+            </p>
 
             <div style={{ margin: '10px 0' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: checkboxBloqueado ? '#98a2b3' : '#333', cursor: checkboxBloqueado ? 'default' : 'pointer' }}>
@@ -266,7 +279,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
                       <th style={thStyle}>Código</th>
                       <th style={thStyle}>Descripción</th>
                       <th style={thStyleCentrado}>Costo</th>
-                      <th style={thStyleCentrado}>Precio</th>
+                      <th style={thStyleCentrado}>Precio $</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -275,7 +288,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
                         <td style={tdStyle}>{p.codigo_producto || '—'}</td>
                         <td style={tdStyle}>{p.nombre}</td>
                         <td style={tdStyleCentrado}>${fmt(p.costo_promedio_usd)}</td>
-                        <td style={tdStyleCentrado}>{fmt(p.precio)}</td>
+                        <td style={tdStyleCentrado}>${fmt(p.precio2)}</td>
                       </tr>
                     ))}
                   </tbody>
