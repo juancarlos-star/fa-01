@@ -1147,10 +1147,9 @@ function ReporteInventarioFisico() {
             ajusta stock automaticamente.
           </p>
 
-          <h3>Accesorios (por cantidad) — {reporte.totalAccesorios} unidades en sistema</h3>
-          {reporte.accesorios.length === 0 ? (
-            <p>No hay accesorios cargados.</p>
-          ) : (
+          <h3>Total en inventario — {reporte.totalAccesorios + reporte.totalUnidades} unidades en sistema</h3>
+
+          {reporte.accesorios.length > 0 && (
             <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1.5rem' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
@@ -1171,7 +1170,6 @@ function ReporteInventarioFisico() {
             </table>
           )}
 
-          <h3>Equipos, SIM y USIM (por unidad) — {reporte.totalUnidades} unidades en sistema</h3>
           {reporte.unidades.length === 0 ? (
             <p>No hay unidades disponibles en este deposito.</p>
           ) : (
