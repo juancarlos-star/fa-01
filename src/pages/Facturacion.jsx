@@ -12,9 +12,17 @@ export default function Facturacion({ currentUser }) {
   const [depositos, setDepositos] = useState([]);
   const [depositoId, setDepositoId] = useState('');
 
-  // Precio 1 / Precio 2 -> Bs. / Dolares. Al buscar un producto por su codigo, el precio
-  // unitario se toma de "precio" (Bs.) o "precio2" (Dolares) segun lo que este seleccionado aqui.
-  const [tipoPrecio, setTipoPrecio] = useState('precio'); // 'precio' | 'precio2'
+  // Precio de venta: se escribe en DOLARES en el momento de facturar (se sugiere el
+  // "Precio Dolares" guardado en el producto, pero el vendedor lo puede cambiar libremente
+  // -por ejemplo para elegir entre los distintos planes de SimCard/USIM: $5, $7, $12, $29, o
+  // $10 para cambio de SimCard). El equivalente en Bs. se calcula solo, en vivo, con la tasa
+  // del dia (settings.tasa_cambio) - nunca se guarda un "precio en Bs." fijo, asi nunca queda
+  // desactualizado aunque el dolar cambie de un dia a otro.
+  const [filaPrecio, setFilaPrecio] = useState('');
+  // Cuando se lee el codigo/IMEI individual exacto con la pistola, la unidad especifica ya se
+  // conoce de una vez (no hace falta abrir el selector de unidades); se guarda aqui para que
+  // "confirmarFila" la agregue directo al carrito con el precio que se haya escrito.
+  const [filaUnidadEncontrada, setFilaUnidadEncontrada] = useState(null);
 
   // Cliente: se busca EXACTO por cedula/RIF al presionar Enter. Si existe, se trae de una vez
   // (se muestra en las franjas azules); si no existe, se abre la ventana modal para registrarlo.
@@ -157,6 +165,8 @@ export default function Facturacion({ currentUser }) {
     setFilaProducto(null);
     setFilaCantidad(1);
     setFilaUnidadesDisponibles([]);
+    setFilaUnidadEncontrada(null);
+    setFilaPrecio('');
     setErrorFila('');
     setMostrarModalUnidades(false);
   };
@@ -197,31 +207,23 @@ export default function Facturacion({ currentUser }) {
       }
 
       // Se leyo (con pistola o a mano) el codigo individual exacto de una unidad: ya se sabe
-      // cual pieza fisica es, asi que se agrega directo a la factura sin pedir cantidad ni
-      // abrir el selector de unidades.
+      // cual pieza fisica es, asi que se salta el paso de "elegir unidades", pero SI se deja
+      // que el vendedor confirme/edite el precio (importante para SimCard/USIM, que tienen
+      // varios planes posibles) antes de agregarla a la factura.
       if (p.unidad_encontrada) {
-        const precioUnit = parseFloat((tipoPrecio === 'precio2' ? p.precio2 : p.precio)) || 0;
-        setCarrito((prev) => [
-          ...prev,
-          {
-            key: `${p.id}-${p.unidad_encontrada.id}`,
-            product_id: p.id,
-            unit_id: p.unidad_encontrada.id,
-            tipo: p.tipo,
-            descripcion: p.nombre,
-            producto_codigo: p.codigo_producto || null,
-            codigo: p.unidad_encontrada.codigo,
-            cantidad: 1,
-            precio_unitario: precioUnit
-          }
-        ]);
+        setFilaProducto(p);
+        setFilaCantidad(1);
+        setFilaUnidadEncontrada(p.unidad_encontrada);
+        setFilaUnidadesDisponibles([p.unidad_encontrada]);
+        setFilaPrecio(p.precio2 && parseFloat(p.precio2) > 0 ? String(p.precio2) : '');
         setFilaCodigo('');
-        setTimeout(() => codigoRef.current?.focus(), 0);
+        setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
         return;
       }
 
       setFilaProducto(p);
       setFilaCantidad(1);
+      setFilaPrecio(p.precio2 && parseFloat(p.precio2) > 0 ? String(p.precio2) : '');
       if (p.tipo === 'accesorio') {
         setFilaUnidadesDisponibles([]);
       } else {
@@ -239,11 +241,7 @@ export default function Facturacion({ currentUser }) {
     }
   };
 
-  const precioFila = () => {
-    if (!filaProducto) return 0;
-    const p = tipoPrecio === 'precio2' ? filaProducto.precio2 : filaProducto.precio;
-    return parseFloat(p) || 0;
-  };
+  const precioFila = () => parseFloat(filaPrecio) || 0;
 
   const totalFila = () => {
     if (!filaProducto) return 0;
@@ -272,6 +270,10 @@ export default function Facturacion({ currentUser }) {
         : `Solo hay ${maxDisponibleFila()} unidad(es) disponible(s) de "${filaProducto.nombre}" en este deposito`);
       return;
     }
+    if (precioFila() <= 0) {
+      setErrorFila('Escribe el precio en dolares ($) al que se vende este producto');
+      return;
+    }
 
     if (filaProducto.tipo === 'accesorio') {
       setCarrito((prev) => [
@@ -284,6 +286,25 @@ export default function Facturacion({ currentUser }) {
           producto_codigo: filaProducto.codigo_producto || null,
           codigo: filaProducto.codigo_producto || null,
           cantidad: c,
+          precio_unitario: precioFila()
+        }
+      ]);
+      limpiarFila();
+      setTimeout(() => codigoRef.current?.focus(), 0);
+    } else if (filaUnidadEncontrada) {
+      // Unidad exacta ya conocida (se escaneo su codigo/IMEI directamente): se agrega de una
+      // vez con el precio confirmado, sin pasar por el selector de unidades.
+      setCarrito((prev) => [
+        ...prev,
+        {
+          key: `${filaProducto.id}-${filaUnidadEncontrada.id}`,
+          product_id: filaProducto.id,
+          unit_id: filaUnidadEncontrada.id,
+          tipo: filaProducto.tipo,
+          descripcion: filaProducto.nombre,
+          producto_codigo: filaProducto.codigo_producto || null,
+          codigo: filaUnidadEncontrada.codigo,
+          cantidad: 1,
           precio_unitario: precioFila()
         }
       ]);
@@ -559,14 +580,6 @@ export default function Facturacion({ currentUser }) {
             </select>
           </div>
 
-          <div className="pos-field">
-            <label>Precio</label>
-            <select value={tipoPrecio} onChange={(e) => setTipoPrecio(e.target.value)}>
-              <option value="precio">Bs.</option>
-              <option value="precio2">Dólares</option>
-            </select>
-          </div>
-
           {clienteSeleccionado && !editandoCliente && (
             <div className="pos-actions-row">
               <button type="button" className="pos-btn-link" onClick={quitarCliente}>Cambiar cliente</button>
@@ -651,9 +664,9 @@ export default function Facturacion({ currentUser }) {
               <th>Descripción</th>
               <th style={{ width: '8%' }}>Cantidad</th>
               <th style={{ width: '6%' }}>Und</th>
-              <th style={{ width: '11%', textAlign: 'right' }}>Precio</th>
-              <th style={{ width: '11%', textAlign: 'right' }}>Total</th>
-              <th style={{ width: '17%', textAlign: 'right' }}>
+              <th style={{ width: '13%', textAlign: 'right' }}>Precio ($)</th>
+              <th style={{ width: '10%', textAlign: 'right' }}>Total ($)</th>
+              <th style={{ width: '15%', textAlign: 'right' }}>
                 <button type="button" className="pos-ver-todo-btn pos-ver-todo-btn-header" onClick={() => setMostrarModalVerTodo(true)}>
                   Ver todo
                 </button>
@@ -697,7 +710,25 @@ export default function Facturacion({ currentUser }) {
                 )}
               </td>
               <td>{filaProducto ? 'UND' : ''}</td>
-              <td className="text-right">{filaProducto ? fmt(precioFila()) : ''}</td>
+              <td className="text-right">
+                {filaProducto ? (
+                  <>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={filaPrecio}
+                      onChange={(e) => setFilaPrecio(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); } }}
+                      placeholder="0.00"
+                      style={{ width: '90px', textAlign: 'right' }}
+                    />
+                    <div style={{ fontSize: '0.7rem', color: '#667085' }}>
+                      ≈ Bs {fmt(precioFila() * tasaCambio)} (tasa {fmt(tasaCambio)})
+                    </div>
+                  </>
+                ) : ''}
+              </td>
               <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
               <td>
                 <div className="pos-entrada-acciones">
