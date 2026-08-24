@@ -13,8 +13,20 @@ import { fmt } from '../utils/format.js';
 // producto todavia no tenga compras, ventas ni unidades (IMEI/codigo) registradas -en ese caso
 // no hay ningun dato que se vuelva inconsistente al cambiarlo-; una vez que ya tiene movimientos,
 // el checkbox se bloquea para no dejar datos huerfanos o contradictorios.
+//
+// IMPORTANTE sobre el tipo exacto: "se vende por unidad" es un solo checkbox que agrupa tres
+// tipos reales (equipo, simcard, usim) bajo un mismo "SI". Si el usuario NO toca ese checkbox
+// al editar, hay que conservar el tipo EXACTO que ya tenia el producto (por ejemplo "simcard"),
+// en vez de recalcularlo desde el checkbox -que solo sabe distinguir accesorio vs. "equipo"
+// generico-, porque si no, CUALQUIER edicion (aunque sea solo cambiar el precio) reescribia por
+// error el tipo de un SimCard o USIM a "equipo" sin que el usuario lo pidiera. Ese fue justamente
+// el bug que corrompio un producto real: se guardaba "tipo: form.seVendePorUnidad ? 'equipo' :
+// 'accesorio'" siempre, sin comparar contra el estado ORIGINAL del checkbox.
 export default function ProductoRapidoModal({ codigoInicial, productoEditar, onConfirm, onCancel }) {
   const editando = !!productoEditar;
+  // Se guarda aparte (no en el estado "form", que si cambia con cada tecla) para poder comparar
+  // mas adelante si el usuario realmente TOCO el checkbox o lo dejo como estaba.
+  const seVendePorUnidadInicial = editando ? productoEditar.tipo !== 'accesorio' : null;
   const [form, setForm] = useState({
     codigo_producto: editando ? (productoEditar.codigo_producto || '') : (codigoInicial || ''),
     nombre: editando ? (productoEditar.nombre || '') : '',
@@ -25,7 +37,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
     // registran al vuelo desde Compras son equipos/SIM/USIM con IMEI o codigo individual, asi que
     // conviene que el usuario tenga que destildar para el caso menos comun (accesorio por
     // cantidad) en vez de tener que acordarse de tildar cada vez.
-    seVendePorUnidad: editando ? productoEditar.tipo !== 'accesorio' : true
+    seVendePorUnidad: editando ? seVendePorUnidadInicial : true
   });
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
@@ -76,7 +88,14 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
     if (e) e.preventDefault();
     setError('');
     if (!form.nombre.trim()) { setError('La descripcion es obligatoria'); return; }
-    const tipo = form.seVendePorUnidad ? 'equipo' : 'accesorio';
+    // Si se esta editando y el checkbox quedo EXACTAMENTE como estaba al abrir la ventana, se
+    // conserva el tipo original tal cual (equipo/simcard/usim), sin recalcularlo — para no
+    // perder la distincion entre esos tres al guardar cambios que no tienen nada que ver con el
+    // tipo (precio, costo, categoria, etc.). Solo si el usuario de verdad TOCO el checkbox se
+    // resuelve el nuevo tipo a partir de el (unicamente distingue accesorio vs. "equipo").
+    const tipo = editando && form.seVendePorUnidad === seVendePorUnidadInicial
+      ? productoEditar.tipo
+      : (form.seVendePorUnidad ? 'equipo' : 'accesorio');
     const codigoLimpio = form.codigo_producto.trim();
     if (tipo !== 'accesorio' && !codigoLimpio) {
       setError('El codigo es obligatorio para productos que se venden por unidad (requieren IMEI/codigo individual)');
