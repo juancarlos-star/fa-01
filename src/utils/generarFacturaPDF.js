@@ -82,14 +82,15 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   });
 
   let finalY = doc.lastAutoTable.finalY + 8;
-  if (finalY > 250) { doc.addPage(); finalY = 20; }
+  if (finalY > 245) { doc.addPage(); finalY = 20; }
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   doc.text('TOTAL NETO:', 130, finalY);
   doc.text('BASE IMPONIBLE:', 130, finalY + 5);
   doc.text(`I.V.A ${fmt(factura.iva_porcentaje)}%:`, 130, finalY + 10);
-  doc.text('TOTAL FACTURA:', 130, finalY + 15);
+  doc.text('TOTAL FACTURA ($):', 130, finalY + 15);
+  doc.text(`TOTAL FACTURA (Bs. ${fmt(factura.tasa_cambio)}):`, 130, finalY + 20);
 
   doc.setFont('helvetica', 'normal');
   doc.text(fmt(factura.subtotal_usd), 195, finalY, { align: 'right' });
@@ -97,6 +98,10 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   doc.text(fmt(factura.iva_usd), 195, finalY + 10, { align: 'right' });
   doc.setFont('helvetica', 'bold');
   doc.text(fmt(factura.total_usd), 195, finalY + 15, { align: 'right' });
+  // El monto en Bs. es solo una conversion de referencia con la tasa del dia en que se emitio
+  // ESTA factura (factura.tasa_cambio, guardada en el momento de facturar) - no con la tasa de
+  // hoy, para que una factura vieja impresa de nuevo siga mostrando el monto correcto de su dia.
+  doc.text(`Bs ${fmt(factura.total_usd * (factura.tasa_cambio || 1))}`, 195, finalY + 20, { align: 'right' });
 
   dibujarPiePaginaEmpresa(doc, settings);
 
