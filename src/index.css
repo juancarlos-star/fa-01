@@ -865,6 +865,10 @@ th {
   text-align: right;
 }
 
+.pos-vertodo-table th.text-right {
+  text-align: right;
+}
+
 .pos-vertodo-codigos {
   margin-top: 6px;
   font-family: monospace;
