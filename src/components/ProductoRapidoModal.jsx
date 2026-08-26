@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { fmt } from '../utils/format.js';
 
+const TIPO_LABEL = { equipo: 'Equipo (IMEI)', simcard: 'SIM (ICCID)', usim: 'USIM', accesorio: 'Accesorio' };
+
 // Ventana modal para crear un producto nuevo "al vuelo" desde Compras, cuando el codigo o
 // nombre que se escribio en el renglon de la compra no coincide con ningun producto existente.
 // A la derecha se muestra una lista chica de los productos ya registrados (codigo, descripcion,
@@ -11,37 +13,34 @@ import { fmt } from '../utils/format.js';
 // pantalla de Reportes > Inventario > Productos): cuando se pasa "productoEditar", el titulo
 // cambia a "EDITAR PRODUCTO" y los campos se precargan con sus datos actuales.
 //
-// El tipo tiene dos controles separados, con reglas distintas:
-//  - El checkbox "Se vende por unidad" decide entre Accesorio y "por unidad". Cruzar esa
-//    frontera SI puede romper datos si el producto ya tiene compras/ventas/unidades (accesorio
-//    usa una cantidad agregada; los otros usan unidades individuales), asi que se bloquea una
-//    vez que ya hay movimientos (products:tieneMovimientos).
-//  - El selector "Tipo especifico" (Equipo/SIM/USIM), que aparece cuando el checkbox esta
-//    tildado, deja elegir/corregir CUAL de los tres es. Cambiar entre esos tres SIEMPRE es
-//    seguro, tenga o no movimientos, porque los tres se guardan exactamente igual (unidades
-//    individuales) y solo cambia la etiqueta — por eso este selector nunca se bloquea, y sirve
-//    para corregir un producto que quedo con el subtipo equivocado.
+// El tipo tiene dos formas de definirse, seg n si se elige categoria o no:
+//  - Si se elige una CATEGORIA, el tipo del producto (equipo/simcard/usim/accesorio) se toma
+//    directo de esa categoria (cada categoria ya tiene su propio tipo fijo en la base de datos:
+//    "Telefonos"=equipo, "SIM (ICCID)"=simcard, "USIM"=usim, "Accesorios"=accesorio -estas 4
+//    vienen creadas desde la instalacion). Ya NO existe un selector aparte de "Tipo especifico".
+//  - Si NO se elige categoria (es opcional), se usa el checkbox "Se vende por unidad" para decidir
+//    entre Accesorio y Equipo (el mas comun de los que llevan codigo/IMEI individual).
+// Cruzar la frontera Accesorio <-> "por unidad" SI puede romper datos si el producto ya tiene
+// compras/ventas/unidades, asi que una vez que ya hay movimientos, solo se pueden elegir
+// categorias (o "sin categoria") que respeten el mismo lado de esa frontera en el que ya estaba.
 export default function ProductoRapidoModal({ codigoInicial, productoEditar, onConfirm, onCancel }) {
   const editando = !!productoEditar;
   const seVendePorUnidadInicial = editando ? productoEditar.tipo !== 'accesorio' : null;
-  // Si el producto ya es equipo/simcard/usim, el selector arranca en ESE tipo exacto (para no
-  // perderlo); si es accesorio o se esta creando, arranca en "equipo" por ser el mas comun.
-  const subtipoInicial = editando && productoEditar.tipo !== 'accesorio' ? productoEditar.tipo : 'equipo';
   const [form, setForm] = useState({
     codigo_producto: editando ? (productoEditar.codigo_producto || '') : (codigoInicial || ''),
     nombre: editando ? (productoEditar.nombre || '') : '',
     categoria: editando ? (productoEditar.categoria || '') : '',
     costo_inicial: editando ? String(productoEditar.costo_promedio_usd ?? '0') : '',
     precio2: editando ? String(productoEditar.precio2 ?? '') : '',
-    // Por defecto viene TILDADO ("se vende por unidad"): la gran mayoria de los productos que se
-    // registran al vuelo desde Compras son equipos/SIM/USIM con IMEI o codigo individual, asi que
-    // conviene que el usuario tenga que destildar para el caso menos comun (accesorio por
-    // cantidad) en vez de tener que acordarse de tildar cada vez.
-    seVendePorUnidad: editando ? seVendePorUnidadInicial : true,
-    subtipo: subtipoInicial
+    // Solo se usa cuando NO hay categoria elegida (ver comentario de arriba). Por defecto viene
+    // TILDADO: la mayoria de los productos que se registran al vuelo desde Compras sin elegir
+    // categoria son equipos con IMEI individual.
+    seVendePorUnidad: editando ? seVendePorUnidadInicial : true
   });
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
+
+  const esIndividual = (t) => t !== 'accesorio';
 
   // Tasa del dia (Bs por 1 USD): el "Precio Bs." ya NO se escribe a mano -se calcula solo,
   // multiplicando el Precio Dolares por esta tasa- para que nunca quede desactualizado si el
@@ -83,17 +82,35 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
 
   const checkboxBloqueado = editando && (verificandoMovimientos || tieneMovimientos);
 
+  // Categoria actualmente elegida (si hay) y el tipo que resulta de todo esto.
+  const categoriaObj = categorias.find((c) => c.nombre === form.categoria);
+  const tipoActual = categoriaObj ? categoriaObj.tipo : (form.seVendePorUnidad ? 'equipo' : 'accesorio');
+
+  // Si el producto ya tiene movimientos, solo se puede elegir "sin categoria" o una categoria
+  // que quede del MISMO lado (accesorio, o "por unidad") en el que ya estaba el producto.
+  const categoriasDisponibles = checkboxBloqueado
+    ? categorias.filter((c) => esIndividual(c.tipo) === esIndividual(productoEditar.tipo))
+    : categorias;
+
   const set = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
+
+  const handleCategoriaChange = (e) => {
+    const nuevaCategoria = e.target.value;
+    const cat = categorias.find((c) => c.nombre === nuevaCategoria);
+    setForm({
+      ...form,
+      categoria: nuevaCategoria,
+      // Si se elige una categoria, el checkbox se sincroniza solo para reflejar su tipo (queda
+      // deshabilitado mientras haya categoria elegida, ver mas abajo).
+      seVendePorUnidad: cat ? esIndividual(cat.tipo) : form.seVendePorUnidad
+    });
+  };
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     setError('');
     if (!form.nombre.trim()) { setError('La descripcion es obligatoria'); return; }
-    // "por unidad" usa el subtipo elegido en el selector (Equipo/SIM/USIM); como ese selector
-    // arranca precargado con el tipo EXACTO que ya tenia el producto y solo cambia si el usuario
-    // lo toca a proposito, guardar sin tocar nada conserva el tipo original tal cual (nunca se
-    // "recalcula" a ciegas como pasaba antes, que era lo que corrompia simcard/usim a "equipo").
-    const tipo = form.seVendePorUnidad ? form.subtipo : 'accesorio';
+    const tipo = tipoActual;
     const codigoLimpio = form.codigo_producto.trim();
     if (tipo !== 'accesorio' && !codigoLimpio) {
       setError('El codigo es obligatorio para productos que se venden por unidad (requieren IMEI/codigo individual)');
@@ -203,16 +220,18 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
             <Campo label="Categoría (opcional)">
               <select
                 value={form.categoria}
-                onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+                onChange={handleCategoriaChange}
                 style={inputStyle}
               >
                 <option value="">-- Sin categoría --</option>
-                {categorias
-                  .filter((c) => c.tipo === (form.seVendePorUnidad ? 'equipo' : 'accesorio'))
-                  .map((c) => (
-                    <option key={c.id} value={c.nombre}>{c.nombre}</option>
-                  ))}
+                {categoriasDisponibles.map((c) => (
+                  <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                ))}
               </select>
+              <p style={{ fontSize: '0.72rem', color: '#98a2b3', margin: '4px 0 0' }}>
+                El tipo del producto (equipo, SIM, USIM o accesorio) se toma de la categoría
+                elegida. Si no eliges categoría, se usa el check de "Se vende por unidad" de abajo.
+              </p>
             </Campo>
 
             <Campo label="Costo">
@@ -241,43 +260,29 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
             </p>
 
             <div style={{ margin: '10px 0' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: checkboxBloqueado ? '#98a2b3' : '#333', cursor: checkboxBloqueado ? 'default' : 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: (checkboxBloqueado || !!categoriaObj) ? '#98a2b3' : '#333', cursor: (checkboxBloqueado || !!categoriaObj) ? 'default' : 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={form.seVendePorUnidad}
-                  disabled={checkboxBloqueado}
-                  onChange={(e) => setForm({ ...form, seVendePorUnidad: e.target.checked, categoria: '' })}
+                  disabled={checkboxBloqueado || !!categoriaObj}
+                  onChange={(e) => setForm({ ...form, seVendePorUnidad: e.target.checked })}
                 />
                 Se vende por unidad (requiere código/IMEI individual, ej. equipos, SIM, USIM)
               </label>
-              {editando && tieneMovimientos && (
+              {!!categoriaObj && (
+                <p style={{ fontSize: '0.75rem', color: '#475467', margin: '4px 0 0' }}>
+                  Determinado por la categoría "{categoriaObj.nombre}" — tipo: {TIPO_LABEL[categoriaObj.tipo]}.
+                </p>
+              )}
+              {!categoriaObj && editando && tieneMovimientos && (
                 <p style={{ fontSize: '0.75rem', color: '#98a2b3', margin: '4px 0 0' }}>
                   El tipo de producto no se puede cambiar: ya tiene compras, ventas o unidades registradas.
                 </p>
               )}
-              {editando && !verificandoMovimientos && !tieneMovimientos && (
+              {!categoriaObj && editando && !verificandoMovimientos && !tieneMovimientos && (
                 <p style={{ fontSize: '0.75rem', color: '#0b8f4e', margin: '4px 0 0' }}>
                   Puedes cambiar esta opción: el producto todavía no tiene compras, ventas ni unidades registradas.
                 </p>
-              )}
-              {form.seVendePorUnidad && (
-                <div style={{ marginTop: '8px' }}>
-                  <Campo label="Tipo específico">
-                    <select
-                      value={form.subtipo}
-                      onChange={(e) => setForm({ ...form, subtipo: e.target.value })}
-                      style={inputStyle}
-                    >
-                      <option value="equipo">Equipo (IMEI)</option>
-                      <option value="simcard">SIM (ICCID)</option>
-                      <option value="usim">USIM</option>
-                    </select>
-                  </Campo>
-                  <p style={{ fontSize: '0.72rem', color: '#98a2b3', margin: '-6px 0 0' }}>
-                    Cambiar entre Equipo/SIM/USIM siempre se puede, tenga o no movimientos — solo
-                    cambia la etiqueta, no cómo se guarda el inventario.
-                  </p>
-                </div>
               )}
             </div>
 
