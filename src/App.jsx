@@ -143,7 +143,7 @@ export default function App() {
                       className={view === 'comprasTelfAcces' ? 'active' : ''}
                       onClick={() => { setView('comprasTelfAcces'); setMenuComprasAbierto(false); }}
                     >
-                      📱 Compras Telf/Acces
+                      ☎ Compras Telf/Acces
                     </button>
                     <button
                       className={view === 'devolucionCompras' ? 'active' : ''}
