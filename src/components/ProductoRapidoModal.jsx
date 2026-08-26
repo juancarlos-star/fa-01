@@ -23,7 +23,7 @@ const TIPO_LABEL = { equipo: 'Equipo (IMEI)', simcard: 'SIM (ICCID)', usim: 'USI
 // Cruzar la frontera Accesorio <-> "por unidad" SI puede romper datos si el producto ya tiene
 // compras/ventas/unidades, asi que una vez que ya hay movimientos, solo se pueden elegir
 // categorias (o "sin categoria") que respeten el mismo lado de esa frontera en el que ya estaba.
-export default function ProductoRapidoModal({ codigoInicial, productoEditar, onConfirm, onCancel }) {
+export default function ProductoRapidoModal({ codigoInicial, productoEditar, tiposPermitidos, onConfirm, onCancel }) {
   const editando = !!productoEditar;
   const seVendePorUnidadInicial = editando ? productoEditar.tipo !== 'accesorio' : null;
   const [form, setForm] = useState({
@@ -88,9 +88,15 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
 
   // Si el producto ya tiene movimientos, solo se puede elegir "sin categoria" o una categoria
   // que quede del MISMO lado (accesorio, o "por unidad") en el que ya estaba el producto.
-  const categoriasDisponibles = checkboxBloqueado
+  // Cuando el modal se abre desde un modulo restringido (ej. "Compras" solo admite SIM/USIM),
+  // "tiposPermitidos" acota ademas la lista a solo esos tipos, y obliga a elegir categoria
+  // (no se puede dejar "sin categoria", porque ahi no habria forma de saber si es SIM o USIM).
+  let categoriasDisponibles = checkboxBloqueado
     ? categorias.filter((c) => esIndividual(c.tipo) === esIndividual(productoEditar.tipo))
     : categorias;
+  if (tiposPermitidos) {
+    categoriasDisponibles = categoriasDisponibles.filter((c) => tiposPermitidos.includes(c.tipo));
+  }
 
   const set = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
 
@@ -110,6 +116,10 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
     if (e) e.preventDefault();
     setError('');
     if (!form.nombre.trim()) { setError('La descripcion es obligatoria'); return; }
+    if (tiposPermitidos && !form.categoria) {
+      setError('Elige una categoría (necesaria para saber si es SIM o USIM)');
+      return;
+    }
     const tipo = tipoActual;
     const codigoLimpio = form.codigo_producto.trim();
     if (tipo !== 'accesorio' && !codigoLimpio) {
@@ -217,20 +227,22 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
                 placeholder="Nombre del producto" style={inputStyle} />
             </Campo>
 
-            <Campo label="Categoría (opcional)">
+            <Campo label={tiposPermitidos ? 'Categoría' : 'Categoría (opcional)'} required={!!tiposPermitidos}>
               <select
                 value={form.categoria}
                 onChange={handleCategoriaChange}
                 style={inputStyle}
               >
-                <option value="">-- Sin categoría --</option>
+                {!tiposPermitidos && <option value="">-- Sin categoría --</option>}
+                {tiposPermitidos && !form.categoria && <option value="">-- Elige una --</option>}
                 {categoriasDisponibles.map((c) => (
                   <option key={c.id} value={c.nombre}>{c.nombre}</option>
                 ))}
               </select>
               <p style={{ fontSize: '0.72rem', color: '#98a2b3', margin: '4px 0 0' }}>
-                El tipo del producto (equipo, SIM, USIM o accesorio) se toma de la categoría
-                elegida. Si no eliges categoría, se usa el check de "Se vende por unidad" de abajo.
+                {tiposPermitidos
+                  ? 'Este módulo solo admite estas categorías.'
+                  : 'El tipo del producto (equipo, SIM, USIM o accesorio) se toma de la categoría elegida. Si no eliges categoría, se usa el check de "Se vende por unidad" de abajo.'}
               </p>
             </Campo>
 
@@ -259,32 +271,34 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, onC
               vez que cambie la tasa. No se guarda un monto fijo en bolívares.
             </p>
 
-            <div style={{ margin: '10px 0' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: (checkboxBloqueado || !!categoriaObj) ? '#98a2b3' : '#333', cursor: (checkboxBloqueado || !!categoriaObj) ? 'default' : 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={form.seVendePorUnidad}
-                  disabled={checkboxBloqueado || !!categoriaObj}
-                  onChange={(e) => setForm({ ...form, seVendePorUnidad: e.target.checked })}
-                />
-                Se vende por unidad (requiere código/IMEI individual, ej. equipos, SIM, USIM)
-              </label>
-              {!!categoriaObj && (
-                <p style={{ fontSize: '0.75rem', color: '#475467', margin: '4px 0 0' }}>
-                  Determinado por la categoría "{categoriaObj.nombre}" — tipo: {TIPO_LABEL[categoriaObj.tipo]}.
-                </p>
-              )}
-              {!categoriaObj && editando && tieneMovimientos && (
-                <p style={{ fontSize: '0.75rem', color: '#98a2b3', margin: '4px 0 0' }}>
-                  El tipo de producto no se puede cambiar: ya tiene compras, ventas o unidades registradas.
-                </p>
-              )}
-              {!categoriaObj && editando && !verificandoMovimientos && !tieneMovimientos && (
-                <p style={{ fontSize: '0.75rem', color: '#0b8f4e', margin: '4px 0 0' }}>
-                  Puedes cambiar esta opción: el producto todavía no tiene compras, ventas ni unidades registradas.
-                </p>
-              )}
-            </div>
+            {!tiposPermitidos && (
+              <div style={{ margin: '10px 0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: (checkboxBloqueado || !!categoriaObj) ? '#98a2b3' : '#333', cursor: (checkboxBloqueado || !!categoriaObj) ? 'default' : 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={form.seVendePorUnidad}
+                    disabled={checkboxBloqueado || !!categoriaObj}
+                    onChange={(e) => setForm({ ...form, seVendePorUnidad: e.target.checked })}
+                  />
+                  Se vende por unidad (requiere código/IMEI individual, ej. equipos, SIM, USIM)
+                </label>
+                {!!categoriaObj && (
+                  <p style={{ fontSize: '0.75rem', color: '#475467', margin: '4px 0 0' }}>
+                    Determinado por la categoría "{categoriaObj.nombre}" — tipo: {TIPO_LABEL[categoriaObj.tipo]}.
+                  </p>
+                )}
+                {!categoriaObj && editando && tieneMovimientos && (
+                  <p style={{ fontSize: '0.75rem', color: '#98a2b3', margin: '4px 0 0' }}>
+                    El tipo de producto no se puede cambiar: ya tiene compras, ventas o unidades registradas.
+                  </p>
+                )}
+                {!categoriaObj && editando && !verificandoMovimientos && !tieneMovimientos && (
+                  <p style={{ fontSize: '0.75rem', color: '#0b8f4e', margin: '4px 0 0' }}>
+                    Puedes cambiar esta opción: el producto todavía no tiene compras, ventas ni unidades registradas.
+                  </p>
+                )}
+              </div>
+            )}
 
             {error && <p style={{ color: '#b42318', fontSize: '0.85rem', marginTop: '4px' }}>{error}</p>}
 
