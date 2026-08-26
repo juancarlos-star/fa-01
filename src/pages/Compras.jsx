@@ -568,6 +568,7 @@ export default function Compras({ currentUser }) {
               placeholder="N° de factura o nota de entrega"
               value={documentoCompra}
               onChange={(e) => setDocumentoCompra(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); codigoRef.current?.focus(); } }}
             />
           </div>
 
@@ -909,7 +910,7 @@ export default function Compras({ currentUser }) {
             </div>
             <div className="pos-vertodo-footer">
               <span>Total cantidad de items: <strong>{totalPiezas}</strong></span>
-              <span>Total: <strong>{fmt(total)}</strong></span>
+              <span>Total: <strong>Bs. {fmt(total * tasaCambio)}</strong> <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>(${fmt(total)})</span></span>
               <button type="button" className="btn-primary" onClick={() => setMostrarModalVerTodo(false)}>Cerrar</button>
             </div>
           </div>
