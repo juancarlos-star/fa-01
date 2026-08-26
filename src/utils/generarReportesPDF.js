@@ -246,7 +246,7 @@ export async function generarPDFClientes(clientes) {
 
 // ---------------- Inventario: Productos (valorizado) ----------------
 
-const TIPO_LABEL = { equipo: 'Equipo', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
+const TIPO_LABEL = { equipo: 'Teléfono', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
 
 export async function generarPDFInventarioProductos(reporte, depositoLabel) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
@@ -316,7 +316,7 @@ export async function generarPDFInventarioFisico(reporte) {
 
   const y2 = (doc.lastAutoTable?.finalY || 40) + 10;
   doc.setFont('helvetica', 'bold');
-  doc.text('Equipos, SIM y USIM (por unidad — IMEI / codigo)', 10, y2);
+  doc.text('Teléfonos, SIM y USIM (por unidad — IMEI / codigo)', 10, y2);
 
   autoTable(doc, {
     startY: y2 + 4,
@@ -390,7 +390,7 @@ export async function generarPDFVendedoresUltimasVentas(filas) {
 
 // ---------------- Vendedores: Ventas por categoria ----------------
 
-const TIPO_LABEL_CAT = { equipo: 'Equipo', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
+const TIPO_LABEL_CAT = { equipo: 'Teléfono', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
 
 export async function generarPDFVendedoresPorCategoria(reporte) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
