@@ -94,6 +94,69 @@ function migrarCategoriasSiHaceFalta(database) {
 // silenciosamente en el proceso principal: el boton "Crear usuario" no mostraba ningun error
 // y el usuario nunca se creaba ni aparecia en la lista. Esta funcion asegura que las columnas
 // existan, agregandolas con valores por defecto razonables si hace falta.
+// Limpia categorias duplicadas que pudieron quedar de versiones viejas de la app (antes de que
+// existieran las 4 categorias fijas con estos nombres exactos). Por ejemplo, versiones antiguas
+// creaban una categoria "Telefono" (tipo equipo); al agregarse despues la fija "Telefonos"
+// (mismo tipo), ambas quedaban conviviendo y se veian como categorias "duplicadas" en cualquier
+// selector. Aqui se detectan esos casos y se resuelven en dos pasos:
+//   1) Para los tipos de codigo unico (equipo/simcard/usim) solo puede existir UNA categoria.
+//      Si hay mas de una, los productos que usaban el nombre viejo se pasan al nombre fijo
+//      (Telefonos / SIM (ICCID) / USIM) y la fila vieja se elimina.
+//   2) Para accesorio (donde SI se permite crear varias categorias propias, ej. "Fundas"), solo
+//      se fusionan las que son el mismo nombre con distinta mayus/minus o espacios de mas -las
+//      demas categorias de accesorio (nombres realmente distintos) se dejan intactas, porque son
+//      categorias validas que el usuario decidio crear.
+function limpiarCategoriasDuplicadasSiHaceFalta(database) {
+  const existeTabla = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categorias'").get();
+  if (!existeTabla) return;
+
+  const nombreFijo = { equipo: 'Teléfonos', simcard: 'SIM (ICCID)', usim: 'USIM' };
+
+  ['equipo', 'simcard', 'usim'].forEach((tipo) => {
+    const fijo = nombreFijo[tipo];
+    const filas = database.prepare('SELECT * FROM categorias WHERE tipo = ?').all(tipo);
+    if (filas.length === 0) return;
+
+    if (filas.length === 1) {
+      // Una sola fila para este tipo: si su nombre no es EXACTAMENTE el fijo (por ejemplo
+      // "Usim" en vez de "USIM" - mismo texto salvo mayusculas, por lo que el seed de arriba
+      // no la detecto como faltante y no creo una nueva), se renombra en el lugar.
+      if (filas[0].nombre !== fijo) {
+        database.prepare('UPDATE categorias SET nombre = ? WHERE id = ?').run(fijo, filas[0].id);
+        database.prepare('UPDATE products SET categoria = ? WHERE categoria = ? COLLATE NOCASE').run(fijo, filas[0].nombre);
+      }
+      return;
+    }
+
+    let principal = filas.find((f) => f.nombre === fijo);
+    if (!principal) {
+      // No habia ninguna con el nombre fijo exacto: se renombra la primera que se creo para
+      // que pase a serlo, en vez de dejar el nombre viejo.
+      principal = filas.sort((a, b) => a.id - b.id)[0];
+      database.prepare('UPDATE categorias SET nombre = ? WHERE id = ?').run(fijo, principal.id);
+    }
+
+    filas.forEach((f) => {
+      if (f.id === principal.id) return;
+      database.prepare('UPDATE products SET categoria = ? WHERE categoria = ? COLLATE NOCASE').run(fijo, f.nombre);
+      database.prepare('DELETE FROM categorias WHERE id = ?').run(f.id);
+    });
+  });
+
+  const accesorios = database.prepare("SELECT * FROM categorias WHERE tipo = 'accesorio'").all();
+  const vistas = new Map();
+  accesorios.forEach((f) => {
+    const clave = f.nombre.trim().toLowerCase();
+    const previa = vistas.get(clave);
+    if (!previa) { vistas.set(clave, f); return; }
+    const conservar = previa.nombre === 'Accesorios' ? previa : (f.nombre === 'Accesorios' ? f : (previa.id < f.id ? previa : f));
+    const eliminar = conservar.id === previa.id ? f : previa;
+    database.prepare('UPDATE products SET categoria = ? WHERE categoria = ? COLLATE NOCASE').run(conservar.nombre, eliminar.nombre);
+    database.prepare('DELETE FROM categorias WHERE id = ?').run(eliminar.id);
+    vistas.set(clave, conservar);
+  });
+}
+
 // Categorias por defecto que deben existir siempre, tanto en instalaciones nuevas como en las
 // que ya venian usando la app (se agregan solas la primera vez que se detecten faltantes, sin
 // duplicar si el usuario ya las tenia creadas con el mismo nombre). Reemplazan al viejo selector
@@ -102,8 +165,7 @@ function migrarCategoriasSiHaceFalta(database) {
 function seedCategoriasDefaultSiHaceFalta(database) {
   const existeTabla = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categorias'").get();
   if (!existeTabla) return;
-  const defaults = [
-    { nombre: 'Teléfonos', tipo: 'equipo' },
+  const defaults = [    { nombre: 'Teléfonos', tipo: 'equipo' },
     { nombre: 'SIM (ICCID)', tipo: 'simcard' },
     { nombre: 'USIM', tipo: 'usim' },
     { nombre: 'Accesorios', tipo: 'accesorio' }
@@ -549,6 +611,7 @@ function initDb() {
   migrarCostosSiHaceFalta(database);
   migrarCategoriasSiHaceFalta(database);
   seedCategoriasDefaultSiHaceFalta(database);
+  limpiarCategoriasDuplicadasSiHaceFalta(database);
   migrarComprasSiHaceFalta(database);
   migrarUsersSiHaceFalta(database);
   migrarCargosDescargosEncabezadoSiHaceFalta(database);
@@ -568,12 +631,6 @@ function initDb() {
   insertSetting.run('rif_tienda', '');
   insertSetting.run('iva_porcentaje', '16');
   insertSetting.run('numero_factura_siguiente', '1');
-
-  const insertCategoria = database.prepare("INSERT OR IGNORE INTO categorias (nombre, tipo, created_at) VALUES (?, ?, datetime('now','localtime'))");
-  insertCategoria.run('Telefono', 'equipo');
-  insertCategoria.run('SimCard', 'simcard');
-  insertCategoria.run('Usim', 'usim');
-  insertCategoria.run('Accesorios', 'accesorio');
 
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {
