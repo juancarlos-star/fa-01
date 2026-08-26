@@ -94,6 +94,27 @@ function migrarCategoriasSiHaceFalta(database) {
 // silenciosamente en el proceso principal: el boton "Crear usuario" no mostraba ningun error
 // y el usuario nunca se creaba ni aparecia en la lista. Esta funcion asegura que las columnas
 // existan, agregandolas con valores por defecto razonables si hace falta.
+// Categorias por defecto que deben existir siempre, tanto en instalaciones nuevas como en las
+// que ya venian usando la app (se agregan solas la primera vez que se detecten faltantes, sin
+// duplicar si el usuario ya las tenia creadas con el mismo nombre). Reemplazan al viejo selector
+// de "Tipo especifico" en la ventana de crear producto: ahora basta con elegir la categoria y
+// esta ya trae su tipo (equipo/simcard/usim/accesorio) definido.
+function seedCategoriasDefaultSiHaceFalta(database) {
+  const existeTabla = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categorias'").get();
+  if (!existeTabla) return;
+  const defaults = [
+    { nombre: 'Teléfonos', tipo: 'equipo' },
+    { nombre: 'SIM (ICCID)', tipo: 'simcard' },
+    { nombre: 'USIM', tipo: 'usim' },
+    { nombre: 'Accesorios', tipo: 'accesorio' }
+  ];
+  const existe = database.prepare('SELECT id FROM categorias WHERE nombre = ? COLLATE NOCASE');
+  const insertar = database.prepare("INSERT INTO categorias (nombre, tipo, created_at) VALUES (?, ?, datetime('now','localtime'))");
+  defaults.forEach((c) => {
+    if (!existe.get(c.nombre)) insertar.run(c.nombre, c.tipo);
+  });
+}
+
 function migrarUsersSiHaceFalta(database) {
   const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
   if (!existe) return;
@@ -527,6 +548,7 @@ function initDb() {
   migrarFacturasSiHaceFalta(database);
   migrarCostosSiHaceFalta(database);
   migrarCategoriasSiHaceFalta(database);
+  seedCategoriasDefaultSiHaceFalta(database);
   migrarComprasSiHaceFalta(database);
   migrarUsersSiHaceFalta(database);
   migrarCargosDescargosEncabezadoSiHaceFalta(database);
