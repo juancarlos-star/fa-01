@@ -69,6 +69,7 @@ export default function Compras({ currentUser }) {
   const codigoRef = useRef(null);
   const cantidadRef = useRef(null);
   const proveedorRef = useRef(null);
+  const documentoRef = useRef(null);
 
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
@@ -114,9 +115,9 @@ export default function Compras({ currentUser }) {
       if (encontrado) {
         setProveedorSeleccionado(encontrado);
         setRifProveedor(encontrado.rif || texto);
-        // Proveedor ya registrado: el foco pasa directo a Codigo para seguir agregando
-        // productos a la compra, sin que el usuario tenga que hacer click.
-        setTimeout(() => codigoRef.current?.focus(), 0);
+        // Proveedor ya registrado: el foco pasa a Documento de compra (el siguiente dato que
+        // hace falta llenar), sin que el usuario tenga que hacer click.
+        setTimeout(() => documentoRef.current?.focus(), 0);
       } else {
         setMostrarModalProveedorNuevo(true);
       }
@@ -129,7 +130,7 @@ export default function Compras({ currentUser }) {
     setProveedorSeleccionado(proveedor);
     setRifProveedor(proveedor.rif || '');
     setMostrarModalProveedorNuevo(false);
-    setTimeout(() => codigoRef.current?.focus(), 0);
+    setTimeout(() => documentoRef.current?.focus(), 0);
   };
 
   const quitarProveedor = () => {
@@ -531,6 +532,7 @@ export default function Compras({ currentUser }) {
           <div className="pos-field">
             <label>Documento de compra <span className="required-mark">*</span></label>
             <input
+              ref={documentoRef}
               placeholder="N° de factura o nota de entrega"
               value={documentoCompra}
               onChange={(e) => setDocumentoCompra(e.target.value)}
@@ -818,8 +820,8 @@ export default function Compras({ currentUser }) {
                       <th>Descripción</th>
                       <th>Cantidad</th>
                       <th>Und</th>
-                      <th>Costo</th>
-                      <th>Total</th>
+                      <th className="text-right">Costo Und</th>
+                      <th className="text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody>
