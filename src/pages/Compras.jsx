@@ -59,6 +59,10 @@ export default function Compras({ currentUser }) {
   const [errorFila, setErrorFila] = useState('');
   const [mostrarModalProductoNuevo, setMostrarModalProductoNuevo] = useState(false);
   const [mostrarModalCodigosNuevos, setMostrarModalCodigosNuevos] = useState(false);
+  // Codigos/IMEI ya ingresados en la ventana, esperando a que el usuario escriba el costo por
+  // unidad (en Bs.) para completar el renglon. Mientras esto tenga un valor, el Enter en el
+  // campo Costo agrega la fila al carrito en vez de volver a abrir la ventana de codigos.
+  const [codigosPendientes, setCodigosPendientes] = useState(null);
 
   // ---- Editar el producto que esta actualmente en la fila de entrada ----
   // Reutiliza la misma ventana "PRODUCTO NUEVO" (ProductoRapidoModal) que crea productos al
@@ -68,6 +72,7 @@ export default function Compras({ currentUser }) {
 
   const codigoRef = useRef(null);
   const cantidadRef = useRef(null);
+  const costoRef = useRef(null);
   const proveedorRef = useRef(null);
   const documentoRef = useRef(null);
 
@@ -180,6 +185,7 @@ export default function Compras({ currentUser }) {
     setFilaCantidad(1);
     setErrorFila('');
     setMostrarModalCodigosNuevos(false);
+    setCodigosPendientes(null);
   };
 
   // El costo promedio del producto (costo_promedio_usd) siempre esta guardado en dolares. Si
@@ -259,18 +265,19 @@ export default function Compras({ currentUser }) {
 
   const totalFila = () => costoUsdFila() * (parseInt(filaCantidad, 10) || 0);
 
-  // Confirma la cantidad (Enter en Cantidad o en Costo). Para accesorios se agrega directo a
-  // la compra (solo hace falta la cantidad total). Para equipos/SIM/USIM se abre la ventana
-  // para ir ingresando, uno por uno, los codigos/IMEI NUEVOS de las unidades que estan
-  // entrando, hasta completar la cantidad indicada.
+  // Confirma la cantidad (Enter en Cantidad). Para accesorios (no aplica en este modulo, que
+  // solo admite SIM/USIM, pero se deja por si acaso) se agrega directo con el costo ya escrito.
+  // Para SIM/USIM se abre la ventana para ir ingresando, uno por uno, los codigos/ICCID NUEVOS
+  // que estan entrando, ANTES de pedir el costo: primero se sabe cuantos codigos entraron,
+  // y recien despues se pide el costo por unidad (ver confirmarCostoConCodigos).
   const confirmarFila = () => {
     setErrorFila('');
     const cant = parseInt(filaCantidad, 10);
     if (!cant || cant <= 0) { setErrorFila('Cantidad invalida'); return; }
-    const costo = parseFloat(filaCosto);
-    if (isNaN(costo) || costo < 0) { setErrorFila('Costo invalido'); return; }
 
     if (filaProducto.tipo === 'accesorio') {
+      const costo = parseFloat(filaCosto);
+      if (isNaN(costo) || costo < 0) { setErrorFila('Costo invalido'); return; }
       setCarrito((prev) => [
         ...prev,
         {
@@ -293,7 +300,22 @@ export default function Compras({ currentUser }) {
     }
   };
 
+  // Se llama cuando se termina de ingresar el ultimo codigo/ICCID en la ventana. En vez de
+  // agregar la fila de una vez, guarda los codigos y le pasa el foco al campo "Costo Und (Bs.)"
+  // para que el usuario escriba el costo de esa unidad recien ahi.
   const confirmarCodigosNuevos = (codigosNuevos) => {
+    setMostrarModalCodigosNuevos(false);
+    setErrorFila('');
+    setCodigosPendientes(codigosNuevos);
+    setTimeout(() => { costoRef.current?.focus(); costoRef.current?.select(); }, 0);
+  };
+
+  // Enter en el campo Costo cuando ya hay codigos esperando: recien aqui se calculan los
+  // totales (Bs. -> $ con la tasa del dia) y se agrega la fila completa al carrito.
+  const confirmarCostoConCodigos = () => {
+    setErrorFila('');
+    const costo = parseFloat(filaCosto);
+    if (isNaN(costo) || costo < 0) { setErrorFila('Costo invalido'); return; }
     setCarrito((prev) => [
       ...prev,
       {
@@ -303,18 +325,26 @@ export default function Compras({ currentUser }) {
         descripcion: filaProducto.nombre,
         producto_codigo: filaProducto.codigo_producto || null,
         costoUnitario: costoUsdFila(),
-        costoOriginalUnitario: parseFloat(filaCosto) || 0,
+        costoOriginalUnitario: costo,
         monedaItem: monedaDeTipo(filaProducto.tipo),
-        cantidad: codigosNuevos.length,
-        codigos: codigosNuevos
+        cantidad: codigosPendientes.length,
+        codigos: codigosPendientes
       }
     ]);
+    setCodigosPendientes(null);
     limpiarFila();
     setTimeout(() => codigoRef.current?.focus(), 0);
   };
 
   const cancelarCodigosNuevos = () => {
     setMostrarModalCodigosNuevos(false);
+  };
+
+  // Escape en el campo Costo mientras hay codigos pendientes: en vez de perderlos, vuelve a
+  // abrir la ventana de codigos para corregirlos (por ejemplo si se leyo mal un ICCID).
+  const corregirCodigosPendientes = () => {
+    setCodigosPendientes(null);
+    setMostrarModalCodigosNuevos(true);
   };
 
   const quitarDelCarrito = (key) => {
@@ -605,7 +635,7 @@ export default function Compras({ currentUser }) {
             <span>Total</span>
             <span>Bs. {fmt(total * tasaCambio)}</span>
           </div>
-          <div className="pos-right-row" style={{ fontSize: '0.78rem', color: '#667085' }}>
+          <div className="pos-right-row" style={{ fontSize: '0.78rem', color: '#fff' }}>
             <span>Equivalente en $ (tasa {fmt(tasaCambio)})</span>
             <span>${fmt(total)}</span>
           </div>
@@ -660,6 +690,7 @@ export default function Compras({ currentUser }) {
                     type="number"
                     min="1"
                     value={filaCantidad}
+                    disabled={!!codigosPendientes}
                     onChange={(e) => setFilaCantidad(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); }
@@ -675,12 +706,18 @@ export default function Compras({ currentUser }) {
                 {filaProducto ? (
                   <>
                     <input
+                      ref={costoRef}
                       type="number"
                       step="0.01"
                       min="0"
                       value={filaCosto}
+                      disabled={filaProducto.tipo !== 'accesorio' && !codigosPendientes}
+                      placeholder={filaProducto.tipo !== 'accesorio' && !codigosPendientes ? 'Ingresa los códigos primero' : ''}
                       onChange={(e) => setFilaCosto(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); } }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); codigosPendientes ? confirmarCostoConCodigos() : confirmarFila(); }
+                        if (e.key === 'Escape' && codigosPendientes) { e.preventDefault(); corregirCodigosPendientes(); }
+                      }}
                       style={{ width: '90px', textAlign: 'right' }}
                     />
                     {monedaDeTipo(filaProducto.tipo) === 'Bs' && (
@@ -702,7 +739,11 @@ export default function Compras({ currentUser }) {
               <td>
                 <div className="pos-entrada-acciones">
                   {filaProducto && (
-                    <button type="button" className="pos-agregar-btn" onClick={confirmarFila}>
+                    <button
+                      type="button"
+                      className="pos-agregar-btn"
+                      onClick={() => (codigosPendientes ? confirmarCostoConCodigos() : confirmarFila())}
+                    >
                       Agregar
                     </button>
                   )}
