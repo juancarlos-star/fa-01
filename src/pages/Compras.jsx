@@ -236,13 +236,15 @@ export default function Compras({ currentUser }) {
         setErrorFila(`"${texto}" corresponde a un codigo/IMEI individual ya registrado, no a un producto. Escribe el codigo o nombre del producto para comprar.`);
         return;
       }
+      if (p.tipo !== 'simcard' && p.tipo !== 'usim') {
+        setErrorFila('Este módulo "Compras" solo admite productos SIM (ICCID) o USIM. Para Equipos o Accesorios, usa el módulo "Compras Telf/Acces".');
+        return;
+      }
       seleccionarProductoEnFila(p);
     } finally {
       setBuscandoCodigo(false);
     }
-  };
-
-  const handleProductoNuevoCreado = (producto) => {
+  };  const handleProductoNuevoCreado = (producto) => {
     setMostrarModalProductoNuevo(false);
     seleccionarProductoEnFila(producto);
   };
@@ -593,15 +595,19 @@ export default function Compras({ currentUser }) {
           <div className="pos-right-header">Compra N° {numeroCompraPreview}</div>
           <div className="pos-right-row">
             <span>Base imponible</span>
-            <span>{fmt(baseImponible)}</span>
+            <span>Bs. {fmt(baseImponible * tasaCambio)}</span>
           </div>
           <div className="pos-right-row">
             <span>IVA ({ivaPorcentaje}%)</span>
-            <span>{fmt(iva)}</span>
+            <span>Bs. {fmt(iva * tasaCambio)}</span>
           </div>
           <div className="pos-right-row total-final">
             <span>Total</span>
-            <span>{fmt(total)}</span>
+            <span>Bs. {fmt(total * tasaCambio)}</span>
+          </div>
+          <div className="pos-right-row" style={{ fontSize: '0.78rem', color: '#667085' }}>
+            <span>Equivalente en $ (tasa {fmt(tasaCambio)})</span>
+            <span>${fmt(total)}</span>
           </div>
           <div className="pos-right-footer">
             <span>Total cantidad de Items</span>
@@ -620,10 +626,8 @@ export default function Compras({ currentUser }) {
               <th>Descripción</th>
               <th style={{ width: '8%' }}>Cantidad</th>
               <th style={{ width: '6%' }}>Und</th>
-              <th style={{ width: '11%', textAlign: 'right' }}>
-                Costo {filaProducto ? (monedaDeTipo(filaProducto.tipo) === 'Bs' ? '(Bs.)' : '($)') : ''}
-              </th>
-              <th style={{ width: '11%', textAlign: 'right' }}>Total ($)</th>
+              <th style={{ width: '11%', textAlign: 'right' }}>Costo Und (Bs.)</th>
+              <th style={{ width: '11%', textAlign: 'right' }}>Total (Bs.)</th>
               <th style={{ width: '17%', textAlign: 'right' }}>
                 <button type="button" className="pos-ver-todo-btn pos-ver-todo-btn-header" onClick={() => setMostrarModalVerTodo(true)}>
                   Ver todo
@@ -687,7 +691,14 @@ export default function Compras({ currentUser }) {
                   </>
                 ) : ''}
               </td>
-              <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
+              <td className="text-right">
+                {filaProducto ? (
+                  <>
+                    Bs. {fmt((parseFloat(filaCosto) || 0) * (parseInt(filaCantidad, 10) || 0))}
+                    <div style={{ fontSize: '0.7rem', color: '#667085' }}>${fmt(totalFila())}</div>
+                  </>
+                ) : ''}
+              </td>
               <td>
                 <div className="pos-entrada-acciones">
                   {filaProducto && (
@@ -734,12 +745,10 @@ export default function Compras({ currentUser }) {
                     {item.monedaItem === 'Bs' ? `Bs. ${fmt(item.costoOriginalUnitario)}` : `$${fmt(item.costoOriginalUnitario)}`}
                   </td>
                   <td className="text-right">
-                    ${fmt(item.costoUnitario * item.cantidad)}
-                    {item.monedaItem === 'Bs' && (
-                      <div style={{ fontSize: '0.7rem', color: '#667085' }}>
-                        Bs. {fmt(item.costoOriginalUnitario * item.cantidad)}
-                      </div>
-                    )}
+                    Bs. {fmt(item.costoOriginalUnitario * item.cantidad)}
+                    <div style={{ fontSize: '0.7rem', color: '#667085' }}>
+                      ${fmt(item.costoUnitario * item.cantidad)}
+                    </div>
                   </td>
                   <td>
                     {keyPendienteQuitar === item.key ? (
@@ -779,6 +788,7 @@ export default function Compras({ currentUser }) {
       {mostrarModalProductoNuevo && (
         <ProductoRapidoModal
           codigoInicial={filaCodigo}
+          tiposPermitidos={['simcard', 'usim']}
           onConfirm={handleProductoNuevoCreado}
           onCancel={() => setMostrarModalProductoNuevo(false)}
         />
@@ -797,6 +807,7 @@ export default function Compras({ currentUser }) {
       {mostrarModalEditarProducto && filaProducto && (
         <ProductoRapidoModal
           productoEditar={filaProducto}
+          tiposPermitidos={['simcard', 'usim']}
           onConfirm={confirmarEdicionProducto}
           onCancel={() => setMostrarModalEditarProducto(false)}
         />
@@ -820,8 +831,8 @@ export default function Compras({ currentUser }) {
                       <th>Descripción</th>
                       <th>Cantidad</th>
                       <th>Und</th>
-                      <th className="text-right">Costo Und</th>
-                      <th className="text-right">Total</th>
+                      <th className="text-right">Costo Und (Bs.)</th>
+                      <th className="text-right">Total (Bs.)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -844,12 +855,10 @@ export default function Compras({ currentUser }) {
                           {item.monedaItem === 'Bs' ? `Bs. ${fmt(item.costoOriginalUnitario)}` : `$${fmt(item.costoOriginalUnitario)}`}
                         </td>
                         <td className="text-right">
-                          ${fmt(item.costoUnitario * item.cantidad)}
-                          {item.monedaItem === 'Bs' && (
-                            <div style={{ fontSize: '0.7rem', color: '#667085' }}>
-                              Bs. {fmt(item.costoOriginalUnitario * item.cantidad)}
-                            </div>
-                          )}
+                          Bs. {fmt(item.costoOriginalUnitario * item.cantidad)}
+                          <div style={{ fontSize: '0.7rem', color: '#667085' }}>
+                            ${fmt(item.costoUnitario * item.cantidad)}
+                          </div>
                         </td>
                       </tr>
                     ))}
