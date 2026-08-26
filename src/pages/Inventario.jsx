@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
 import { fmt } from '../utils/format.js';
 
 // Los dialogos nativos (alert/confirm) le quitan la activacion de la ventana a Windows a nivel
@@ -36,7 +37,6 @@ export default function Inventario({ currentUser }) {
   const [tabId, setTabId] = useState('equipo');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [busqueda, setBusqueda] = useState('');
 
@@ -53,24 +53,11 @@ export default function Inventario({ currentUser }) {
   // el boton "+ Crear producto".
   const [mostrarModalCrear, setMostrarModalCrear] = useState(false);
 
-  // ---- Edicion completa de un producto (nombre, categoria, precio, stock minimo, codigo de barras) ----
-  const [editandoProductoId, setEditandoProductoId] = useState(null);
-  const [formEdicionProducto, setFormEdicionProducto] = useState({
-    nombre: '', categoria: '', precio: '', precio2: '', stock_minimo: '', codigo_barras: '', codigo_producto: ''
-  });
-  const [errorEdicionProducto, setErrorEdicionProducto] = useState('');
-  const [guardandoEdicionProducto, setGuardandoEdicionProducto] = useState(false);
-
-  const [form, setForm] = useState({
-    nombre: '',
-    categoria: '',
-    precio: '',
-    precio2: '',
-    stock_minimo: '',
-    codigo_barras: '',
-    codigo_producto: '',
-    costo_inicial: ''
-  });
+  // ---- Edicion completa de un producto: se hace con la misma ventana ProductoRapidoModal que
+  // ya se usa en Compras, Compras Telf/Acces y Reportes > Inventario (categoria, "se vende por
+  // unidad" y demas campos quedan siempre iguales en cualquier pantalla donde se edite). Aqui
+  // solo se guarda el producto completo que se esta editando (o null si no hay ninguno).
+  const [productoEnEdicion, setProductoEnEdicion] = useState(null);
 
   const esAdmin = currentUser?.role === 'administrador';
 
@@ -111,59 +98,22 @@ export default function Inventario({ currentUser }) {
     setBusqueda('');
   }, [tab.id, cargarProductos, cargarNombresSugeridos]);
 
-  const categoriasDelTipo = categorias.filter((c) => c.tipo === tab.tipo);
-
-  useEffect(() => {
-    if (esAccesorio) {
-      // En las pestañas dinamicas la categoria ya esta implicita en la pestaña misma.
-      setForm((f) => ({ ...f, categoria: tab.categoria || '' }));
-    } else if (categoriasDelTipo.length === 1) {
-      setForm((f) => ({ ...f, categoria: categoriasDelTipo[0].nombre }));
-    } else {
-      setForm((f) => ({ ...f, categoria: '' }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab.id, categorias]);
-
   useEffect(() => {
     cargarCategorias();
   }, [cargarCategorias]);
 
-  const handleCrearProducto = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!form.nombre.trim()) {
-      setError('El nombre es obligatorio');
-      return;
-    }
-    // El codigo de producto (el filtro corto que se usa en el renglon "Codigo" de Facturacion)
-    // es obligatorio para equipos, SIM y USIM. Para accesorios sigue siendo opcional, ya que
-    // para ellos existe el codigo de barras.
-    if (!esAccesorio && !form.codigo_producto.trim()) {
-      setError('El codigo de producto es obligatorio para este tipo (se usa para ubicarlo en Facturacion)');
-      return;
-    }
-    const res = await window.api.createProduct({
-      tipo: tab.tipo,
-      nombre: form.nombre.trim(),
-      categoria: form.categoria.trim(),
-      precio: parseFloat(form.precio) || 0,
-      precio2: parseFloat(form.precio2) || 0,
-      stock_minimo: parseInt(form.stock_minimo, 10) || 0,
-      codigo_barras: form.codigo_barras.trim(),
-      codigo_producto: form.codigo_producto.trim(),
-      costo_inicial: parseFloat(form.costo_inicial) || 0,
-      usuario: currentUser?.username
-    });
-    if (!res.ok) {
-      setError(res.message);
-      return;
-    }
-    setForm({
-      nombre: '', categoria: esAccesorio ? tab.categoria || '' : '', precio: '', precio2: '',
-      stock_minimo: '', codigo_barras: '', codigo_producto: '', costo_inicial: ''
-    });
+  // Al crear o editar un producto desde la ventana ProductoRapidoModal, se refresca la lista y
+  // (para creacion) se cierra el modal. La categoria/tipo ya quedan definidos dentro del propio
+  // modal (igual que en Compras, Compras Telf/Acces y Reportes > Inventario), asi que aqui no
+  // hace falta mantener un formulario aparte ni pre-seleccionar nada segun la pestaña activa.
+  const handleProductoCreado = () => {
     setMostrarModalCrear(false);
+    cargarProductos();
+    cargarNombresSugeridos();
+  };
+
+  const handleProductoEditado = () => {
+    setProductoEnEdicion(null);
     cargarProductos();
     cargarNombresSugeridos();
   };
@@ -209,60 +159,6 @@ export default function Inventario({ currentUser }) {
     setEditandoCostoId(null);
     setNuevoCostoValor('');
     cargarProductos();
-  };
-
-  const abrirEdicionProducto = (p) => {
-    setEditandoProductoId(p.id);
-    setErrorEdicionProducto('');
-    setFormEdicionProducto({
-      nombre: p.nombre || '',
-      categoria: p.categoria || '',
-      precio: String(p.precio ?? ''),
-      precio2: String(p.precio2 ?? ''),
-      stock_minimo: String(p.stock_minimo ?? ''),
-      codigo_barras: p.codigo_barras || '',
-      codigo_producto: p.codigo_producto || ''
-    });
-  };
-
-  const cancelarEdicionProducto = () => {
-    setEditandoProductoId(null);
-    setErrorEdicionProducto('');
-  };
-
-  const guardarEdicionProducto = async (id) => {
-    setErrorEdicionProducto('');
-    if (!formEdicionProducto.nombre.trim()) {
-      setErrorEdicionProducto('El nombre es obligatorio');
-      return;
-    }
-    if (!esAccesorio && !formEdicionProducto.codigo_producto.trim()) {
-      setErrorEdicionProducto('El codigo de producto es obligatorio para este tipo (se usa para ubicarlo en Facturacion)');
-      return;
-    }
-    setGuardandoEdicionProducto(true);
-    try {
-      const res = await window.api.updateProduct(id, {
-        nombre: formEdicionProducto.nombre.trim(),
-        categoria: formEdicionProducto.categoria.trim(),
-        precio: parseFloat(formEdicionProducto.precio) || 0,
-        precio2: parseFloat(formEdicionProducto.precio2) || 0,
-        stock_minimo: parseInt(formEdicionProducto.stock_minimo, 10) || 0,
-        codigo_barras: formEdicionProducto.codigo_barras.trim(),
-        codigo_producto: formEdicionProducto.codigo_producto.trim()
-      });
-      if (!res.ok) {
-        setErrorEdicionProducto(res.message);
-        return;
-      }
-      setEditandoProductoId(null);
-      cargarProductos();
-      cargarNombresSugeridos();
-    } catch (err) {
-      setErrorEdicionProducto('Ocurrio un error inesperado: ' + (err?.message || String(err)));
-    } finally {
-      setGuardandoEdicionProducto(false);
-    }
   };
 
   const productosFiltrados = products.filter((p) =>
@@ -316,152 +212,10 @@ export default function Inventario({ currentUser }) {
       </div>
 
       {mostrarModalCrear && (
-        <div
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', zIndex: 1000
-          }}
-          onClick={() => setMostrarModalCrear(false)}
-        >
-          <div
-            style={{
-              background: '#fff', padding: '1.5rem', borderRadius: '8px',
-              width: 'min(720px, 92vw)', maxHeight: '90vh', overflowY: 'auto',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.25)'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h2 style={{ margin: 0 }}>Crear producto</h2>
-              <button
-                type="button"
-                onClick={() => setMostrarModalCrear(false)}
-                style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer', lineHeight: 1 }}
-                aria-label="Cerrar"
-              >
-                ×
-              </button>
-            </div>
-
-            <form
-              onSubmit={handleCrearProducto}
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '0.5rem',
-                alignItems: 'flex-end'
-              }}
-            >
-              <div>
-                <label>Nombre</label><br />
-                <input
-                  list="nombres-sugeridos"
-                  value={form.nombre}
-                  onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                  placeholder="Ej: iPhone 13 128GB"
-                  autoFocus
-                />
-                <datalist id="nombres-sugeridos">
-                  {nombresSugeridos.map((n) => (
-                    <option key={n} value={n} />
-                  ))}
-                </datalist>
-              </div>
-              {!esAccesorio && (
-                <div>
-                  <label>Categoria</label><br />
-                  <select
-                    value={form.categoria}
-                    onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-                    disabled={categoriasDelTipo.length <= 1}
-                  >
-                    {categoriasDelTipo.length === 0 && <option value="">-- Sin categorias para este tipo --</option>}
-                    {categoriasDelTipo.map((c) => (
-                      <option key={c.id} value={c.nombre}>{c.nombre}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div>
-                <label>Precio 1 - Bs. (USD)</label><br />
-                <input
-                  type="number"
-                  step="0.01"
-                  value={form.precio}
-                  onChange={(e) => setForm({ ...form, precio: e.target.value })}
-                />
-              </div>
-              <div>
-                <label>Precio 2 - Dolares (USD)</label><br />
-                <input
-                  type="number"
-                  step="0.01"
-                  value={form.precio2}
-                  onChange={(e) => setForm({ ...form, precio2: e.target.value })}
-                />
-              </div>
-              <div>
-                <label>
-                  Codigo de producto (filtro Facturacion){!esAccesorio && <span style={{ color: '#d92d20' }}> *</span>}
-                </label><br />
-                <input
-                  value={form.codigo_producto}
-                  onChange={(e) => setForm({ ...form, codigo_producto: e.target.value })}
-                  placeholder={esAccesorio ? 'Opcional, ej: aud01' : 'Obligatorio, ej: ss24'}
-                />
-              </div>
-              <div>
-                <label>Stock minimo (alerta)</label><br />
-                <input
-                  type="number"
-                  value={form.stock_minimo}
-                  onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })}
-                />
-              </div>
-              {esAccesorio && (
-                <>
-                  <div>
-                    <label>Codigo de barras</label><br />
-                    <input
-                      value={form.codigo_barras}
-                      onChange={(e) => setForm({ ...form, codigo_barras: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label>Costo unitario de compra (USD)</label><br />
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={form.costo_inicial}
-                      onChange={(e) => setForm({ ...form, costo_inicial: e.target.value })}
-                    />
-                  </div>
-                </>
-              )}
-
-              {esAccesorio && (
-                <p style={{ color: '#666', fontSize: '0.8rem', width: '100%', margin: '0.25rem 0 0' }}>
-                  El stock inicial no se define aqui: toda entrada de stock se registra desde{' '}
-                  <strong>Compras</strong> o desde <strong>Cargos y Descargos</strong>.
-                </p>
-              )}
-              {error && <p style={{ color: '#d92d20', width: '100%', margin: '0.25rem 0 0' }}>{error}</p>}
-
-              <div style={{ display: 'flex', gap: '0.5rem', width: '100%', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <button type="button" onClick={() => setMostrarModalCrear(false)} style={{ padding: '0.5rem 1rem' }}>
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  style={{ padding: '0.5rem 1rem', background: '#0b4f9e', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                >
-                  + Crear producto
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ProductoRapidoModal
+          onConfirm={handleProductoCreado}
+          onCancel={() => setMostrarModalCrear(false)}
+        />
       )}
 
 
@@ -501,88 +255,6 @@ export default function Inventario({ currentUser }) {
               const bajoStock = p.stock_disponible <= p.stock_minimo;
               return (
                 <React.Fragment key={p.id}>
-                  {editandoProductoId === p.id ? (
-                    <tr style={{ borderBottom: '1px solid #eee' }}>
-                      <td colSpan={totalColumnas} style={{ background: '#f8fafc', padding: '0.75rem' }}>
-                        {errorEdicionProducto && <p style={{ color: 'red', margin: '0 0 0.5rem' }}>{errorEdicionProducto}</p>}
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                          <div>
-                            <label>Nombre</label><br />
-                            <input
-                              value={formEdicionProducto.nombre}
-                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, nombre: e.target.value })}
-                            />
-                          </div>
-                          {!esAccesorio && (
-                            <div>
-                              <label>Categoria</label><br />
-                              <select
-                                value={formEdicionProducto.categoria}
-                                onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, categoria: e.target.value })}
-                              >
-                                {categoriasDelTipo.length === 0 && <option value="">-- Sin categorias --</option>}
-                                {categoriasDelTipo.map((c) => (
-                                  <option key={c.id} value={c.nombre}>{c.nombre}</option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                          <div>
-                            <label>Precio 1 - Bs. (USD)</label><br />
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={formEdicionProducto.precio}
-                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, precio: e.target.value })}
-                              style={{ width: '110px' }}
-                            />
-                          </div>
-                          <div>
-                            <label>Precio 2 - Dolares (USD)</label><br />
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={formEdicionProducto.precio2}
-                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, precio2: e.target.value })}
-                              style={{ width: '110px' }}
-                            />
-                          </div>
-                          <div>
-                            <label>
-                              Codigo de producto{!esAccesorio && <span style={{ color: '#d92d20' }}> *</span>}
-                            </label><br />
-                            <input
-                              value={formEdicionProducto.codigo_producto}
-                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, codigo_producto: e.target.value })}
-                              style={{ width: '120px' }}
-                            />
-                          </div>
-                          <div>
-                            <label>Stock minimo</label><br />
-                            <input
-                              type="number"
-                              value={formEdicionProducto.stock_minimo}
-                              onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, stock_minimo: e.target.value })}
-                              style={{ width: '90px' }}
-                            />
-                          </div>
-                          {esAccesorio && (
-                            <div>
-                              <label>Codigo de barras</label><br />
-                              <input
-                                value={formEdicionProducto.codigo_barras}
-                                onChange={(e) => setFormEdicionProducto({ ...formEdicionProducto, codigo_barras: e.target.value })}
-                              />
-                            </div>
-                          )}
-                          <button onClick={() => guardarEdicionProducto(p.id)} disabled={guardandoEdicionProducto}>
-                            {guardandoEdicionProducto ? 'Guardando...' : 'Guardar'}
-                          </button>
-                          <button onClick={cancelarEdicionProducto} disabled={guardandoEdicionProducto}>Cancelar</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
                   <tr style={{ borderBottom: '1px solid #eee' }}>
                     <td style={{ padding: '0.5rem' }}>{p.nombre}</td>
                     <td>{p.categoria}</td>
@@ -626,11 +298,10 @@ export default function Inventario({ currentUser }) {
                           {expandedId === p.id ? 'Ocultar' : 'Ver unidades'}
                         </button>
                       )}
-                      <button onClick={() => abrirEdicionProducto(p)}>Editar</button>
+                      <button onClick={() => setProductoEnEdicion(p)}>Editar</button>
                       <button onClick={() => handleEliminar(p.id)}>Eliminar</button>
                     </td>
                   </tr>
-                  )}
                   {expandedId === p.id && !esAccesorio && (
                     <tr>
                       <td colSpan={totalColumnas} style={{ background: '#f8fafc', padding: '0.75rem' }}>
@@ -655,6 +326,14 @@ export default function Inventario({ currentUser }) {
           confirmLabel="Si, eliminar"
           onConfirm={ejecutarEliminar}
           onCancel={() => setProductoAEliminar(null)}
+        />
+      )}
+
+      {productoEnEdicion && (
+        <ProductoRapidoModal
+          productoEditar={productoEnEdicion}
+          onConfirm={handleProductoEditado}
+          onCancel={() => setProductoEnEdicion(null)}
         />
       )}
     </div>
