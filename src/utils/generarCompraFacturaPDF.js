@@ -76,12 +76,15 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
 
   // Cada item ya trae sus codigos/IMEI (cuando aplica) desde compras:detalleEncabezado, asi
   // que se listan debajo de la descripcion dentro de la misma celda, igual que en la factura
-  // de venta.
+  // de venta. Debajo del costo/total en $ se agrega su equivalente en Bs. (con la tasa del dia
+  // guardada en la compra), igual que ya se ve en pantalla al registrar — asi el PDF sirve de
+  // comprobante en ambas monedas, no solo en dolares.
+  const tasaCambio = parseFloat(encabezado.tasa_cambio) || 0;
   const filas = items.map((i) => [
     String(i.cantidad),
     Array.isArray(i.codigos) && i.codigos.length > 0 ? `${i.descripcion}\n${i.codigos.join('\n')}` : i.descripcion,
-    fmt(i.costo_unitario_usd),
-    fmt(i.total_usd)
+    tasaCambio ? `$${fmt(i.costo_unitario_usd)}\nBs. ${fmt(i.costo_unitario_usd * tasaCambio)}` : fmt(i.costo_unitario_usd),
+    tasaCambio ? `$${fmt(i.total_usd)}\nBs. ${fmt(i.total_usd * tasaCambio)}` : fmt(i.total_usd)
   ]);
 
   autoTable(doc, {
@@ -101,7 +104,7 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   });
 
   let y = doc.lastAutoTable.finalY + 8;
-  if (y > 250) { doc.addPage(); y = 20; }
+  if (y > 225) { doc.addPage(); y = 20; }
 
   const baseImponible = encabezado.total_usd;
   const iva = baseImponible * ivaTasa;
@@ -114,11 +117,25 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   doc.text('TOTAL COMPRA:', 130, y + 10);
 
   doc.setFont('helvetica', 'normal');
-  doc.text(fmt(baseImponible), 195, y, { align: 'right' });
-  doc.text(fmt(iva), 195, y + 5, { align: 'right' });
+  doc.text(`$${fmt(baseImponible)}`, 195, y, { align: 'right' });
+  doc.text(`$${fmt(iva)}`, 195, y + 5, { align: 'right' });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.text(fmt(total), 195, y + 10, { align: 'right' });
+  doc.text(`$${fmt(total)}`, 195, y + 10, { align: 'right' });
+
+  // Equivalente en Bs. de los 3 montos de arriba, con la tasa del dia guardada en la compra.
+  if (tasaCambio) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Bs. ${fmt(baseImponible * tasaCambio)}`, 195, y + 3.8, { align: 'right' });
+    doc.text(`Bs. ${fmt(iva * tasaCambio)}`, 195, y + 8.8, { align: 'right' });
+    doc.setFontSize(9.5);
+    doc.text(`Bs. ${fmt(total * tasaCambio)}`, 195, y + 14.3, { align: 'right' });
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(7.5);
+    doc.text(`(tasa del día: ${fmt(tasaCambio)} Bs/USD)`, 130, y + 18);
+  }
 
   dibujarPiePaginaEmpresa(doc, settings);
 
