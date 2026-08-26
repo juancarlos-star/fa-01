@@ -273,12 +273,11 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
 
             {!tiposPermitidos && (
               <div style={{ margin: '10px 0' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: (checkboxBloqueado || !!categoriaObj) ? '#98a2b3' : '#333', cursor: (checkboxBloqueado || !!categoriaObj) ? 'default' : 'pointer' }}>
-                  <input
-                    type="checkbox"
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: (checkboxBloqueado || !!categoriaObj) ? '#98a2b3' : '#333', cursor: (checkboxBloqueado || !!categoriaObj) ? 'default' : 'pointer' }}>
+                  <SwitchToggle
                     checked={form.seVendePorUnidad}
                     disabled={checkboxBloqueado || !!categoriaObj}
-                    onChange={(e) => setForm({ ...form, seVendePorUnidad: e.target.checked })}
+                    onChange={(valor) => setForm({ ...form, seVendePorUnidad: valor })}
                   />
                   Se vende por unidad (requiere código/IMEI individual, ej. equipos, SIM, USIM)
                 </label>
@@ -365,6 +364,47 @@ function Campo({ label, required, children }) {
       </label>
       {children}
     </div>
+  );
+}
+
+// Switch azul/gris reutilizable para activar/desactivar opciones (reemplaza los checkboxes de
+// tilde). Azul (#0b4f9e, el mismo azul de marca que el resto del programa) cuando esta activado,
+// gris cuando esta desactivado. Mismo comportamiento que un checkbox: recibe checked/disabled y
+// avisa el nuevo valor por onChange(valor).
+export function SwitchToggle({ checked, disabled, onChange }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
+      style={{
+        width: '38px',
+        height: '20px',
+        borderRadius: '999px',
+        border: 'none',
+        padding: '2px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: checked ? 'flex-end' : 'flex-start',
+        background: disabled ? '#e2e8f0' : (checked ? '#0b4f9e' : '#c7ccd4'),
+        cursor: disabled ? 'default' : 'pointer',
+        transition: 'background 0.15s ease',
+        flexShrink: 0
+      }}
+    >
+      <span
+        style={{
+          width: '16px',
+          height: '16px',
+          borderRadius: '50%',
+          background: '#fff',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+          transition: 'transform 0.15s ease'
+        }}
+      />
+    </button>
   );
 }
 
