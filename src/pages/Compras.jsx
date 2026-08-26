@@ -237,7 +237,7 @@ export default function Compras({ currentUser }) {
         return;
       }
       if (p.tipo !== 'simcard' && p.tipo !== 'usim') {
-        setErrorFila('Este módulo "Compras" solo admite productos SIM (ICCID) o USIM. Para Equipos o Accesorios, usa el módulo "Compras Telf/Acces".');
+        setErrorFila('Este módulo "Compras" solo admite productos SIM (ICCID) o USIM. Para Teléfonos o Accesorios, usa el módulo "Compras Telf/Acces".');
         return;
       }
       seleccionarProductoEnFila(p);

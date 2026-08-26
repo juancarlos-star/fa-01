@@ -3,7 +3,7 @@ import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
 import { generarCargoDescargoDocumentoPDF } from '../utils/generarCargoDescargoPDF.js';
 
 const TIPOS = [
-  { key: 'equipo', label: 'Equipos (IMEI)' },
+  { key: 'equipo', label: 'Teléfonos (IMEI)' },
   { key: 'simcard', label: 'SIM Cards' },
   { key: 'usim', label: 'USIM' },
   { key: 'accesorio', label: 'Accesorios' }

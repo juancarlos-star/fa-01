@@ -18,7 +18,7 @@ async function avisar(mensaje) {
 // El resto de las pestañas se generan dinamicamente: una por cada categoria creada en
 // "Gestion de categorias" (todas de tipo 'accesorio'), y se comportan igual que Accesorios.
 const TABS_FIJAS = [
-  { id: 'equipo', tipo: 'equipo', categoria: null, label: 'Equipos (IMEI)' },
+  { id: 'equipo', tipo: 'equipo', categoria: null, label: 'Teléfonos (IMEI)' },
   { id: 'simcard', tipo: 'simcard', categoria: null, label: 'SIM Cards' },
   { id: 'usim', tipo: 'usim', categoria: null, label: 'USIM' }
 ];

@@ -651,7 +651,7 @@ function ReporteDevolucionesFacturas({ desde, hasta }) {
 // ---------------- Productos vendidos ----------------
 
 const TIPOS_PRODUCTO = [
-  { key: 'equipo', label: 'Equipos (IMEI)' },
+  { key: 'equipo', label: 'Teléfonos (IMEI)' },
   { key: 'simcard', label: 'SIM Card' },
   { key: 'usim', label: 'USIM' },
   { key: 'accesorio', label: 'Accesorios' }
@@ -956,7 +956,7 @@ function ReporteCargosDescargos({ desde, hasta }) {
 
 // ---------------- Inventario: Productos (valorizado) ----------------
 
-const TIPO_LABEL_INV = { equipo: 'Equipo', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
+const TIPO_LABEL_INV = { equipo: 'Teléfono', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
 
 function ReporteInventarioProductos() {
   const [depositos, setDepositos] = useState([]);
