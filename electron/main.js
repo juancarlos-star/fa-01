@@ -2025,7 +2025,7 @@ ipcMain.handle('inventario:buscarPorCodigo', (event, { codigo }) => {
 ipcMain.handle('compras:crearLote', (event, payload) => {
   const db = getDb();
   try {
-    const { proveedor, proveedorId, proveedorRif, proveedorTelefono, proveedorDireccion, moneda, tasaCambio, numeroFacturaCompra, items, usuario, depositoId } = payload;
+    const { proveedor, proveedorId, proveedorRif, proveedorTelefono, proveedorDireccion, moneda, tasaCambio, numeroFacturaCompra, items, usuario, depositoId, ivaPorcentaje } = payload;
 
     if (!proveedor || !proveedor.trim()) return { ok: false, message: 'El nombre del proveedor es obligatorio' };
     if (!numeroFacturaCompra || !numeroFacturaCompra.trim()) return { ok: false, message: 'El numero de documento de compra es obligatorio' };
@@ -2065,7 +2065,12 @@ ipcMain.handle('compras:crearLote', (event, payload) => {
     let totalUsd = 0;
 
     const transaccion = db.transaction(() => {
-      const ivaPorcentajeActual = obtenerIvaPorcentajeActual(db);
+      // "Compras Telf/Acces" manda ivaPorcentaje = 0 explicito (proveedores sin IVA); si no se
+      // manda nada (el modulo normal de "Compras", SIM/USIM), se usa el % configurado en el
+      // sistema, igual que antes.
+      const ivaPorcentajeActual = (ivaPorcentaje !== undefined && ivaPorcentaje !== null)
+        ? (parseFloat(ivaPorcentaje) || 0)
+        : obtenerIvaPorcentajeActual(db);
       const encabezadoInfo = db.prepare(
         `INSERT INTO compras_encabezado
            (proveedor, proveedor_id, proveedor_rif, proveedor_telefono, proveedor_direccion, moneda, numero_factura_compra, total_usd, usuario, created_at, iva_porcentaje, tasa_cambio)
