@@ -8,6 +8,7 @@ import Configuracion from './pages/Configuracion.jsx';
 import Facturacion from './pages/Facturacion.jsx';
 import DevolucionFacturas from './pages/DevolucionFacturas.jsx';
 import Compras from './pages/Compras.jsx';
+import ComprasTelfAcces from './pages/ComprasTelfAcces.jsx';
 import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
 import Reportes from './pages/Reportes.jsx';
@@ -72,7 +73,7 @@ export default function App() {
     setView('inicio');
   };
   const vistasFacturacion = ['facturacion', 'devolucionFacturas'];
-  const vistasCompras = ['compras', 'devolucionCompras'];
+  const vistasCompras = ['compras', 'comprasTelfAcces', 'devolucionCompras'];
   // Si hay CUALQUIER submenu abierto (Facturar, Compras o Reportes), los botones que no son el
   // que se abrio deben quedar apagados -- incluyendo los otros botones con submenu, que antes se
   // quedaban brillantes porque viven dentro de un <div> y no son hijos directos de <nav>, por lo
@@ -137,6 +138,12 @@ export default function App() {
                       onClick={() => { setView('compras'); setMenuComprasAbierto(false); }}
                     >
                       🛒 Generar Compras
+                    </button>
+                    <button
+                      className={view === 'comprasTelfAcces' ? 'active' : ''}
+                      onClick={() => { setView('comprasTelfAcces'); setMenuComprasAbierto(false); }}
+                    >
+                      📱 Compras Telf/Acces
                     </button>
                     <button
                       className={view === 'devolucionCompras' ? 'active' : ''}
@@ -213,6 +220,7 @@ export default function App() {
         {view === 'devolucionFacturas' && <DevolucionFacturas currentUser={user} />}
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
+        {view === 'comprasTelfAcces' && user.role === 'administrador' && <ComprasTelfAcces currentUser={user} />}
         {view === 'devolucionCompras' && user.role === 'administrador' && <DevolucionCompras currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'cargosDescargos' && user.role === 'administrador' && <CargosDescargos currentUser={user} />}
