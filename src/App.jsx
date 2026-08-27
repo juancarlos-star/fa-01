@@ -93,6 +93,7 @@ export default function App() {
         </p>
         <nav className={algunSubmenuAbierto ? 'submenu-open' : ''}>
           <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}>Inicio</button>
+          <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuFacturacionAbierto ? ' dimmed' : ''}`}>
             <button
               className={vistasFacturacion.includes(view) ? 'active' : ''}
@@ -162,6 +163,7 @@ export default function App() {
               )}
             </div>
           )}
+          {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (
             <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}>Categorias</button>
           )}
@@ -171,6 +173,7 @@ export default function App() {
           {user.role === 'administrador' && (
             <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}>Gastos</button>
           )}
+          {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (
             <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuReportesAbierto ? ' dimmed' : ''}`}>
               <button
@@ -206,12 +209,14 @@ export default function App() {
               )}
             </div>
           )}
+          {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (
             <button className={view === 'configuracion' ? 'active' : ''} onClick={() => setView('configuracion')}>Configuracion</button>
           )}
           {user.role === 'administrador' && (
             <button className={view === 'usuarios' ? 'active' : ''} onClick={() => setView('usuarios')}>Usuarios</button>
           )}
+          <hr className="sidebar-section-divider" />
           <button onClick={handleLogout}>Cerrar sesion</button>
         </nav>
       </aside>
