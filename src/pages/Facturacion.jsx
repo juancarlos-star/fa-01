@@ -4,7 +4,11 @@ import { fmt } from '../utils/format.js';
 import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
 import SeleccionUnidadesModal from '../components/SeleccionUnidadesModal.jsx';
 
-export default function Facturacion({ currentUser }) {
+export default function Facturacion({ currentUser, modo = 'factura' }) {
+  // modo='notaVenta': mismo modulo, pero IVA siempre 0%, numeracion propia (separada de
+  // Factura) y textos ajustados. Se guarda en la misma tabla facturas (columna es_nota_venta),
+  // asi que los reportes de ventas/ganancias ya la toman en cuenta sin cambios aparte.
+  const esNotaVenta = modo === 'notaVenta';
   const [settings, setSettings] = useState(null);
 
   // Deposito: toda la factura se hace contra UN solo deposito (de ahi sale el stock y las
@@ -392,14 +396,15 @@ export default function Facturacion({ currentUser }) {
   })();
 
   const subtotal = carrito.reduce((acc, i) => acc + i.precio_unitario * i.cantidad, 0);
-  const ivaPorcentaje = settings ? parseFloat(settings.iva_porcentaje) : 0;
+  const ivaPorcentaje = esNotaVenta ? 0 : (settings ? parseFloat(settings.iva_porcentaje) : 0);
   const tasaCambio = settings ? parseFloat(settings.tasa_cambio) : 1;
   const iva = subtotal * (ivaPorcentaje / 100);
   const total = subtotal + iva;
   const totalBs = total * tasaCambio;
   const totalPiezas = carrito.reduce((acc, i) => acc + (parseInt(i.cantidad, 10) || 0), 0);
-  const numeroFacturaPreview = settings && settings.numero_factura_siguiente
-    ? String(settings.numero_factura_siguiente).padStart(6, '0')
+  const numeroSettingKey = esNotaVenta ? 'numero_nota_venta_siguiente' : 'numero_factura_siguiente';
+  const numeroFacturaPreview = settings && settings[numeroSettingKey]
+    ? String(settings[numeroSettingKey]).padStart(6, '0')
     : '------';
 
   // Guarda ademas del estado "emitiendo" (que solo controla el disabled visual del boton, y
@@ -413,7 +418,7 @@ export default function Facturacion({ currentUser }) {
     if (totalizandoRef.current) return;
     setError('');
     if (carrito.length === 0) {
-      setError('Agrega al menos un producto a la factura');
+      setError(`Agrega al menos un producto a la ${esNotaVenta ? 'nota de venta' : 'factura'}`);
       return;
     }
     if (!clienteSeleccionado) {
@@ -432,7 +437,8 @@ export default function Facturacion({ currentUser }) {
         cliente,
         items: carrito,
         usuario: currentUser?.username,
-        depositoId: Number(depositoId)
+        depositoId: Number(depositoId),
+        esNotaVenta
       });
 
       if (!res.ok) {
@@ -505,11 +511,11 @@ export default function Facturacion({ currentUser }) {
       <div className="pos-receipt">
         <div className="pos-receipt-header">
           <div className="check">✓</div>
-          <h1>Factura emitida</h1>
+          <h1>{esNotaVenta ? 'Nota de venta emitida' : 'Factura emitida'}</h1>
         </div>
         <div className="pos-receipt-body">
           <div className="pos-receipt-row">
-            <span>N° de factura</span>
+            <span>N° de {esNotaVenta ? 'nota de venta' : 'factura'}</span>
             <strong>{confirmacion.numero}</strong>
           </div>
           <div className="pos-receipt-row">
@@ -520,13 +526,13 @@ export default function Facturacion({ currentUser }) {
             <span>Total Bs</span>
             <strong>Bs {fmt(confirmacion.totalBs)}</strong>
           </div>
-          <p className="pos-receipt-note">La factura ya se envio a imprimir automaticamente.</p>
+          <p className="pos-receipt-note">La {esNotaVenta ? 'nota de venta' : 'factura'} ya se envio a imprimir automaticamente.</p>
         </div>
         <div className="pos-receipt-actions">
           <button className="btn-ghost" onClick={handleImprimir} disabled={imprimiendoFactura}>
             {imprimiendoFactura ? 'Imprimiendo...' : 'Reimprimir PDF'}
           </button>
-          <button className="btn-primary" onClick={() => setConfirmacion(null)}>Hacer otra factura</button>
+          <button className="btn-primary" onClick={() => setConfirmacion(null)}>Hacer otra {esNotaVenta ? 'nota de venta' : 'factura'}</button>
         </div>
       </div>
     );
@@ -535,7 +541,7 @@ export default function Facturacion({ currentUser }) {
   const cambiarDeposito = (nuevoId) => {
     // Cambiar de deposito a mitad de una factura invalida los codigos/unidades que ya estaban
     // en el carrito (pertenecen al deposito anterior), asi que se avisa y se vacia el carrito.
-    if (carrito.length > 0 && !window.confirm('Cambiar de deposito vacia los productos que ya agregaste a esta factura (pertenecen al deposito anterior). ¿Deseas continuar?')) {
+    if (carrito.length > 0 && !window.confirm(`Cambiar de deposito vacia los productos que ya agregaste a esta ${esNotaVenta ? 'nota de venta' : 'factura'} (pertenecen al deposito anterior). ¿Deseas continuar?`)) {
       return;
     }
     setDepositoId(nuevoId);
@@ -547,7 +553,7 @@ export default function Facturacion({ currentUser }) {
     <div className="pos-page">
       <div className="pos-topbar">
         <span className="pos-topbar-side">MODULO DE VENTAS</span>
-        <span className="pos-topbar-center">FACTURACIÓN</span>
+        <span className="pos-topbar-center">{esNotaVenta ? 'NOTA DE VENTA' : 'FACTURACIÓN'}</span>
         <span className="pos-topbar-side">MODO: NORMAL</span>
       </div>
 
@@ -634,7 +640,7 @@ export default function Facturacion({ currentUser }) {
         </div>
 
         <div className="pos-right">
-          <div className="pos-right-header">Factura N° {numeroFacturaPreview}</div>
+          <div className="pos-right-header">{esNotaVenta ? 'Nota de Venta' : 'Factura'} N° {numeroFacturaPreview}</div>
           <div className="pos-right-row">
             <span>Base imponible</span>
             <span>{fmt(subtotal)}</span>
@@ -817,7 +823,7 @@ export default function Facturacion({ currentUser }) {
             </div>
             <div className="pos-vertodo-body">
               {gruposCarrito.length === 0 ? (
-                <p className="pos-vertodo-vacio">Aun no has agregado productos a esta factura.</p>
+                <p className="pos-vertodo-vacio">Aun no has agregado productos a esta {esNotaVenta ? 'nota de venta' : 'factura'}.</p>
               ) : (
                 <table className="pos-vertodo-table">
                   <thead>
