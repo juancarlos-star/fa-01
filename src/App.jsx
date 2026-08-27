@@ -72,7 +72,7 @@ export default function App() {
     setUser(null);
     setView('inicio');
   };
-  const vistasFacturacion = ['facturacion', 'devolucionFacturas'];
+  const vistasFacturacion = ['facturacion', 'devolucionFacturas', 'notaVenta'];
   const vistasCompras = ['compras', 'comprasTelfAcces', 'devolucionCompras'];
   // Si hay CUALQUIER submenu abierto (Facturar, Compras o Reportes), los botones que no son el
   // que se abrio deben quedar apagados -- incluyendo los otros botones con submenu, que antes se
@@ -115,6 +115,12 @@ export default function App() {
                     onClick={() => { setView('devolucionFacturas'); setMenuFacturacionAbierto(false); }}
                   >
                     ↩ Devolución de Factura
+                  </button>
+                  <button
+                    className={view === 'notaVenta' ? 'active' : ''}
+                    onClick={() => { setView('notaVenta'); setMenuFacturacionAbierto(false); }}
+                  >
+                    🧾 Nota de Venta
                   </button>
                 </div>
               </>
@@ -217,6 +223,7 @@ export default function App() {
           </div>
         )}
         {view === 'facturacion' && <Facturacion currentUser={user} />}
+        {view === 'notaVenta' && <Facturacion currentUser={user} modo="notaVenta" />}
         {view === 'devolucionFacturas' && <DevolucionFacturas currentUser={user} />}
         {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
