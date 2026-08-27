@@ -14,6 +14,39 @@ function encabezado(doc, titulo, desde, hasta) {
   doc.line(10, 26, 200, 26);
 }
 
+// Grafico de barras verticales simple para los PDF, dibujado con las primitivas propias de
+// jsPDF (rect + texto), sin depender de ninguna libreria de graficos nueva. x/y/ancho/alto van
+// en mm. Devuelve el "y" donde termina el grafico, para poder seguir dibujando debajo sin pisarlo.
+function dibujarGraficoBarrasPDF(doc, { x, y, ancho, alto, datos, color = [11, 79, 158], formatoValor }) {
+  const max = Math.max(1, ...datos.map((d) => d.valor));
+  const espacio = ancho / datos.length;
+  const anchoBarra = espacio * 0.5;
+  const altoUtil = alto - 8;
+
+  datos.forEach((d, i) => {
+    const alturaBarra = Math.max(0.5, (d.valor / max) * altoUtil);
+    const bx = x + i * espacio + (espacio - anchoBarra) / 2;
+    const by = y + altoUtil - alturaBarra;
+    doc.setFillColor(color[0], color[1], color[2]);
+    doc.rect(bx, by, anchoBarra, alturaBarra, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(52, 64, 84);
+    doc.text(formatoValor ? formatoValor(d.valor) : String(d.valor), bx + anchoBarra / 2, by - 1.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(102, 112, 133);
+    doc.text(d.etiqueta, bx + anchoBarra / 2, y + altoUtil + 4.5, { align: 'center' });
+  });
+
+  doc.setDrawColor(220);
+  doc.line(x, y + altoUtil, x + ancho, y + altoUtil);
+  doc.setTextColor(0, 0, 0);
+  return y + alto;
+}
+
 // ---------------- Ventas y ganancias ----------------
 
 export async function generarPDFGanancias(reporte, desde, hasta) {
@@ -39,8 +72,21 @@ export async function generarPDFGanancias(reporte, desde, hasta) {
     y += 6;
   });
 
+  y = dibujarGraficoBarrasPDF(doc, {
+    x: 10,
+    y: y + 4,
+    ancho: 130,
+    alto: 42,
+    datos: [
+      { etiqueta: 'Ventas', valor: reporte.ventasSubtotalUsd },
+      { etiqueta: 'Costo', valor: reporte.costoVendidoUsd },
+      { etiqueta: 'Ganancia neta', valor: reporte.gananciaNetaUsd }
+    ],
+    formatoValor: (v) => `$${fmt(v)}`
+  });
+
   autoTable(doc, {
-    startY: y + 4,
+    startY: y + 6,
     head: [['Fecha', 'Concepto', 'Categoria', 'Monto']],
     body: reporte.gastos.map((g) => [g.created_at, g.concepto, g.categoria || '—', `$${fmt(g.monto_usd)}`]),
     theme: 'grid',
@@ -266,8 +312,22 @@ export async function generarPDFInventarioProductos(reporte, depositoLabel) {
     32
   );
 
+  const valorPorTipo = {};
+  reporte.productos.forEach((p) => {
+    valorPorTipo[p.tipo] = (valorPorTipo[p.tipo] || 0) + (p.valorTotalUsd || 0);
+  });
+  const datosGrafico = ['equipo', 'simcard', 'usim', 'accesorio']
+    .filter((t) => valorPorTipo[t] !== undefined)
+    .map((t) => ({ etiqueta: TIPO_LABEL[t] || t, valor: valorPorTipo[t] }));
+
+  const yTrasGrafico = datosGrafico.length > 0
+    ? dibujarGraficoBarrasPDF(doc, {
+      x: 10, y: 38, ancho: 130, alto: 40, datos: datosGrafico, formatoValor: (v) => `$${fmt(v)}`
+    })
+    : 38;
+
   autoTable(doc, {
-    startY: 38,
+    startY: yTrasGrafico + 6,
     head: [['Tipo', 'Codigo', 'Producto', 'Stock', 'Costo', 'Precio Bs.', 'Precio $.', 'Valor Total $.']],
     body: reporte.productos.map((p) => [
       TIPO_LABEL[p.tipo] || p.tipo,
