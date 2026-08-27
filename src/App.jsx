@@ -207,7 +207,7 @@ export default function App() {
               </>
             )}
           </div>
-          <button className={view === 'inventario' ? 'active' : ''} onClick={() => setView('inventario')}><MIcon.Inventario />Inventario</button>
+          {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (
             <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuComprasAbierto ? ' dimmed' : ''}`}>
               <button
@@ -253,42 +253,47 @@ export default function App() {
           {user.role === 'administrador' && (
             <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}><MIcon.Gastos />Gastos</button>
           )}
-          {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
-          {user.role === 'administrador' && (
-            <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuReportesAbierto ? ' dimmed' : ''}`}>
-              <button
-                className={view === 'reportes' ? 'active' : ''}
-                onClick={() => setMenuReportesAbierto((v) => !v)}
-              >
-                <MIcon.Reportes />Reportes
-              </button>
-              {menuReportesAbierto && (
-                <>
-                  <div className="sidebar-submenu-overlay" onClick={() => setMenuReportesAbierto(false)} />
-                  <div className="sidebar-submenu">
-                    <button className={view === 'reportes' && categoriaReportes === 'inventario' ? 'active' : ''} onClick={() => irAReporte('inventario')}>
-                      <RIcon.Inventario /> Inventario
-                    </button>
-                    <button className={view === 'reportes' && categoriaReportes === 'ventas' ? 'active' : ''} onClick={() => irAReporte('ventas')}>
-                      <RIcon.Ventas /> Ventas
-                    </button>
-                    <button className={view === 'reportes' && categoriaReportes === 'compras' ? 'active' : ''} onClick={() => irAReporte('compras')}>
-                      <RIcon.Compras /> Compras
-                    </button>
-                    <button className={view === 'reportes' && categoriaReportes === 'impuestos' ? 'active' : ''} onClick={() => irAReporte('impuestos')}>
-                      <RIcon.Impuestos /> Impuestos
-                    </button>
-                    <button className={view === 'reportes' && categoriaReportes === 'etiquetas' ? 'active' : ''} onClick={() => irAReporte('etiquetas')}>
-                      <RIcon.Etiquetas /> Etiquetas
-                    </button>
-                    <button className={view === 'reportes' && categoriaReportes === 'vendedores' ? 'active' : ''} onClick={() => irAReporte('vendedores')}>
-                      <RIcon.Vendedores /> Vendedores
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+          <hr className="sidebar-section-divider" />
+          <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuReportesAbierto ? ' dimmed' : ''}`}>
+            <button
+              className={(view === 'reportes' || view === 'inventario') ? 'active' : ''}
+              onClick={() => setMenuReportesAbierto((v) => !v)}
+            >
+              <MIcon.Reportes />Reportes
+            </button>
+            {menuReportesAbierto && (
+              <>
+                <div className="sidebar-submenu-overlay" onClick={() => setMenuReportesAbierto(false)} />
+                <div className="sidebar-submenu">
+                  <button className={view === 'inventario' ? 'active' : ''} onClick={() => { setView('inventario'); setMenuReportesAbierto(false); }}>
+                    <MIcon.Inventario /> Stock Bajo de productos
+                  </button>
+                  {user.role === 'administrador' && (
+                    <>
+                      <button className={view === 'reportes' && categoriaReportes === 'inventario' ? 'active' : ''} onClick={() => irAReporte('inventario')}>
+                        <RIcon.Inventario /> Inventario
+                      </button>
+                      <button className={view === 'reportes' && categoriaReportes === 'ventas' ? 'active' : ''} onClick={() => irAReporte('ventas')}>
+                        <RIcon.Ventas /> Ventas
+                      </button>
+                      <button className={view === 'reportes' && categoriaReportes === 'compras' ? 'active' : ''} onClick={() => irAReporte('compras')}>
+                        <RIcon.Compras /> Compras
+                      </button>
+                      <button className={view === 'reportes' && categoriaReportes === 'impuestos' ? 'active' : ''} onClick={() => irAReporte('impuestos')}>
+                        <RIcon.Impuestos /> Impuestos
+                      </button>
+                      <button className={view === 'reportes' && categoriaReportes === 'etiquetas' ? 'active' : ''} onClick={() => irAReporte('etiquetas')}>
+                        <RIcon.Etiquetas /> Etiquetas
+                      </button>
+                      <button className={view === 'reportes' && categoriaReportes === 'vendedores' ? 'active' : ''} onClick={() => irAReporte('vendedores')}>
+                        <RIcon.Vendedores /> Vendedores
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (
             <button className={view === 'configuracion' ? 'active' : ''} onClick={() => setView('configuracion')}><MIcon.Configuracion />Configuracion</button>
