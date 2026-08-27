@@ -1449,10 +1449,10 @@ ipcMain.handle('proveedores:update', (event, { id, nombre, rif, telefono, direcc
 // ---------- IPC: Facturacion ----------
 ipcMain.handle('facturas:crear', (event, payload) => {
   const db = getDb();
-  const { cliente, items, usuario, sinCliente, depositoId } = payload;
+  const { cliente, items, usuario, sinCliente, depositoId, esNotaVenta } = payload;
 
   if (!items || items.length === 0) {
-    return { ok: false, message: 'La factura debe tener al menos un producto' };
+    return { ok: false, message: `La ${esNotaVenta ? 'nota de venta' : 'factura'} debe tener al menos un producto` };
   }
   if (!sinCliente && !(cliente && (cliente.id || (cliente.nombre && cliente.nombre.trim())))) {
     return { ok: false, message: 'Selecciona un cliente registrado, crea uno nuevo, o marca "Consumidor final"' };
@@ -1465,10 +1465,17 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   const settings = {};
   settingsRows.forEach((r) => { settings[r.key] = r.value; });
   const tasaCambio = parseFloat(settings.tasa_cambio) || 1;
-  const ivaPorcentaje = parseFloat(settings.iva_porcentaje) || 0;
-  let siguienteNumero = parseInt(settings.numero_factura_siguiente, 10);
+  // La Nota de Venta siempre tiene IVA 0%, sin importar lo que este configurado para Factura.
+  const ivaPorcentaje = esNotaVenta ? 0 : (parseFloat(settings.iva_porcentaje) || 0);
+  const numeroSettingKey = esNotaVenta ? 'numero_nota_venta_siguiente' : 'numero_factura_siguiente';
+  let siguienteNumero = parseInt(settings[numeroSettingKey], 10);
   if (!siguienteNumero || siguienteNumero < 1) siguienteNumero = 1;
-  const numeroFacturaStr = String(siguienteNumero).padStart(6, '0');
+  // La Nota de Venta lleva el prefijo "NV-" en el mismo campo numero_factura para que nunca
+  // choque con la numeracion de Factura (ambas arrancan en 000001 pero son secuencias
+  // independientes) en ninguna busqueda/reporte que ya exista basado en numero_factura.
+  const numeroFacturaStr = esNotaVenta
+    ? `NV-${String(siguienteNumero).padStart(6, '0')}`
+    : String(siguienteNumero).padStart(6, '0');
 
   for (const item of items) {
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
@@ -1532,10 +1539,10 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     const facturaInfo = db
       .prepare(
         `INSERT INTO facturas
-         (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, deposito_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
+         (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, deposito_id, created_at, es_nota_venta)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?)`
       )
-      .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '', depositoId);
+      .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '', depositoId, esNotaVenta ? 1 : 0);
 
     const facturaId = facturaInfo.lastInsertRowid;
 
@@ -1566,7 +1573,7 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     }
 
     db.prepare(
-      "INSERT INTO settings (key, value) VALUES ('numero_factura_siguiente', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      `INSERT INTO settings (key, value) VALUES ('${numeroSettingKey}', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     ).run(String(siguienteNumero + 1));
 
     return facturaId;
@@ -1773,12 +1780,12 @@ ipcMain.handle('facturas:crearDevolucion', (event, payload) => {
         `INSERT INTO facturas
            (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd,
             tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, deposito_id, created_at,
-            es_devolucion, devuelve_a_factura_id, numero_devolucion)
-         VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, 0, 0, 0, ?, ?, ?, datetime('now','localtime'), 1, ?, ?)`
+            es_devolucion, devuelve_a_factura_id, numero_devolucion, es_nota_venta)
+         VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, 0, 0, 0, ?, ?, ?, datetime('now','localtime'), 1, ?, ?, ?)`
       ).run(
         original.cliente_id, original.cliente_nombre, original.cliente_rif, original.cliente_direccion,
         `DEV-${original.numero_factura}`, tasaCambio, original.iva_porcentaje, usuario || '', original.deposito_id,
-        original.id, numeroDevolucion
+        original.id, numeroDevolucion, original.es_nota_venta || 0
       );
       const devolucionId = devInfo.lastInsertRowid;
 

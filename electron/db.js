@@ -371,6 +371,17 @@ function migrarProveedoresYComprasEncabezadoSiHaceFalta(database) {
 // registrarla (y no el de "ahora"), igual que ya funciona para las ventas. Para compras
 // anteriores a este cambio, que quedan en NULL, el reporte usa el porcentaje configurado
 // actualmente como respaldo.
+// Nota de Venta: un documento de venta identico a Factura pero con IVA siempre en 0% y su
+// propia numeracion correlativa (numero_nota_venta_siguiente en settings). Se guarda en la
+// MISMA tabla facturas (marcado con es_nota_venta=1) para que los reportes de ventas/ganancias,
+// que ya recorren toda la tabla facturas, la tomen en cuenta automaticamente sin cambios aparte.
+function migrarNotaVentaSiHaceFalta(database) {
+  const existeFacturas = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facturas'").get();
+  if (existeFacturas && !tieneColumna(database, 'facturas', 'es_nota_venta')) {
+    database.exec('ALTER TABLE facturas ADD COLUMN es_nota_venta INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
 function migrarIvaPorcentajeComprasSiHaceFalta(database) {
   const existeCompras = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras_encabezado'").get();
   if (existeCompras && !tieneColumna(database, 'compras_encabezado', 'iva_porcentaje')) {
@@ -623,6 +634,7 @@ function initDb() {
   migrarDevolucionesCompraSiHaceFalta(database);
   migrarDevolucionesFacturaSiHaceFalta(database);
   migrarTasaCambioComprasSiHaceFalta(database);
+  migrarNotaVentaSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');
@@ -631,6 +643,7 @@ function initDb() {
   insertSetting.run('rif_tienda', '');
   insertSetting.run('iva_porcentaje', '16');
   insertSetting.run('numero_factura_siguiente', '1');
+  insertSetting.run('numero_nota_venta_siguiente', '1');
 
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {
