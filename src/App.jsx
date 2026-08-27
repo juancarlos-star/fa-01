@@ -12,6 +12,7 @@ import ComprasTelfAcces from './pages/ComprasTelfAcces.jsx';
 import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
 import Reportes from './pages/Reportes.jsx';
+import Inicio from './pages/Inicio.jsx';
 
 // Iconos del submenu de Reportes: se usan SVG en linea (en vez de emojis) para que todos
 // tengan exactamente el mismo color (heredan "currentColor" del boton), ya que los emojis
@@ -300,12 +301,7 @@ export default function App() {
         </nav>
       </aside>
       <main className="content">
-        {view === 'inicio' && (
-          <div>
-            <h1>Bienvenido, {user.full_name}</h1>
-            <p>Usa el menu para facturar, ver el historial o gestionar el inventario.</p>
-          </div>
-        )}
+        {view === 'inicio' && <Inicio user={user} />}
         {view === 'facturacion' && <Facturacion currentUser={user} />}
         {view === 'notaVenta' && <Facturacion currentUser={user} modo="notaVenta" />}
         {view === 'devolucionFacturas' && <DevolucionFacturas currentUser={user} />}
