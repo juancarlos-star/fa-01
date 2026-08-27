@@ -21,7 +21,7 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text('FACTURA N°', 145, 15);
+  doc.text(factura.es_nota_venta ? 'NOTA DE VENTA N°' : 'FACTURA N°', 145, 15);
   doc.text('FECHA:', 145, 21);
 
   doc.setFont('helvetica', 'normal');
@@ -89,8 +89,8 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   doc.text('TOTAL NETO:', 130, finalY);
   doc.text('BASE IMPONIBLE:', 130, finalY + 5);
   doc.text(`I.V.A ${fmt(factura.iva_porcentaje)}%:`, 130, finalY + 10);
-  doc.text('TOTAL FACTURA ($):', 130, finalY + 15);
-  doc.text(`TOTAL FACTURA (Bs. ${fmt(factura.tasa_cambio)}):`, 130, finalY + 20);
+  doc.text(`TOTAL ${factura.es_nota_venta ? 'NOTA' : 'FACTURA'} ($):`, 130, finalY + 15);
+  doc.text(`TOTAL ${factura.es_nota_venta ? 'NOTA' : 'FACTURA'} (Bs. ${fmt(factura.tasa_cambio)}):`, 130, finalY + 20);
 
   doc.setFont('helvetica', 'normal');
   doc.text(fmt(factura.subtotal_usd), 195, finalY, { align: 'right' });
@@ -106,8 +106,8 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   dibujarPiePaginaEmpresa(doc, settings);
 
   if (opciones.imprimir) {
-    await guardarAbrirEImprimirPDF(doc, `Factura-${factura.numero_factura || factura.id}`, 'Facturas');
+    await guardarAbrirEImprimirPDF(doc, `${factura.es_nota_venta ? 'NotaVenta' : 'Factura'}-${factura.numero_factura || factura.id}`, 'Facturas');
   } else {
-    await guardarYAbrirPDF(doc, `Factura-${factura.numero_factura || factura.id}`, 'Facturas');
+    await guardarYAbrirPDF(doc, `${factura.es_nota_venta ? 'NotaVenta' : 'Factura'}-${factura.numero_factura || factura.id}`, 'Facturas');
   }
 }
