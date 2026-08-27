@@ -3020,3 +3020,92 @@ ipcMain.handle('reportes:ventasRelacion', (event, { desde, hasta, agrupacion }) 
 
   return { ok: true, desde, hasta, agrupacion: agrupacion || 'dia', filas };
 });
+
+// ---------------- Dashboard de Inicio ----------------
+// Resumen SIN montos de dinero para la pantalla de bienvenida: solo cantidades vendidas (unidades
+// facturadas) y tendencias, tomadas 100% de datos reales de factura_items/facturas (incluye
+// tanto "Generar Factura" como "Nota de Venta", ya que ambas se guardan en la misma tabla).
+// Se excluyen devoluciones (es_devolucion = 0 en ambos lados) para no inflar ni distorsionar las
+// cantidades. El rango es de los ultimos 30 dias, agrupado por dia.
+ipcMain.handle('reportes:dashboardInicio', () => {
+  const db = getDb();
+  const DIAS = 30;
+  const hoy = new Date();
+  const desde = new Date(hoy);
+  desde.setDate(desde.getDate() - (DIAS - 1));
+  const aISO = (d) => d.toISOString().slice(0, 10);
+  const desdeStr = aISO(desde);
+  const hastaStr = aISO(hoy);
+
+  const filas = db.prepare(
+    `SELECT date(f.created_at) AS fecha, fi.tipo, fi.precio_unitario_usd, fi.cantidad
+     FROM factura_items fi
+     JOIN facturas f ON f.id = fi.factura_id
+     WHERE f.es_devolucion = 0 AND fi.es_devolucion = 0
+       AND date(f.created_at) BETWEEN date(?) AND date(?)`
+  ).all(desdeStr, hastaStr);
+
+  // Serie completa de los 30 dias (con 0 en los dias sin ventas, para que la linea no tenga huecos).
+  const porDiaMapa = new Map();
+  for (let i = 0; i < DIAS; i++) {
+    const d = new Date(desde);
+    d.setDate(d.getDate() + i);
+    porDiaMapa.set(aISO(d), 0);
+  }
+
+  const porCategoria = { equipo: 0, simcard: 0, usim: 0, accesorio: 0 };
+  const simcardPorPrecioMapa = new Map();
+  // Para la tendencia por categoria: cantidad en la 1ra mitad del periodo vs la 2da mitad.
+  const mitadFecha = aISO((() => { const d = new Date(desde); d.setDate(d.getDate() + Math.floor(DIAS / 2)); return d; })());
+  const porCategoriaMitad = {
+    equipo: [0, 0], simcard: [0, 0], usim: [0, 0], accesorio: [0, 0]
+  };
+
+  for (const r of filas) {
+    porDiaMapa.set(r.fecha, (porDiaMapa.get(r.fecha) || 0) + r.cantidad);
+    if (porCategoria[r.tipo] !== undefined) {
+      porCategoria[r.tipo] += r.cantidad;
+      const idx = r.fecha < mitadFecha ? 0 : 1;
+      porCategoriaMitad[r.tipo][idx] += r.cantidad;
+    }
+    if (r.tipo === 'simcard') {
+      const precioKey = Number(r.precio_unitario_usd || 0).toFixed(2);
+      simcardPorPrecioMapa.set(precioKey, (simcardPorPrecioMapa.get(precioKey) || 0) + r.cantidad);
+    }
+  }
+
+  const ventasPorDia = Array.from(porDiaMapa.entries()).map(([fecha, cantidad]) => ({ fecha, cantidad }));
+
+  const calcularTendenciaPct = (antes, despues) => {
+    if (antes > 0) return Math.round(((despues - antes) / antes) * 100);
+    return despues > 0 ? 100 : 0;
+  };
+
+  const tendenciaPorCategoria = {};
+  Object.keys(porCategoriaMitad).forEach((tipo) => {
+    const [antes, despues] = porCategoriaMitad[tipo];
+    tendenciaPorCategoria[tipo] = calcularTendenciaPct(antes, despues);
+  });
+
+  const totalAntes = Object.values(porCategoriaMitad).reduce((acc, [a]) => acc + a, 0);
+  const totalDespues = Object.values(porCategoriaMitad).reduce((acc, [, d]) => acc + d, 0);
+  const tendenciaTotalPct = calcularTendenciaPct(totalAntes, totalDespues);
+
+  const simcardPorPrecio = Array.from(simcardPorPrecioMapa.entries())
+    .map(([precio, cantidad]) => ({ precio: Number(precio), cantidad }))
+    .sort((a, b) => a.precio - b.precio);
+
+  const totalGeneral = Object.values(porCategoria).reduce((a, b) => a + b, 0);
+
+  return {
+    ok: true,
+    desde: desdeStr,
+    hasta: hastaStr,
+    ventasPorDia,
+    porCategoria,
+    simcardPorPrecio,
+    totalGeneral,
+    tendenciaTotalPct,
+    tendenciaPorCategoria
+  };
+});

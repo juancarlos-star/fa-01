@@ -115,6 +115,7 @@ contextBridge.exposeInMainWorld('api', {
   getReporteVentasTransacciones: (desde, hasta) => ipcRenderer.invoke('reportes:ventasTransacciones', { desde, hasta }),
   getReporteVentasCierreDiario: (fecha) => ipcRenderer.invoke('reportes:ventasCierreDiario', { fecha }),
   getReporteVentasRelacion: (desde, hasta, agrupacion) => ipcRenderer.invoke('reportes:ventasRelacion', { desde, hasta, agrupacion }),
+  getDashboardInicio: () => ipcRenderer.invoke('reportes:dashboardInicio'),
   getReporteProductosVendidos: (desde, hasta, tipo, productId) =>
     ipcRenderer.invoke('reportes:productosVendidos', { desde, hasta, tipo, product_id: productId }),
   // Respaldo
