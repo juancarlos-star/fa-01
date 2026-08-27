@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld('api', {
   // Configuracion
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (values) => ipcRenderer.invoke('settings:update', values),
+  generarNotificaciones: () => ipcRenderer.invoke('notificaciones:generar'),
+  listarNotificaciones: () => ipcRenderer.invoke('notificaciones:listar'),
+  marcarNotificacionesLeidas: () => ipcRenderer.invoke('notificaciones:marcarLeidas'),
   // Clientes
   listClientes: () => ipcRenderer.invoke('clientes:list'),
   searchClientes: (query) => ipcRenderer.invoke('clientes:search', { query }),

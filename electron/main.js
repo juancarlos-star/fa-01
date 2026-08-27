@@ -1270,6 +1270,95 @@ ipcMain.handle('settings:get', () => {
   return obj;
 });
 
+// ---------- IPC: Notificaciones de la pantalla de Inicio ----------
+// "Generar" revisa el estado actual del negocio y crea las notificaciones que hagan falta (sin
+// duplicar la misma alerta el mismo dia). Se llama al entrar a Inicio y cada 30 minutos mientras
+// se este ahi. Las de venta/tasa se comparan una vez por dia (se guardan con tipo+fecha unicos
+// para no repetirse); las de stock se re-evaluan cada vez (si el producto sigue bajo/agotado, no
+// se vuelve a avisar el mismo dia; si se resuelve y vuelve a bajar otro dia, se avisa de nuevo).
+function existeNotificacionHoy(db, tipo, productoId) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const row = productoId
+    ? db.prepare("SELECT id FROM notificaciones WHERE tipo = ? AND producto_id = ? AND date(created_at) = ?").get(tipo, productoId, hoy)
+    : db.prepare("SELECT id FROM notificaciones WHERE tipo = ? AND producto_id IS NULL AND date(created_at) = ?").get(tipo, hoy);
+  return !!row;
+}
+
+function crearNotificacion(db, tipo, mensaje, productoId = null) {
+  db.prepare(
+    "INSERT INTO notificaciones (tipo, mensaje, producto_id, leida, created_at) VALUES (?, ?, ?, 0, datetime('now','localtime'))"
+  ).run(tipo, mensaje, productoId);
+}
+
+ipcMain.handle('notificaciones:generar', () => {
+  const db = getDb();
+  const hoy = new Date().toISOString().slice(0, 10);
+  const ayer = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+
+  // --- Stock bajo / agotado: solo productos con stock_minimo configurado (>0) ---
+  const productos = db.prepare('SELECT * FROM products WHERE stock_minimo > 0').all();
+  for (const p of productos) {
+    const stock = p.tipo === 'accesorio'
+      ? p.stock_cantidad
+      : db.prepare("SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'").get(p.id).c;
+
+    if (stock <= 0) {
+      if (!existeNotificacionHoy(db, 'agotado', p.id)) {
+        crearNotificacion(db, 'agotado', `Se acabó "${p.nombre}": no quedan unidades disponibles.`, p.id);
+      }
+    } else if (stock <= p.stock_minimo) {
+      if (!existeNotificacionHoy(db, 'stock_bajo', p.id)) {
+        crearNotificacion(db, 'stock_bajo', `Stock bajo de "${p.nombre}": quedan ${stock} unidad(es).`, p.id);
+      }
+    }
+  }
+
+  // --- Ventas de hoy vs ayer (en $ y en unidades), cada una es su propia notificacion ---
+  const totalUsdDia = (fecha) => db.prepare(
+    "SELECT COALESCE(SUM(total_usd),0) AS t FROM facturas WHERE date(created_at) = ?"
+  ).get(fecha).t;
+  const unidadesDia = (fecha) => db.prepare(
+    `SELECT COALESCE(SUM(fi.cantidad),0) AS u FROM factura_items fi
+     JOIN facturas f ON f.id = fi.factura_id WHERE date(f.created_at) = ?`
+  ).get(fecha).u;
+
+  const totalHoy = totalUsdDia(hoy);
+  const totalAyer = totalUsdDia(ayer);
+  if (totalHoy > totalAyer && !existeNotificacionHoy(db, 'venta_mayor_usd', null)) {
+    crearNotificacion(db, 'venta_mayor_usd', `Hoy ya vendiste más en dólares que ayer ($${totalHoy.toFixed(2)} vs $${totalAyer.toFixed(2)}).`);
+  }
+
+  const unidadesHoy = unidadesDia(hoy);
+  const unidadesAyer = unidadesDia(ayer);
+  if (unidadesHoy > unidadesAyer && !existeNotificacionHoy(db, 'venta_mayor_unidades', null)) {
+    crearNotificacion(db, 'venta_mayor_unidades', `Hoy ya vendiste más unidades que ayer (${unidadesHoy} vs ${unidadesAyer}).`);
+  }
+
+  // --- Tasa de cambio sin actualizar hoy ---
+  const fechaTasa = db.prepare("SELECT value FROM settings WHERE key = 'tasa_cambio_actualizada_fecha'").get();
+  if ((!fechaTasa || fechaTasa.value !== hoy) && !existeNotificacionHoy(db, 'tasa_pendiente', null)) {
+    crearNotificacion(db, 'tasa_pendiente', 'Todavía no has actualizado la Tasa de cambio de hoy en Configuración.');
+  }
+
+  return { ok: true };
+});
+
+// Ultimas 2 semanas (para el historial del icono de notificaciones) + cuantas no leidas.
+ipcMain.handle('notificaciones:listar', () => {
+  const db = getDb();
+  const notificaciones = db.prepare(
+    "SELECT * FROM notificaciones WHERE date(created_at) >= date('now','localtime','-14 days') ORDER BY created_at DESC"
+  ).all();
+  const noLeidas = notificaciones.filter((n) => !n.leida).length;
+  return { notificaciones, noLeidas };
+});
+
+ipcMain.handle('notificaciones:marcarLeidas', () => {
+  const db = getDb();
+  db.prepare('UPDATE notificaciones SET leida = 1 WHERE leida = 0').run();
+  return { ok: true };
+});
+
 ipcMain.handle('settings:update', (event, values) => {
   const db = getDb();
   // El logo (si viene) se guarda como texto (data URL base64) en la misma tabla key/value; se
@@ -1277,6 +1366,14 @@ ipcMain.handle('settings:update', (event, values) => {
   // corrupto o manipulado no infle la base de datos sin control.
   if (values.logo_base64 && String(values.logo_base64).length > 600000) {
     return { ok: false, message: 'El logo es demasiado grande. Usa una imagen de menos de 400KB.' };
+  }
+  // Si la tasa de cambio cambia de valor, se anota la fecha (para el recordatorio de "todavia
+  // no has actualizado la tasa hoy" en las notificaciones de Inicio).
+  if (values.tasa_cambio !== undefined) {
+    const actual = db.prepare("SELECT value FROM settings WHERE key = 'tasa_cambio'").get();
+    if (!actual || String(actual.value) !== String(values.tasa_cambio)) {
+      values.tasa_cambio_actualizada_fecha = new Date().toISOString().slice(0, 10);
+    }
   }
   const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
   const transaccion = db.transaction((vals) => {
