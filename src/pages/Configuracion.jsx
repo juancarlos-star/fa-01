@@ -3,6 +3,59 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 const LOGO_MAX_BYTES = 400 * 1024; // 400KB
 
 export default function Configuracion() {
+  const [depositos, setDepositos] = useState([]);
+  const [formDeposito, setFormDeposito] = useState({ codigo: '', nombre: '' });
+  const [editandoDepositoId, setEditandoDepositoId] = useState(null);
+  const [errorDeposito, setErrorDeposito] = useState('');
+  const [guardandoDeposito, setGuardandoDeposito] = useState(false);
+
+  const cargarDepositos = useCallback(async () => {
+    const data = await window.api.listDepositos(false);
+    setDepositos(data);
+  }, []);
+
+  useEffect(() => { cargarDepositos(); }, [cargarDepositos]);
+
+  const iniciarNuevoDeposito = () => {
+    setEditandoDepositoId(null);
+    setFormDeposito({ codigo: '', nombre: '' });
+    setErrorDeposito('');
+  };
+
+  const iniciarEdicionDeposito = (d) => {
+    setEditandoDepositoId(d.id);
+    setFormDeposito({ codigo: d.codigo, nombre: d.nombre });
+    setErrorDeposito('');
+  };
+
+  const guardarDeposito = async (e) => {
+    e.preventDefault();
+    setErrorDeposito('');
+    setGuardandoDeposito(true);
+    try {
+      const res = editandoDepositoId
+        ? await window.api.updateDeposito(editandoDepositoId, formDeposito)
+        : await window.api.createDeposito(formDeposito);
+      if (!res.ok) {
+        setErrorDeposito(res.message || 'No se pudo guardar el deposito');
+        return;
+      }
+      iniciarNuevoDeposito();
+      cargarDepositos();
+    } finally {
+      setGuardandoDeposito(false);
+    }
+  };
+
+  const toggleActivoDeposito = async (d) => {
+    const res = await window.api.toggleDepositoActive(d.id);
+    if (!res.ok) {
+      setErrorDeposito(res.message || 'No se pudo cambiar el estado del deposito');
+      return;
+    }
+    cargarDepositos();
+  };
+
   const [form, setForm] = useState({
     tasa_cambio: '',
     iva_porcentaje: '',
@@ -154,6 +207,76 @@ export default function Configuracion() {
         <button type="button" onClick={handleBackup}>Crear respaldo</button>
         <button type="button" onClick={handleRestaurar} style={{ marginLeft: '8px' }}>Restaurar respaldo</button>
         {mensajeBackup && <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>{mensajeBackup}</p>}
+      </div>
+
+      <div className="form-box" style={{ maxWidth: '620px', marginTop: '1.5rem' }}>
+        <h3>Depósitos / almacenes</h3>
+        <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '10px' }}>
+          Crea y nombra aquí los depósitos de tu negocio. Se usan automáticamente en Facturación,
+          Compras, Compras Telf/Acces, Cargos y Descargos, e Inventario — no hace falta
+          configurarlos en ningún otro lado.
+        </p>
+
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '14px' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>
+              <th style={{ padding: '6px 4px' }}>Código</th>
+              <th style={{ padding: '6px 4px' }}>Nombre</th>
+              <th style={{ padding: '6px 4px' }}>Estado</th>
+              <th style={{ padding: '6px 4px' }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {depositos.length === 0 && (
+              <tr><td colSpan={4} style={{ padding: '10px 4px', color: '#98a2b3' }}>Aún no hay depósitos creados.</td></tr>
+            )}
+            {depositos.map((d) => (
+              <tr key={d.id} style={{ borderBottom: '1px solid #eef0f3' }}>
+                <td style={{ padding: '6px 4px' }}>{d.codigo}</td>
+                <td style={{ padding: '6px 4px' }}>{d.nombre}</td>
+                <td style={{ padding: '6px 4px' }}>
+                  <span style={{ color: d.activo ? '#0b8f4e' : '#98a2b3' }}>{d.activo ? 'Activo' : 'Inactivo'}</span>
+                </td>
+                <td style={{ padding: '6px 4px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <button type="button" onClick={() => iniciarEdicionDeposito(d)} style={{ marginRight: '6px' }}>
+                    ✎ Editar
+                  </button>
+                  <button type="button" onClick={() => toggleActivoDeposito(d)}>
+                    {d.activo ? 'Desactivar' : 'Activar'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <form onSubmit={guardarDeposito} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem' }}>Código</label>
+            <input
+              value={formDeposito.codigo}
+              onChange={(e) => setFormDeposito({ ...formDeposito, codigo: e.target.value })}
+              placeholder="Ej: 01"
+              style={{ width: '90px' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem' }}>Nombre</label>
+            <input
+              value={formDeposito.nombre}
+              onChange={(e) => setFormDeposito({ ...formDeposito, nombre: e.target.value })}
+              placeholder="Ej: Principal"
+              style={{ width: '200px' }}
+            />
+          </div>
+          <button type="submit" disabled={guardandoDeposito}>
+            {guardandoDeposito ? 'Guardando...' : (editandoDepositoId ? 'Guardar cambios' : '+ Agregar depósito')}
+          </button>
+          {editandoDepositoId && (
+            <button type="button" onClick={iniciarNuevoDeposito}>Cancelar</button>
+          )}
+        </form>
+        {errorDeposito && <p style={{ color: '#b42318', fontSize: '0.85rem', marginTop: '8px' }}>{errorDeposito}</p>}
       </div>
     </div>
   );
