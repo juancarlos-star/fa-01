@@ -32,6 +32,8 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
     categoria: editando ? (productoEditar.categoria || '') : '',
     costo_inicial: editando ? String(productoEditar.costo_promedio_usd ?? '0') : '',
     precio2: editando ? String(productoEditar.precio2 ?? '') : '',
+    // Opcional: si se deja vacio, se guarda como 0 (sin alerta de stock bajo).
+    stock_minimo: editando && productoEditar.stock_minimo ? String(productoEditar.stock_minimo) : '',
     // Solo se usa cuando NO hay categoria elegida (ver comentario de arriba). Por defecto viene
     // TILDADO: la mayoria de los productos que se registran al vuelo desde Compras sin elegir
     // categoria son equipos con IMEI individual.
@@ -138,7 +140,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
           categoria: tipoCambio ? '' : form.categoria,
           precio: precioBsCalculado,
           precio2: parseFloat(form.precio2) || 0,
-          stock_minimo: productoEditar.stock_minimo ?? 0,
+          stock_minimo: parseInt(form.stock_minimo, 10) || 0,
           codigo_barras: tipo === 'accesorio' ? (productoEditar.codigo_barras || '') : '',
           codigo_producto: codigoLimpio || ''
         });
@@ -174,6 +176,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
         categoria: form.categoria,
         precio: precioBsCalculado,
         precio2: parseFloat(form.precio2) || 0,
+        stock_minimo: parseInt(form.stock_minimo, 10) || 0,
         costo_inicial: parseFloat(form.costo_inicial) || 0,
         codigo_producto: codigoLimpio || null
       });
@@ -192,6 +195,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
         codigo_producto: codigoLimpio || null,
         precio: precioBsCalculado,
         precio2: parseFloat(form.precio2) || 0,
+        stock_minimo: parseInt(form.stock_minimo, 10) || 0,
         costo_promedio_usd: parseFloat(form.costo_inicial) || 0,
         stock_disponible: 0
       });
@@ -270,6 +274,14 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
               El Precio Bs. se calcula solo (Precio Dólares × tasa del día) y se actualiza cada
               vez que cambie la tasa. No se guarda un monto fijo en bolívares.
             </p>
+
+            <Campo label="Stock mínimo (opcional)">
+              <input type="number" step="1" min="0" value={form.stock_minimo} onChange={set('stock_minimo')}
+                placeholder="Ej: 5" style={inputStyle} />
+              <p style={{ fontSize: '0.72rem', color: '#98a2b3', margin: '4px 0 0' }}>
+                Si lo dejas vacío, no se avisará cuando el stock esté bajo para este producto.
+              </p>
+            </Campo>
 
             {!tiposPermitidos && (
               <div style={{ margin: '10px 0' }}>
