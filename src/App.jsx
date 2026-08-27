@@ -51,6 +51,85 @@ const RIcon = {
   )
 };
 
+// Iconos del menu principal (un nivel arriba del de Reportes): mismo estilo minimalista de
+// linea, mismo grosor y mismo tamano, para que todo el menu lateral se vea consistente.
+const MIcon = {
+  Inicio: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />
+    </svg>
+  ),
+  Facturar: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+      <path d="M14 2v6h6" /><path d="M8.5 13h7" /><path d="M8.5 17h7" />
+    </svg>
+  ),
+  Inventario: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <path d="M21 8l-9-5-9 5 9 5 9-5z" /><path d="M3 8v8l9 5 9-5V8" /><path d="M12 13v8" />
+    </svg>
+  ),
+  Compras: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" />
+      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+    </svg>
+  ),
+  Categorias: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  ),
+  CargosDescargos: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <path d="M7 17V7" /><path d="M3.5 10.5 7 7l3.5 3.5" />
+      <path d="M17 7v10" /><path d="M13.5 13.5 17 17l3.5-3.5" />
+    </svg>
+  ),
+  Gastos: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /><path d="M6 15h4" />
+    </svg>
+  ),
+  Reportes: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <path d="M3 3v18h18" /><rect x="7" y="12" width="3" height="6" /><rect x="12.5" y="8" width="3" height="10" /><rect x="18" y="5" width="3" height="13" />
+    </svg>
+  ),
+  Configuracion: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  ),
+  Usuarios: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  ),
+  CerrarSesion: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" /><path d="M21 12H9" />
+    </svg>
+  )
+};
+
+// Logo "MS" + celular, tal como en la referencia: las letras en blanco y, pegado a la derecha,
+// un icono minimalista de telefono (mismo trazo blanco).
+const LogoMoviSync = () => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+    <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#fff', lineHeight: 1, letterSpacing: '-0.02em' }}>MS</span>
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="7" y="2" width="10" height="20" rx="2.2" />
+      <line x1="11" y1="18.3" x2="13" y2="18.3" />
+    </svg>
+  </div>
+);
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('inicio');
@@ -87,19 +166,19 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <h2>MoviSync</h2>
+        <LogoMoviSync />
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
         <nav className={algunSubmenuAbierto ? 'submenu-open' : ''}>
-          <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}>Inicio</button>
+          <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}><MIcon.Inicio />Inicio</button>
           <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuFacturacionAbierto ? ' dimmed' : ''}`}>
             <button
               className={vistasFacturacion.includes(view) ? 'active' : ''}
               onClick={() => setMenuFacturacionAbierto((v) => !v)}
             >
-              Facturar
+              <MIcon.Facturar />Facturar
             </button>
             {menuFacturacionAbierto && (
               <>
@@ -127,14 +206,14 @@ export default function App() {
               </>
             )}
           </div>
-          <button className={view === 'inventario' ? 'active' : ''} onClick={() => setView('inventario')}>Inventario</button>
+          <button className={view === 'inventario' ? 'active' : ''} onClick={() => setView('inventario')}><MIcon.Inventario />Inventario</button>
           {user.role === 'administrador' && (
             <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuComprasAbierto ? ' dimmed' : ''}`}>
               <button
                 className={vistasCompras.includes(view) ? 'active' : ''}
                 onClick={() => setMenuComprasAbierto((v) => !v)}
               >
-                Compras
+                <MIcon.Compras />Compras
               </button>
               {menuComprasAbierto && (
                 <>
@@ -165,13 +244,13 @@ export default function App() {
           )}
           {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (
-            <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}>Categorias</button>
+            <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}><MIcon.Categorias />Categorias</button>
           )}
           {user.role === 'administrador' && (
-            <button className={view === 'cargosDescargos' ? 'active' : ''} onClick={() => setView('cargosDescargos')}>Cargos y Descargos</button>
+            <button className={view === 'cargosDescargos' ? 'active' : ''} onClick={() => setView('cargosDescargos')}><MIcon.CargosDescargos />Cargos y Descargos</button>
           )}
           {user.role === 'administrador' && (
-            <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}>Gastos</button>
+            <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}><MIcon.Gastos />Gastos</button>
           )}
           {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (
@@ -180,7 +259,7 @@ export default function App() {
                 className={view === 'reportes' ? 'active' : ''}
                 onClick={() => setMenuReportesAbierto((v) => !v)}
               >
-                Reportes
+                <MIcon.Reportes />Reportes
               </button>
               {menuReportesAbierto && (
                 <>
@@ -211,13 +290,13 @@ export default function App() {
           )}
           {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (
-            <button className={view === 'configuracion' ? 'active' : ''} onClick={() => setView('configuracion')}>Configuracion</button>
+            <button className={view === 'configuracion' ? 'active' : ''} onClick={() => setView('configuracion')}><MIcon.Configuracion />Configuracion</button>
           )}
           {user.role === 'administrador' && (
-            <button className={view === 'usuarios' ? 'active' : ''} onClick={() => setView('usuarios')}>Usuarios</button>
+            <button className={view === 'usuarios' ? 'active' : ''} onClick={() => setView('usuarios')}><MIcon.Usuarios />Usuarios</button>
           )}
           <hr className="sidebar-section-divider" />
-          <button onClick={handleLogout}>Cerrar sesion</button>
+          <button onClick={handleLogout}><MIcon.CerrarSesion />Cerrar sesion</button>
         </nav>
       </aside>
       <main className="content">
