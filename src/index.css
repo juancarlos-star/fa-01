@@ -78,8 +78,23 @@ body {
   color: white;
   padding: 1.5rem 1rem;
   height: 100vh;
-  overflow-y: auto;
+  /* IMPORTANTE: aqui NO se pone overflow-y:auto (aunque el sidebar sea alto y con muchos
+     botones). Un padre con overflow distinto de "visible" recorta cualquier hijo posicionado
+     con "position: absolute" que se salga de su caja -y los submenus (Facturar/Compras/Reportes)
+     se dibujan justo asi, saliendo hacia la derecha del sidebar-. Si el sidebar recorta, esos
+     submenus quedan invisibles/tapados detras del contenido principal. El scroll del propio
+     menu (necesario si la ventana es chica y hay muchos botones) se resuelve en su lugar con
+     ".sidebar-scroll" mas abajo, que es un div interno -no el sidebar completo- el que scrolea. */
+  overflow: visible;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: visible;
 }
 
 .sidebar h2 {

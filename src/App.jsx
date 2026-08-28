@@ -171,7 +171,14 @@ export default function App() {
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
-        <nav className={algunSubmenuAbierto ? 'submenu-open' : ''}>
+        <div
+          className="sidebar-scroll"
+          // Cualquier click dentro del menu (un boton final o un submenu que se despliega)
+          // avisa a la campana de notificaciones para que descarte los avisos flotantes, sin
+          // tener que enganchar el evento en cada uno de los botones de abajo.
+          onClickCapture={() => window.dispatchEvent(new Event('movisync-dismiss-toasts'))}
+        >
+          <nav className={algunSubmenuAbierto ? 'submenu-open' : ''}>
           <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}><MIcon.Inicio />Inicio</button>
           <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuFacturacionAbierto ? ' dimmed' : ''}`}>
@@ -304,6 +311,7 @@ export default function App() {
           <hr className="sidebar-section-divider" />
           <button onClick={handleLogout}><MIcon.CerrarSesion />Cerrar sesion</button>
         </nav>
+        </div>
       </aside>
       <main className="content">
         {view === 'inicio' && <Inicio user={user} />}
