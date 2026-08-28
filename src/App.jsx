@@ -14,6 +14,7 @@ import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
 import Reportes from './pages/Reportes.jsx';
 import Inicio from './pages/Inicio.jsx';
+import LogoMoviSync from './components/LogoMoviSync.jsx';
 
 // Iconos del submenu de Reportes: se usan SVG en linea (en vez de emojis) para que todos
 // tengan exactamente el mismo color (heredan "currentColor" del boton), ya que los emojis
@@ -120,17 +121,8 @@ const MIcon = {
   )
 };
 
-// Logo "MS" + celular, tal como en la referencia: las letras en blanco y, pegado a la derecha,
-// un icono minimalista de telefono (mismo trazo blanco).
-const LogoMoviSync = () => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-    <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#fff', lineHeight: 1, letterSpacing: '-0.02em' }}>MS</span>
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="7" y="2" width="10" height="20" rx="2.2" />
-      <line x1="11" y1="18.3" x2="13" y2="18.3" />
-    </svg>
-  </div>
-);
+// Logo "MS" + celular ahora vive en un componente compartido (src/components/LogoMoviSync.jsx)
+// para poder reutilizarlo tambien en la pantalla de Login sin duplicar el SVG.
 
 // Submenu del sidebar (Facturar / Compras / Reportes), dibujado con un PORTAL directo a
 // document.body. Antes vivia "adentro" del sidebar (position:absolute respecto a su boton),
@@ -147,7 +139,16 @@ function SidebarSubmenu({ open, anchorRef, onClose, children }) {
     if (!open || !anchorRef.current) { setPos(null); return; }
     const calcular = () => {
       const r = anchorRef.current.getBoundingClientRect();
-      setPos({ top: r.top, left: r.right + 6 });
+      // Si el boton que abre el submenu esta en la mitad inferior de la pantalla (como
+      // "Reportes", que quedo mas abajo del sidebar al crecer con mas opciones), anclar por
+      // "top" hacia abajo lo saca del viewport sin poder verse completo ni hacer scroll. En
+      // vez de eso, se ancla por "bottom" para que el panel crezca hacia ARRIBA desde la
+      // altura del boton, quedando siempre dentro de la pantalla.
+      if (r.top > window.innerHeight / 2) {
+        setPos({ top: null, bottom: window.innerHeight - r.bottom, left: r.right + 6 });
+      } else {
+        setPos({ top: r.top, bottom: null, left: r.right + 6 });
+      }
     };
     calcular();
     window.addEventListener('resize', calcular);
@@ -159,7 +160,10 @@ function SidebarSubmenu({ open, anchorRef, onClose, children }) {
   return createPortal(
     <>
       <div className="sidebar-submenu-overlay" onClick={onClose} />
-      <div className="sidebar-submenu" style={{ position: 'fixed', top: pos.top, left: pos.left }}>
+      <div
+        className="sidebar-submenu"
+        style={{ position: 'fixed', top: pos.top ?? 'auto', bottom: pos.bottom ?? 'auto', left: pos.left }}
+      >
         {children}
       </div>
     </>,
@@ -206,7 +210,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <LogoMoviSync />
+        <div style={{ marginBottom: '4px' }}><LogoMoviSync /></div>
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
@@ -302,7 +306,7 @@ export default function App() {
             </button>
             <SidebarSubmenu open={menuReportesAbierto} anchorRef={refReportes} onClose={() => setMenuReportesAbierto(false)}>
                   <button className={view === 'inventario' ? 'active' : ''} onClick={() => { setView('inventario'); setMenuReportesAbierto(false); }}>
-                    <MIcon.Inventario /> Stock Bajo de productos
+                    <MIcon.Inventario /> Gestionar productos
                   </button>
                   {user.role === 'administrador' && (
                     <>

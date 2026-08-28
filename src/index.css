@@ -177,6 +177,10 @@ body {
   padding: 6px;
   min-width: 210px;
   z-index: 501;
+  /* Salvavidas para pantallas muy chicas: si aun asi el panel no entra completo en la altura
+     disponible, que se pueda hacer scroll adentro del propio panel en vez de recortarse. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 
 .sidebar-submenu button {
