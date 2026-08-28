@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Login from './pages/Login.jsx';
 import UsersAdmin from './pages/UsersAdmin.jsx';
 import Inventario from './pages/Inventario.jsx';
@@ -131,6 +132,41 @@ const LogoMoviSync = () => (
   </div>
 );
 
+// Submenu del sidebar (Facturar / Compras / Reportes), dibujado con un PORTAL directo a
+// document.body. Antes vivia "adentro" del sidebar (position:absolute respecto a su boton),
+// asi que cualquier overflow:auto/hidden de un padre (el sidebar, o el div que le da scroll al
+// menu) lo recortaba o lo tapaba detras del contenido -exactamente el bug de "el submenu queda
+// por debajo del dashboard"-. Con el portal, el submenu escapa por completo del sidebar: se
+// posiciona con "position: fixed" calculando sus coordenadas a partir del boton que lo abre, asi
+// que ningun overflow ni scroll del menu lo puede volver a recortar, sin importar que tan largo
+// o corto sea el sidebar.
+function SidebarSubmenu({ open, anchorRef, onClose, children }) {
+  const [pos, setPos] = useState(null);
+
+  useLayoutEffect(() => {
+    if (!open || !anchorRef.current) { setPos(null); return; }
+    const calcular = () => {
+      const r = anchorRef.current.getBoundingClientRect();
+      setPos({ top: r.top, left: r.right + 6 });
+    };
+    calcular();
+    window.addEventListener('resize', calcular);
+    return () => window.removeEventListener('resize', calcular);
+  }, [open, anchorRef]);
+
+  if (!open || !pos) return null;
+
+  return createPortal(
+    <>
+      <div className="sidebar-submenu-overlay" onClick={onClose} />
+      <div className="sidebar-submenu" style={{ position: 'fixed', top: pos.top, left: pos.left }}>
+        {children}
+      </div>
+    </>,
+    document.body
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('inicio');
@@ -145,6 +181,9 @@ export default function App() {
   // categoria activa cada vez que se elige una opcion distinta del submenu.
   const [menuReportesAbierto, setMenuReportesAbierto] = useState(false);
   const [categoriaReportes, setCategoriaReportes] = useState('ventas');
+  const refFacturar = useRef(null);
+  const refCompras = useRef(null);
+  const refReportes = useRef(null);
   if (!user) {
     return <Login onLogin={setUser} />;
   }
@@ -183,15 +222,13 @@ export default function App() {
           <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuFacturacionAbierto ? ' dimmed' : ''}`}>
             <button
+              ref={refFacturar}
               className={vistasFacturacion.includes(view) ? 'active' : ''}
               onClick={() => setMenuFacturacionAbierto((v) => !v)}
             >
               <MIcon.Facturar />Facturar
             </button>
-            {menuFacturacionAbierto && (
-              <>
-                <div className="sidebar-submenu-overlay" onClick={() => setMenuFacturacionAbierto(false)} />
-                <div className="sidebar-submenu">
+            <SidebarSubmenu open={menuFacturacionAbierto} anchorRef={refFacturar} onClose={() => setMenuFacturacionAbierto(false)}>
                   <button
                     className={view === 'facturacion' ? 'active' : ''}
                     onClick={() => { setView('facturacion'); setMenuFacturacionAbierto(false); }}
@@ -210,23 +247,19 @@ export default function App() {
                   >
                     🧾 Nota de Venta
                   </button>
-                </div>
-              </>
-            )}
+            </SidebarSubmenu>
           </div>
           {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (
             <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuComprasAbierto ? ' dimmed' : ''}`}>
               <button
+                ref={refCompras}
                 className={vistasCompras.includes(view) ? 'active' : ''}
                 onClick={() => setMenuComprasAbierto((v) => !v)}
               >
                 <MIcon.Compras />Compras
               </button>
-              {menuComprasAbierto && (
-                <>
-                  <div className="sidebar-submenu-overlay" onClick={() => setMenuComprasAbierto(false)} />
-                  <div className="sidebar-submenu">
+              <SidebarSubmenu open={menuComprasAbierto} anchorRef={refCompras} onClose={() => setMenuComprasAbierto(false)}>
                     <button
                       className={view === 'compras' ? 'active' : ''}
                       onClick={() => { setView('compras'); setMenuComprasAbierto(false); }}
@@ -245,9 +278,7 @@ export default function App() {
                     >
                       ↩ Devolución de Compras
                     </button>
-                  </div>
-                </>
-              )}
+              </SidebarSubmenu>
             </div>
           )}
           {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
@@ -263,15 +294,13 @@ export default function App() {
           <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuReportesAbierto ? ' dimmed' : ''}`}>
             <button
+              ref={refReportes}
               className={(view === 'reportes' || view === 'inventario') ? 'active' : ''}
               onClick={() => setMenuReportesAbierto((v) => !v)}
             >
               <MIcon.Reportes />Reportes
             </button>
-            {menuReportesAbierto && (
-              <>
-                <div className="sidebar-submenu-overlay" onClick={() => setMenuReportesAbierto(false)} />
-                <div className="sidebar-submenu">
+            <SidebarSubmenu open={menuReportesAbierto} anchorRef={refReportes} onClose={() => setMenuReportesAbierto(false)}>
                   <button className={view === 'inventario' ? 'active' : ''} onClick={() => { setView('inventario'); setMenuReportesAbierto(false); }}>
                     <MIcon.Inventario /> Stock Bajo de productos
                   </button>
@@ -297,9 +326,7 @@ export default function App() {
                       </button>
                     </>
                   )}
-                </div>
-              </>
-            )}
+            </SidebarSubmenu>
           </div>
           {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
           {user.role === 'administrador' && (

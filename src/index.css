@@ -78,23 +78,21 @@ body {
   color: white;
   padding: 1.5rem 1rem;
   height: 100vh;
-  /* IMPORTANTE: aqui NO se pone overflow-y:auto (aunque el sidebar sea alto y con muchos
-     botones). Un padre con overflow distinto de "visible" recorta cualquier hijo posicionado
-     con "position: absolute" que se salga de su caja -y los submenus (Facturar/Compras/Reportes)
-     se dibujan justo asi, saliendo hacia la derecha del sidebar-. Si el sidebar recorta, esos
-     submenus quedan invisibles/tapados detras del contenido principal. El scroll del propio
-     menu (necesario si la ventana es chica y hay muchos botones) se resuelve en su lugar con
-     ".sidebar-scroll" mas abajo, que es un div interno -no el sidebar completo- el que scrolea. */
-  overflow: visible;
+  overflow: hidden;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
 }
 
+/* El submenu (Facturar/Compras/Reportes) ya NO vive dentro de este div: se dibuja aparte con un
+   portal directo a document.body, posicionado con "position: fixed" (ver SidebarSubmenu en
+   App.jsx). Por eso aqui ya no hace falta el truco de "overflow-x: visible" -que ademas
+   generaba una barra de scroll horizontal fantasma-: ahora es un overflow normal, sin
+   consecuencias para el submenu porque este ya no esta adentro para que lo recorte. */
 .sidebar-scroll {
   flex: 1;
   overflow-y: auto;
-  overflow-x: visible;
+  overflow-x: hidden;
 }
 
 .sidebar h2 {
@@ -148,13 +146,10 @@ body {
 
 /* Submenu flotante de "Compras" (Generar Compras / Devolucion de Compras): aparece a la
    derecha del boton, como un pequeno panel flotante, igual que un menu contextual.
-   IMPORTANTE: como este submenu vive DENTRO de <nav> (para que el click-fuera y el overlay
-   funcionen bien), la regla general ".sidebar nav button" (texto blanco, para el menu
-   principal sobre fondo azul) tambien coincide con estos botones y gana por especificidad CSS
-   sobre ".sidebar-submenu button" -> el texto quedaba blanco sobre el fondo blanco del
-   submenu, es decir invisible. Por eso las reglas de abajo usan ".sidebar .sidebar-submenu
-   button" (dos clases) para tener MAS especificidad que ".sidebar nav button" (una clase) y
-   asegurar que ganen siempre, sin importar el orden en que aparezcan en este archivo. */
+   IMPORTANTE: este submenu se dibuja con un portal directo a document.body (ver SidebarSubmenu
+   en App.jsx), NO dentro de ".sidebar"/"nav" -por eso ya no hace falta calificar estas reglas
+   con ".sidebar" adelante: al vivir afuera en el DOM, ninguna regla de ".sidebar nav button"
+   (texto blanco) le llega, asi que un simple ".sidebar-submenu button" alcanza y gana solo. */
 .sidebar-submenu-wrap {
   position: relative;
 }
@@ -176,7 +171,6 @@ body {
   position: absolute;
   top: 0;
   left: 100%;
-  margin-left: 6px;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.25);
@@ -185,7 +179,7 @@ body {
   z-index: 501;
 }
 
-.sidebar .sidebar-submenu button {
+.sidebar-submenu button {
   display: block;
   width: 100%;
   text-align: left;
@@ -200,12 +194,12 @@ body {
   white-space: nowrap;
 }
 
-.sidebar .sidebar-submenu button:hover {
+.sidebar-submenu button:hover {
   background: #eef4ff;
   color: #1d2939;
 }
 
-.sidebar .sidebar-submenu button.active {
+.sidebar-submenu button.active {
   background: #dbeafe;
   color: #0b4f9e;
   font-weight: 600;
