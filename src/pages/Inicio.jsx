@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import NotificacionesBell from '../components/NotificacionesBell.jsx';
 
 // Dashboard de la pantalla de Inicio: solo CANTIDADES vendidas y tendencias (nunca montos de
 // dinero), tomadas de datos reales via window.api.getDashboardInicio(). Los graficos son SVG
@@ -145,7 +146,10 @@ export default function Inicio({ user }) {
 
   return (
     <div>
-      <h1 style={{ marginBottom: '2px', fontSize: '1.4rem' }}>Bienvenido, {user.full_name}</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
+        <NotificacionesBell />
+        <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Bienvenido, {user.full_name}</h1>
+      </div>
       <p style={{ color: '#667085', marginTop: 0, marginBottom: '0.6rem', fontSize: '0.82rem' }}>
         Resumen de actividad de ventas de los últimos 30 días. Usa el menú para facturar, ver el
         historial o gestionar el inventario.
