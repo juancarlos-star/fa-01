@@ -63,11 +63,21 @@ function createWindow() {
     height: 800,
     title: 'MoviSync',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    // El programa abre maximizado (ocupa toda la pantalla) pero sigue siendo una ventana normal
+    // -con sus botones de minimizar/cerrar y sin tapar la barra de tareas de Windows-, que es
+    // lo esperado para un programa de escritorio. "show: false" + "ready-to-show" evita el
+    // parpadeo de ver la ventana chica un instante antes de maximizarse.
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false
     }
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize();
+    mainWindow.show();
   });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -1344,8 +1354,11 @@ ipcMain.handle('notificaciones:generar', () => {
 });
 
 // Ultimas 2 semanas (para el historial del icono de notificaciones) + cuantas no leidas.
+// Antes de listar, se borran definitivamente de la base de datos las notificaciones de mas de
+// 2 semanas (no solo se ocultan del listado): asi la tabla nunca crece sin limite.
 ipcMain.handle('notificaciones:listar', () => {
   const db = getDb();
+  db.prepare("DELETE FROM notificaciones WHERE date(created_at) < date('now','localtime','-14 days')").run();
   const notificaciones = db.prepare(
     "SELECT * FROM notificaciones WHERE date(created_at) >= date('now','localtime','-14 days') ORDER BY created_at DESC"
   ).all();
