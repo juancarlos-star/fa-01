@@ -38,6 +38,7 @@ const CATEGORIAS = [
     items: [
       { key: 'inventarioProductos', label: 'Productos' },
       { key: 'inventarioFisico', label: 'Inventario Físico' },
+      { key: 'stockBajo', label: 'Stock Bajo' },
       { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' }
     ]
   },
@@ -93,7 +94,7 @@ const CATEGORIAS = [
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
-const SIN_FILTRO_FECHA = ['clientes', 'historial', 'inventarioProductos', 'inventarioFisico', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
+const SIN_FILTRO_FECHA = ['clientes', 'historial', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
 
 // Hook compartido para traer la configuracion de la tienda (nombre, RIF, logo, etc.), usado por
 // las pestañas de Reportes que generan el PDF de una factura individual (necesitan pasarsela a
@@ -113,10 +114,11 @@ export default function Reportes({ currentUser, categoriaInicial }) {
   const [hasta, setHasta] = useState(hoyStr());
 
   const categoriaActiva = CATEGORIAS.find((c) => c.key === categoria) || CATEGORIAS[0];
+  const tabActiva = categoriaActiva.items.find((i) => i.key === tab);
 
   return (
     <div>
-      <h1>Reportes · {categoriaActiva.label}</h1>
+      <h1>Reportes · {categoriaActiva.label}{tabActiva ? ` · ${tabActiva.label}` : ''}</h1>
 
       <div className="reportes-subtabs">
         {categoriaActiva.items.map((t) => (
@@ -145,6 +147,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
       {tab === 'clientes' && <ReporteClientes />}
       {tab === 'inventarioProductos' && <ReporteInventarioProductos />}
       {tab === 'inventarioFisico' && <ReporteInventarioFisico />}
+      {tab === 'stockBajo' && <ReporteStockBajo />}
       {tab === 'vendedoresEfectividad' && <ReporteVendedoresEfectividad desde={desde} hasta={hasta} />}
       {tab === 'vendedoresUltimasVentas' && <ReporteVendedoresUltimasVentas />}
       {tab === 'vendedoresPorCategoria' && <ReporteVendedoresPorCategoria desde={desde} hasta={hasta} />}
@@ -1130,7 +1133,118 @@ function ReporteInventarioProductos() {
   );
 }
 
-// ---------------- Inventario: Fisico (hoja de conteo) ----------------
+// ---------------- Inventario: Stock Bajo ----------------
+
+// Muestra solo los productos en cantidad CERO, o cuyo stock actual es igual o menor a su
+// "Stock minimo (opcional)" configurado en la ficha del producto. Los productos sin stock
+// minimo definido (0 o vacio) solo entran a esta lista si su stock es exactamente cero.
+function ReporteStockBajo() {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
+
+  const [productoEnEdicion, setProductoEnEdicion] = useState(null);
+  const [cargandoEdicion, setCargandoEdicion] = useState(false);
+
+  const abrirEdicionProducto = async (id) => {
+    setCargandoEdicion(true);
+    try {
+      const todos = await window.api.listProducts();
+      const completo = todos.find((p) => p.id === id);
+      if (completo) setProductoEnEdicion(completo);
+    } finally {
+      setCargandoEdicion(false);
+    }
+  };
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteInventarioProductos(null);
+    setReporte(data);
+    setCargando(false);
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  if (cargando || !reporte) return <p>Cargando...</p>;
+
+  const stockBajoLista = reporte.productos.filter((p) => {
+    const minimo = Number(p.stock_minimo) || 0;
+    return p.stock === 0 || (minimo > 0 && p.stock <= minimo);
+  });
+
+  const busquedaLower = busqueda.trim().toLowerCase();
+  const coincide = (p) =>
+    (p.nombre || '').toLowerCase().includes(busquedaLower) ||
+    (p.codigo_producto || '').toLowerCase().includes(busquedaLower);
+  const productosFiltrados = busquedaLower ? stockBajoLista.filter(coincide) : stockBajoLista;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div className="form-box" style={{ maxWidth: '360px' }}>
+        <label>Buscar producto (nombre o código)</label>
+        <input
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Escribe para filtrar..."
+        />
+      </div>
+
+      <p>
+        Productos en stock bajo o agotado: <strong>{stockBajoLista.length}</strong>
+      </p>
+
+      {productosFiltrados.length === 0 ? (
+        <p>{stockBajoLista.length === 0 ? 'Ningún producto está en stock bajo o agotado ahora mismo.' : 'Ningún producto coincide con la búsqueda.'}</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Tipo</th>
+              <th>Codigo</th>
+              <th>Producto</th>
+              <th>Stock</th>
+              <th>Stock mínimo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {productosFiltrados.map((p) => (
+              <tr key={p.id} style={{ borderBottom: '1px solid #eee', color: p.stock === 0 ? '#b42318' : undefined }}>
+                <td style={{ padding: '0.5rem' }}>{TIPO_LABEL_INV[p.tipo] || p.tipo}</td>
+                <td>{p.codigo_producto || '—'}</td>
+                <td>{p.nombre}</td>
+                <td>{p.stock === 0 ? <strong>Agotado</strong> : p.stock}</td>
+                <td>{p.stock_minimo || '—'}</td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => abrirEdicionProducto(p.id)}
+                    disabled={cargandoEdicion}
+                    style={{
+                      padding: '4px 10px', fontSize: '0.78rem', background: '#fff',
+                      border: '1px solid #0b4f9e', color: '#0b4f9e', borderRadius: '4px', cursor: 'pointer'
+                    }}
+                  >
+                    ✎ Editar
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {productoEnEdicion && (
+        <ProductoRapidoModal
+          productoEditar={productoEnEdicion}
+          onConfirm={() => { setProductoEnEdicion(null); cargar(); }}
+          onCancel={() => setProductoEnEdicion(null)}
+        />
+      )}
+    </div>
+  );
+}
 
 function ReporteInventarioFisico() {
   const [depositos, setDepositos] = useState([]);

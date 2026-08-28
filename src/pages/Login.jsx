@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import LogoMoviSync from '../components/LogoMoviSync.jsx';
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -28,7 +29,10 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={handleSubmit}>
-        <h1>Facturacion Movistar</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+          <LogoMoviSync color="#0057a3" size={24} fontSize="1.4rem" />
+          MoviSync
+        </h1>
         {error && <div className="error-text">{error}</div>}
         <input
           type="text"
