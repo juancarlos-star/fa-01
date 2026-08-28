@@ -2872,6 +2872,7 @@ ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
       codigo_producto: p.codigo_producto,
       codigo_barras: p.codigo_barras,
       costo_promedio_usd: p.costo_promedio_usd,
+      stock_minimo: p.stock_minimo,
       precioUsd,
       precioBs: precioUsd * tasaCambio,
       stock,
