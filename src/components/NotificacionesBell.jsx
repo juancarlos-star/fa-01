@@ -116,10 +116,28 @@ export default function NotificacionesBell() {
     if (nuevas.length > 0) {
       setToasts((prev) => [...nuevas, ...prev]);
       nuevas.forEach((n) => {
-        timersRef.current[n.id] = setTimeout(() => quitarToast(n.id), 60000);
+        // Se autodescartan solas a los 30 segundos si nadie las cierra ni navega antes.
+        timersRef.current[n.id] = setTimeout(() => quitarToast(n.id), 30000);
       });
     }
   };
+
+  // Cualquier click en el menu lateral (un boton final o abrir/cerrar un submenu) descarta de
+  // inmediato todos los toasts flotantes -aunque el usuario se quede en Inicio, por ejemplo al
+  // abrir el submenu de "Facturar" sin cambiar de pantalla-.
+  useEffect(() => {
+    const descartarTodos = () => {
+      setToasts((prev) => {
+        prev.forEach((t) => {
+          const timer = timersRef.current[t.id];
+          if (timer) { clearTimeout(timer); delete timersRef.current[t.id]; }
+        });
+        return [];
+      });
+    };
+    window.addEventListener('movisync-dismiss-toasts', descartarTodos);
+    return () => window.removeEventListener('movisync-dismiss-toasts', descartarTodos);
+  }, []);
 
   useEffect(() => {
     revisar();
