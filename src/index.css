@@ -62,9 +62,14 @@ body {
   margin-bottom: 10px;
 }
 
+/* El "cascaron" de la app (sidebar + contenido) se fija al alto de la ventana (100vh) y cada
+   parte con overflow-y:auto propio, en vez de dejar que la pagina completa crezca y haya que
+   scrolear la ventana entera. Asi la barra lateral siempre queda visible, y el contenido de cada
+   pantalla scrolea por su cuenta cuando hace falta (sin alargar la ventana). */
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -72,6 +77,9 @@ body {
   background: #0057a3;
   color: white;
   padding: 1.5rem 1rem;
+  height: 100vh;
+  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .sidebar h2 {
@@ -191,6 +199,8 @@ body {
 .content {
   flex: 1;
   padding: 2rem;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 table {
