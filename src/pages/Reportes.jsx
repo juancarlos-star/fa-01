@@ -1197,42 +1197,42 @@ function ReporteStockBajo() {
       {productosFiltrados.length === 0 ? (
         <p>{stockBajoLista.length === 0 ? 'Ningún producto está en stock bajo o agotado ahora mismo.' : 'Ningún producto coincide con la búsqueda.'}</p>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Tipo</th>
-              <th>Codigo</th>
-              <th>Producto</th>
-              <th>Stock</th>
-              <th>Stock mínimo</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {productosFiltrados.map((p) => (
-              <tr key={p.id} style={{ borderBottom: '1px solid #eee', color: p.stock === 0 ? '#b42318' : undefined }}>
-                <td style={{ padding: '0.5rem' }}>{TIPO_LABEL_INV[p.tipo] || p.tipo}</td>
-                <td>{p.codigo_producto || '—'}</td>
-                <td>{p.nombre}</td>
-                <td>{p.stock === 0 ? <strong>Agotado</strong> : p.stock}</td>
-                <td>{p.stock_minimo || '—'}</td>
-                <td>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {productosFiltrados.map((p) => {
+            const agotado = p.stock === 0;
+            return (
+              <div
+                key={p.id}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                  padding: '8px 10px', borderRadius: '6px',
+                  background: agotado ? '#fef3f2' : '#fffaeb'
+                }}
+              >
+                <span style={{ fontSize: '0.85rem', color: '#344054' }}>
+                  {agotado ? '⛔' : '⚠️'} <strong>{p.nombre}</strong>
+                  <span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_INV[p.tipo] || p.tipo}{p.codigo_producto ? ` · ${p.codigo_producto}` : ''}</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
+                  <span style={{ fontSize: '0.78rem', color: '#667085' }}>
+                    Costo: ${fmt(p.costo_promedio_usd)}
+                  </span>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600, color: agotado ? '#b42318' : '#b54708' }}>
+                    {agotado ? 'Agotado (0)' : `Quedan ${p.stock} (mín. ${p.stock_minimo})`}
+                  </span>
                   <button
                     type="button"
                     onClick={() => abrirEdicionProducto(p.id)}
                     disabled={cargandoEdicion}
-                    style={{
-                      padding: '4px 10px', fontSize: '0.78rem', background: '#fff',
-                      border: '1px solid #0b4f9e', color: '#0b4f9e', borderRadius: '4px', cursor: 'pointer'
-                    }}
+                    style={{ fontSize: '0.78rem', padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', cursor: 'pointer' }}
                   >
-                    ✎ Editar
+                    Editar
                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </span>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {productoEnEdicion && (
