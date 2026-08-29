@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
@@ -103,6 +103,19 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     initDb();
     createWindow();
+
+    // El visor de PDF integrado de Chromium (usado para mostrar facturas, reportes,
+    // devoluciones, cargos/descargos, etc.) trae su propio boton de "Descargar" en la barra de
+    // herramientas. Como cada uno de esos documentos YA se guarda en disco (Documentos/
+    // Facturacion Movistar/...) antes de mostrarse, ese boton es redundante y ademas dispara el
+    // dialogo nativo de Windows "Guardar archivo PDF como" que interrumpe al usuario en medio
+    // de facturar/imprimir. Se cancela en silencio cualquier descarga que Electron intente
+    // iniciar (una sola vez, a nivel de toda la app, para no ir acumulando este mismo listener
+    // cada vez que se abre un documento nuevo).
+    session.defaultSession.on('will-download', (event) => {
+      event.preventDefault();
+    });
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
