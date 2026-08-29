@@ -175,6 +175,17 @@ function prepararGuardadoPDF(nombreArchivo, base64, subcarpeta) {
 // base de datos), Acrobat podia mostrar una pestaña vieja con contenido cacheado/desactualizado
 // (se veia en negro) junto a la nueva. Mostrando el PDF en una ventana propia de Electron, cada
 // factura se lee siempre fresca desde el disco, sin ningun cache externo que se desincronice.
+//
+// El visor de PDF integrado de Chromium trae su PROPIA barra de herramientas con botones de
+// descargar/imprimir/rotar. Esos botones usan el flujo de impresion/descarga crudo del sistema
+// operativo, que en muchos Windows (sobre todo si no hay una impresora fisica configurada como
+// predeterminada, o si la predeterminada es la impresora virtual "Microsoft Print to PDF") abre
+// el dialogo nativo "Guardar archivo PDF como" en vez de imprimir de una vez. Para evitar esto
+// del todo, se le agrega "#toolbar=0" a la URL del archivo: es un parametro que el visor de PDF
+// de Chromium reconoce para ocultar COMPLETO su barra de herramientas (nada de descargar,
+// imprimir ni rotar desde ahi). En su lugar, esta misma ventana registra su propio atajo
+// Ctrl+P/Cmd+P (ver mas abajo) que abre el dialogo ESTANDAR de impresion de Windows (donde el
+// usuario elige cualquier impresora), nunca un dialogo de guardado.
 function abrirPdfEnVentanaPropia(filePath, titulo) {
   const ventana = new BrowserWindow({
     width: 950,
@@ -183,7 +194,21 @@ function abrirPdfEnVentanaPropia(filePath, titulo) {
     webPreferences: { plugins: true }
   });
   ventana.setMenuBarVisibility(false);
-  ventana.loadFile(filePath);
+
+  const imprimirEstaVentana = () => {
+    ventana.webContents.print({ silent: false, printBackground: true }, () => {});
+  };
+
+  ventana.webContents.on('before-input-event', (event, input) => {
+    const teclaImprimir = input.key && input.key.toLowerCase() === 'p';
+    const conModificador = input.control || input.meta;
+    if (teclaImprimir && conModificador && input.type === 'keyDown') {
+      event.preventDefault();
+      imprimirEstaVentana();
+    }
+  });
+
+  ventana.loadFile(filePath, { hash: 'toolbar=0' });
   return ventana;
 }
 
