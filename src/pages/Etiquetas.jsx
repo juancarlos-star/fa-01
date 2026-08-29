@@ -17,7 +17,6 @@ const estiloBotonSecundario = {
 //  - Equipo/SIM/USIM: cada unidad fisica tiene su propio IMEI/codigo, asi que se eligen las
 //    unidades puntuales (checkbox) en vez de escribir una cantidad.
 export default function Etiquetas() {
-  const [settings, setSettings] = useState(null);
   const [codigo, setCodigo] = useState('');
   const [buscando, setBuscando] = useState(false);
   const [error, setError] = useState('');
@@ -34,12 +33,10 @@ export default function Etiquetas() {
   const [etiquetas, setEtiquetas] = useState([]);
 
   const [layout, setLayout] = useState('hojaCarta');
-  const [mostrarBs, setMostrarBs] = useState(true);
   const [generando, setGenerando] = useState(false);
 
   const codigoRef = useRef(null);
 
-  useEffect(() => { window.api.getSettings().then(setSettings); }, []);
   useEffect(() => { setTimeout(() => codigoRef.current?.focus(), 0); }, []);
 
   const buscar = async () => {
@@ -83,7 +80,9 @@ export default function Etiquetas() {
       key: `${productoPendiente.id}-acc-${Date.now()}-${i}`,
       producto_id: productoPendiente.id,
       nombre: productoPendiente.nombre,
-      precio: productoPendiente.precio,
+      // El precio de la etiqueta SIEMPRE es en dolares (precio2): "precio" ahora guarda el
+      // equivalente en Bs. calculado con la tasa del dia, no el precio en dolares del producto.
+      precio: productoPendiente.precio2,
       codigo: productoPendiente.codigo_barras || productoPendiente.codigo_producto || String(productoPendiente.id)
     }));
     setEtiquetas((prev) => [...prev, ...nuevas]);
@@ -101,7 +100,7 @@ export default function Etiquetas() {
       key: `${productoPendiente.id}-u${u.id}`,
       producto_id: productoPendiente.id,
       nombre: productoPendiente.nombre,
-      precio: productoPendiente.precio,
+      precio: productoPendiente.precio2,
       codigo: u.codigo
     }));
     setEtiquetas((prev) => [...prev, ...nuevas]);
@@ -122,8 +121,6 @@ export default function Etiquetas() {
     try {
       await generarEtiquetasPDF(etiquetas, {
         layout,
-        tasaCambio: settings ? parseFloat(settings.tasa_cambio) : 0,
-        mostrarBs,
         imprimir
       });
     } finally {
@@ -155,7 +152,7 @@ export default function Etiquetas() {
 
       {productoPendiente && productoPendiente.tipo === 'accesorio' && (
         <div className="form-box" style={{ maxWidth: '480px' }}>
-          <p><strong>{productoPendiente.nombre}</strong> — ${fmt(productoPendiente.precio)}</p>
+          <p><strong>{productoPendiente.nombre}</strong> — ${fmt(productoPendiente.precio2)}</p>
           <label>¿Cuántas etiquetas necesitas?</label>
           <input
             type="number"
@@ -175,7 +172,7 @@ export default function Etiquetas() {
 
       {productoPendiente && productoPendiente.tipo !== 'accesorio' && (
         <div className="form-box" style={{ maxWidth: '480px' }}>
-          <p><strong>{productoPendiente.nombre}</strong> — ${fmt(productoPendiente.precio)}</p>
+          <p><strong>{productoPendiente.nombre}</strong> — ${fmt(productoPendiente.precio2)}</p>
           <label>Elige las unidades a etiquetar ({unidadesSeleccionadas.length} de {unidadesDisponibles.length} seleccionadas)</label>
           <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #d0d5dd', borderRadius: '6px', padding: '6px' }}>
             {unidadesDisponibles.map((u) => (
@@ -228,10 +225,6 @@ export default function Etiquetas() {
           <option value="hojaCarta">Hoja carta (30 etiquetas, 3 columnas x 10 filas)</option>
           <option value="rolloTermico">Rollo térmico (una etiqueta por página, 50x30mm)</option>
         </select>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', cursor: 'pointer' }}>
-          <input type="checkbox" checked={mostrarBs} onChange={(e) => setMostrarBs(e.target.checked)} />
-          Mostrar también el precio en Bs.
-        </label>
       </div>
 
       <div style={{ marginTop: '1rem', display: 'flex', gap: '8px' }}>
