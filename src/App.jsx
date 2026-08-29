@@ -2,7 +2,6 @@ import React, { useState, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Login from './pages/Login.jsx';
 import UsersAdmin from './pages/UsersAdmin.jsx';
-import Inventario from './pages/Inventario.jsx';
 import CategoriasAdmin from './pages/CategoriasAdmin.jsx';
 import CargosDescargos from './pages/CargosDescargos.jsx';
 import Configuracion from './pages/Configuracion.jsx';
@@ -299,20 +298,17 @@ export default function App() {
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuReportesAbierto ? ' dimmed' : ''}`}>
             <button
               ref={refReportes}
-              className={(view === 'reportes' || view === 'inventario') ? 'active' : ''}
+              className={view === 'reportes' ? 'active' : ''}
               onClick={() => setMenuReportesAbierto((v) => !v)}
             >
               <MIcon.Reportes />Reportes
             </button>
             <SidebarSubmenu open={menuReportesAbierto} anchorRef={refReportes} onClose={() => setMenuReportesAbierto(false)}>
-                  <button className={view === 'inventario' ? 'active' : ''} onClick={() => { setView('inventario'); setMenuReportesAbierto(false); }}>
-                    <MIcon.Inventario /> Gestionar productos
+                  <button className={view === 'reportes' && categoriaReportes === 'inventario' ? 'active' : ''} onClick={() => irAReporte('inventario')}>
+                    <RIcon.Inventario /> Inventario
                   </button>
                   {user.role === 'administrador' && (
                     <>
-                      <button className={view === 'reportes' && categoriaReportes === 'inventario' ? 'active' : ''} onClick={() => irAReporte('inventario')}>
-                        <RIcon.Inventario /> Inventario
-                      </button>
                       <button className={view === 'reportes' && categoriaReportes === 'ventas' ? 'active' : ''} onClick={() => irAReporte('ventas')}>
                         <RIcon.Ventas /> Ventas
                       </button>
@@ -349,14 +345,13 @@ export default function App() {
         {view === 'facturacion' && <Facturacion currentUser={user} />}
         {view === 'notaVenta' && <Facturacion currentUser={user} modo="notaVenta" />}
         {view === 'devolucionFacturas' && <DevolucionFacturas currentUser={user} />}
-        {view === 'inventario' && <Inventario currentUser={user} />}
         {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
         {view === 'comprasTelfAcces' && user.role === 'administrador' && <ComprasTelfAcces currentUser={user} />}
         {view === 'devolucionCompras' && user.role === 'administrador' && <DevolucionCompras currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'cargosDescargos' && user.role === 'administrador' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
-        {view === 'reportes' && user.role === 'administrador' && <Reportes key={categoriaReportes} currentUser={user} categoriaInicial={categoriaReportes} />}
+        {view === 'reportes' && <Reportes key={categoriaReportes} currentUser={user} categoriaInicial={categoriaReportes} />}
         {view === 'configuracion' && user.role === 'administrador' && <Configuracion />}
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
