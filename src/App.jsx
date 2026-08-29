@@ -184,9 +184,16 @@ export default function App() {
   // categoria activa cada vez que se elige una opcion distinta del submenu.
   const [menuReportesAbierto, setMenuReportesAbierto] = useState(false);
   const [categoriaReportes, setCategoriaReportes] = useState('ventas');
+  // Submenu de Configuracion: 5 pantallas repartidas (Datos de Tienda, Cotizacion del dia,
+  // Configuracion factura, Depositos/almacenes, Bases de datos). "Cotizacion del dia" es la
+  // unica que ademas ve el vendedor (no solo el administrador), por eso el boton que abre este
+  // submenu NO esta detras de "user.role === 'administrador'" como las demas secciones del
+  // menu -el filtro por rol se aplica adentro, item por item-.
+  const [menuConfigAbierto, setMenuConfigAbierto] = useState(false);
   const refFacturar = useRef(null);
   const refCompras = useRef(null);
   const refReportes = useRef(null);
+  const refConfig = useRef(null);
   if (!user) {
     return <Login onLogin={setUser} />;
   }
@@ -200,7 +207,8 @@ export default function App() {
   // que se abrio deben quedar apagados -- incluyendo los otros botones con submenu, que antes se
   // quedaban brillantes porque viven dentro de un <div> y no son hijos directos de <nav>, por lo
   // que la regla CSS que apaga al resto del menu no los alcanzaba.
-  const algunSubmenuAbierto = menuFacturacionAbierto || menuComprasAbierto || menuReportesAbierto;
+  const algunSubmenuAbierto = menuFacturacionAbierto || menuComprasAbierto || menuReportesAbierto || menuConfigAbierto;
+  const vistasConfig = ['configDatosTienda', 'configCotizacion', 'configFactura', 'configDepositos', 'configBaseDatos'];
   const irAReporte = (catKey) => {
     setCategoriaReportes(catKey);
     setView('reportes');
@@ -329,9 +337,40 @@ export default function App() {
             </SidebarSubmenu>
           </div>
           {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
-          {user.role === 'administrador' && (
-            <button className={view === 'configuracion' ? 'active' : ''} onClick={() => setView('configuracion')}><MIcon.Configuracion />Configuracion</button>
-          )}
+          <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuConfigAbierto ? ' dimmed' : ''}`}>
+            <button
+              ref={refConfig}
+              className={vistasConfig.includes(view) ? 'active' : ''}
+              onClick={() => setMenuConfigAbierto((v) => !v)}
+            >
+              <MIcon.Configuracion />Configuracion
+            </button>
+            <SidebarSubmenu open={menuConfigAbierto} anchorRef={refConfig} onClose={() => setMenuConfigAbierto(false)}>
+              {user.role === 'administrador' && (
+                <button className={view === 'configDatosTienda' ? 'active' : ''} onClick={() => { setView('configDatosTienda'); setMenuConfigAbierto(false); }}>
+                  🏪 Datos de Tienda
+                </button>
+              )}
+              <button className={view === 'configCotizacion' ? 'active' : ''} onClick={() => { setView('configCotizacion'); setMenuConfigAbierto(false); }}>
+                💱 Cotización del día
+              </button>
+              {user.role === 'administrador' && (
+                <button className={view === 'configFactura' ? 'active' : ''} onClick={() => { setView('configFactura'); setMenuConfigAbierto(false); }}>
+                  🧾 Configuración factura
+                </button>
+              )}
+              {user.role === 'administrador' && (
+                <button className={view === 'configDepositos' ? 'active' : ''} onClick={() => { setView('configDepositos'); setMenuConfigAbierto(false); }}>
+                  🏬 Depósitos / almacenes
+                </button>
+              )}
+              {user.role === 'administrador' && (
+                <button className={view === 'configBaseDatos' ? 'active' : ''} onClick={() => { setView('configBaseDatos'); setMenuConfigAbierto(false); }}>
+                  🗄 Bases de datos
+                </button>
+              )}
+            </SidebarSubmenu>
+          </div>
           {user.role === 'administrador' && (
             <button className={view === 'usuarios' ? 'active' : ''} onClick={() => setView('usuarios')}><MIcon.Usuarios />Usuarios</button>
           )}
@@ -352,7 +391,11 @@ export default function App() {
         {view === 'cargosDescargos' && user.role === 'administrador' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
         {view === 'reportes' && <Reportes key={categoriaReportes} currentUser={user} categoriaInicial={categoriaReportes} />}
-        {view === 'configuracion' && user.role === 'administrador' && <Configuracion />}
+        {view === 'configDatosTienda' && user.role === 'administrador' && <Configuracion seccion="datosTienda" />}
+        {view === 'configCotizacion' && <Configuracion seccion="cotizacion" />}
+        {view === 'configFactura' && user.role === 'administrador' && <Configuracion seccion="factura" />}
+        {view === 'configDepositos' && user.role === 'administrador' && <Configuracion seccion="depositos" />}
+        {view === 'configBaseDatos' && user.role === 'administrador' && <Configuracion seccion="baseDatos" />}
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
     </div>
