@@ -33,8 +33,6 @@ function labelEstadoUnidad(u) {
   return u.estado;
 }
 
-const TIPO_LABEL_STOCK = { equipo: 'Teléfono', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
-
 export default function Inventario({ currentUser }) {
   const [tabId, setTabId] = useState('equipo');
   const [products, setProducts] = useState([]);
@@ -42,32 +40,6 @@ export default function Inventario({ currentUser }) {
   const [expandedId, setExpandedId] = useState(null);
   const [busqueda, setBusqueda] = useState('');
 
-  // ---- Panel "Stock bajo / agotado" (arriba de las pestañas): mira TODOS los productos del
-  // sistema (no solo los de la pestaña activa), y solo incluye los que estan en cantidad cero,
-  // o en baja cantidad si el producto tiene stock minimo configurado (>0). Primero van los de
-  // baja cantidad (todavia queda algo), al final los agotados (cantidad cero) - tal como se pidio.
-  const [stockBajoLista, setStockBajoLista] = useState([]);
-
-  const cargarStockBajo = useCallback(async () => {
-    const todos = await window.api.listProducts();
-    const bajos = [];
-    const agotados = [];
-    (todos || []).forEach((p) => {
-      const stock = p.stock_disponible || 0;
-      if (stock <= 0) {
-        agotados.push(p);
-      } else if (p.stock_minimo > 0 && stock <= p.stock_minimo) {
-        bajos.push(p);
-      }
-    });
-    bajos.sort((a, b) => a.nombre.localeCompare(b.nombre));
-    agotados.sort((a, b) => a.nombre.localeCompare(b.nombre));
-    setStockBajoLista([...bajos, ...agotados]);
-  }, []);
-
-  useEffect(() => {
-    cargarStockBajo();
-  }, [cargarStockBajo]);
 
   const [categorias, setCategorias] = useState([]);
   const [nombresSugeridos, setNombresSugeridos] = useState([]);
@@ -139,14 +111,12 @@ export default function Inventario({ currentUser }) {
     setMostrarModalCrear(false);
     cargarProductos();
     cargarNombresSugeridos();
-    cargarStockBajo();
   };
 
   const handleProductoEditado = () => {
     setProductoEnEdicion(null);
     cargarProductos();
     cargarNombresSugeridos();
-    cargarStockBajo();
   };
 
   const handleEliminar = (id) => {
@@ -202,51 +172,7 @@ export default function Inventario({ currentUser }) {
 
   return (
     <div>
-      <h1>Inventario</h1>
-
-      <div style={{ background: '#fff', border: '1px solid #eef1f5', borderRadius: '10px', padding: '12px 14px', marginBottom: '1rem' }}>
-        <h3 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>
-          ⚠️ Stock bajo / agotado {stockBajoLista.length > 0 && `(${stockBajoLista.length})`}
-        </h3>
-        {stockBajoLista.length === 0 ? (
-          <p style={{ margin: 0, fontSize: '0.8rem', color: '#667085' }}>
-            ✅ No hay productos en stock bajo ni agotados por ahora.
-          </p>
-        ) : (
-          <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {stockBajoLista.map((p) => {
-              const stock = p.stock_disponible || 0;
-              const agotado = stock <= 0;
-              return (
-                <div
-                  key={p.id}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
-                    padding: '6px 8px', borderRadius: '6px',
-                    background: agotado ? '#fef3f2' : '#fffaeb'
-                  }}
-                >
-                  <span style={{ fontSize: '0.82rem', color: '#344054' }}>
-                    {agotado ? '⛔' : '⚠️'} <strong>{p.nombre}</strong>
-                    <span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_STOCK[p.tipo] || p.tipo}{p.codigo_producto ? ` · ${p.codigo_producto}` : ''}</span>
-                  </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: agotado ? '#b42318' : '#b54708' }}>
-                      {agotado ? 'Agotado' : `Quedan ${stock} (mín. ${p.stock_minimo})`}
-                    </span>
-                    <button
-                      onClick={() => setProductoEnEdicion(p)}
-                      style={{ fontSize: '0.75rem', padding: '3px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', cursor: 'pointer' }}
-                    >
-                      Editar
-                    </button>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <h1>Gestión de Productos</h1>
 
       <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
         {tabs.map((t) => (
@@ -327,7 +253,6 @@ export default function Inventario({ currentUser }) {
           </thead>
           <tbody>
             {productosFiltrados.map((p) => {
-              const bajoStock = p.stock_disponible <= p.stock_minimo;
               return (
                 <React.Fragment key={p.id}>
                   <tr style={{ borderBottom: '1px solid #eee' }}>
@@ -360,9 +285,7 @@ export default function Inventario({ currentUser }) {
                         )}
                       </td>
                     )}
-                    <td style={{ color: bajoStock ? 'red' : 'inherit', fontWeight: bajoStock ? 'bold' : 'normal' }}>
-                      {p.stock_disponible} {bajoStock && '⚠ stock bajo'}
-                    </td>
+                    <td>{p.stock_disponible}</td>
                     <td style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                       {esAccesorio ? (
                         <span style={{ fontSize: '0.8rem', color: '#666' }}>

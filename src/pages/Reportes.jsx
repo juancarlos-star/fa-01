@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Inventario from './Inventario.jsx';
 import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFecha.jsx';
 import CompraFacturaDetalle from '../components/CompraFacturaDetalle.jsx';
 import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
@@ -36,6 +37,7 @@ const CATEGORIAS = [
     key: 'inventario',
     label: 'Inventario',
     items: [
+      { key: 'gestionProductos', label: 'Gestión de Productos' },
       { key: 'inventarioProductos', label: 'Productos' },
       { key: 'inventarioFisico', label: 'Inventario Físico' },
       { key: 'stockBajo', label: 'Stock Bajo' },
@@ -94,7 +96,7 @@ const CATEGORIAS = [
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
-const SIN_FILTRO_FECHA = ['clientes', 'historial', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
+const SIN_FILTRO_FECHA = ['clientes', 'historial', 'gestionProductos', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
 
 // Hook compartido para traer la configuracion de la tienda (nombre, RIF, logo, etc.), usado por
 // las pestañas de Reportes que generan el PDF de una factura individual (necesitan pasarsela a
@@ -106,14 +108,27 @@ function useSettings() {
 }
 
 export default function Reportes({ currentUser, categoriaInicial }) {
-  const categoriaDefault = categoriaInicial && CATEGORIAS.some((c) => c.key === categoriaInicial) ? categoriaInicial : 'ventas';
-  const catDefaultObj = CATEGORIAS.find((c) => c.key === categoriaDefault);
+  const esAdmin = currentUser?.role === 'administrador';
+  // Los vendedores (no administradores) solo pueden entrar a Reportes por esta puerta puntual:
+  // la pestaña "Gestión de Productos" dentro de la categoria Inventario. El resto de categorias
+  // y pestañas (reportes financieros/operativos) siguen siendo exclusivas de administradores.
+  const categoriasVisibles = esAdmin
+    ? CATEGORIAS
+    : CATEGORIAS.filter((c) => c.key === 'inventario').map((c) => ({
+        ...c,
+        items: c.items.filter((i) => i.key === 'gestionProductos')
+      }));
+
+  const categoriaDefault = categoriaInicial && categoriasVisibles.some((c) => c.key === categoriaInicial)
+    ? categoriaInicial
+    : categoriasVisibles[0].key;
+  const catDefaultObj = categoriasVisibles.find((c) => c.key === categoriaDefault);
   const [categoria, setCategoria] = useState(categoriaDefault);
   const [tab, setTab] = useState(catDefaultObj.items[0].key);
   const [desde, setDesde] = useState(primerDiaDelMesStr());
   const [hasta, setHasta] = useState(hoyStr());
 
-  const categoriaActiva = CATEGORIAS.find((c) => c.key === categoria) || CATEGORIAS[0];
+  const categoriaActiva = categoriasVisibles.find((c) => c.key === categoria) || categoriasVisibles[0];
   const tabActiva = categoriaActiva.items.find((i) => i.key === tab);
 
   return (
@@ -136,6 +151,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
         <FiltroFecha desde={desde} hasta={hasta} onChange={(d, h) => { setDesde(d); setHasta(h); }} />
       )}
 
+      {tab === 'gestionProductos' && <Inventario currentUser={currentUser} />}
       {tab === 'historial' && <Facturas currentUser={currentUser} />}
       {tab === 'ganancias' && <ReporteGanancias desde={desde} hasta={hasta} />}
       {tab === 'compras' && <ReporteCompras desde={desde} hasta={hasta} />}
