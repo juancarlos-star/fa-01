@@ -24,10 +24,15 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   doc.text(factura.es_nota_venta ? 'NOTA DE VENTA N°' : 'FACTURA N°', 145, 15);
   doc.text('FECHA:', 145, 21);
 
+  // Todos los valores de este bloque quedan alineados en la misma columna (x=182), con
+  // suficiente separacion de la etiqueta mas larga ("NOTA DE VENTA N°"), para que nunca queden
+  // pegados como "NOTA DE VENTA N°000002" (el mismo problema que ya se habia resuelto para el
+  // encabezado de Compras).
+  const xValor = 182;
   doc.setFont('helvetica', 'normal');
-  doc.text(factura.numero_factura || String(factura.id).padStart(6, '0'), 172, 15);
+  doc.text(factura.numero_factura || String(factura.id).padStart(6, '0'), xValor, 15);
   const fecha = (factura.created_at || '').split(' ')[0].split('-').reverse().join('/');
-  doc.text(fecha, 165, 21);
+  doc.text(fecha, xValor, 21);
 
   doc.setTextColor(200, 0, 0);
   doc.setFont('helvetica', 'bold');
