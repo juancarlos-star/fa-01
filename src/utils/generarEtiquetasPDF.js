@@ -85,7 +85,7 @@ function truncarAncho(doc, texto, anchoMaximoMm) {
 
 // Dibuja UNA etiqueta (nombre + precio + codigo de barras + codigo legible)
 // dentro del rectangulo (x, y, w, h) dado, en milimetros.
-function dibujarEtiqueta(doc, etiqueta, x, y, w, h, { tasaCambio, mostrarBs }) {
+function dibujarEtiqueta(doc, etiqueta, x, y, w, h) {
   const margen = 1.2;
   const anchoUtil = w - margen * 2;
   let cursorY = y + margen + 2.6;
@@ -97,28 +97,24 @@ function dibujarEtiqueta(doc, etiqueta, x, y, w, h, { tasaCambio, mostrarBs }) {
 
   cursorY += 4;
   doc.setFontSize(9);
+  // El precio de la etiqueta es SIEMPRE en dolares (etiqueta.precio ya viene en USD desde
+  // Etiquetas.jsx); no se muestra el equivalente en Bs.
   const precioTexto = `$ ${fmt(etiqueta.precio)}`;
   doc.text(precioTexto, x + w / 2, cursorY, { align: 'center' });
-  if (mostrarBs && tasaCambio) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
-    doc.text(`Bs ${fmt(etiqueta.precio * tasaCambio)}`, x + w / 2, cursorY + 3, { align: 'center' });
-    cursorY += 3;
-  }
 
-  const altoBarras = Math.max(4, h - (cursorY - y) - margen - 3);
+  // Espacio reservado ABAJO para el texto del codigo (una linea de ~3mm mas un respiro de
+  // ~1.5mm), para que las barras nunca se dibujen encima de donde va ese texto.
+  const altoTextoCodigo = 3.5;
+  const espacioEntreBarrasYTexto = 1.5;
+  const altoBarras = Math.max(4, h - (cursorY - y) - margen - altoTextoCodigo - espacioEntreBarrasYTexto);
   const anchoBarras = Math.min(anchoUtil, w * 0.9);
-  const dibujado = dibujarCode39(doc, etiqueta.codigo, x + (w - anchoBarras) / 2, cursorY + 1.5, anchoBarras, altoBarras);
+  const yBarras = cursorY + 1.5;
+  dibujarCode39(doc, etiqueta.codigo, x + (w - anchoBarras) / 2, yBarras, anchoBarras, altoBarras);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
-  const yCodigoTexto = y + h - margen - 0.5;
+  const yCodigoTexto = yBarras + altoBarras + espacioEntreBarrasYTexto + 2;
   doc.text(truncarAncho(doc, etiqueta.codigo, anchoUtil), x + w / 2, yCodigoTexto, { align: 'center' });
-
-  if (!dibujado) {
-    // Codigo vacio o el espacio quedo demasiado angosto para dibujar barras legibles: se deja
-    // solo el texto (arriba) en vez de un codigo de barras ilegible o roto.
-  }
 }
 
 // Layouts disponibles. 'hojaCarta' imprime varias etiquetas por hoja tamano
@@ -133,7 +129,7 @@ const LAYOUTS = {
 // etiquetas: array de { nombre, precio, codigo } YA expandido (una entrada por
 // cada etiqueta fisica a imprimir; si un producto pidio cantidad 5, debe venir
 // repetido 5 veces en el array).
-export async function generarEtiquetasPDF(etiquetas, { layout = 'hojaCarta', tasaCambio = 0, mostrarBs = true, imprimir = false } = {}) {
+export async function generarEtiquetasPDF(etiquetas, { layout = 'hojaCarta', imprimir = false } = {}) {
   if (!etiquetas || etiquetas.length === 0) return;
   const guardar = imprimir ? guardarAbrirEImprimirPDF : guardarYAbrirPDF;
 
@@ -142,7 +138,7 @@ export async function generarEtiquetasPDF(etiquetas, { layout = 'hojaCarta', tas
     const doc = new jsPDF({ unit: 'mm', format: [anchoEtiqueta, altoEtiqueta], compress: true });
     etiquetas.forEach((etq, i) => {
       if (i > 0) doc.addPage([anchoEtiqueta, altoEtiqueta]);
-      dibujarEtiqueta(doc, etq, 0, 0, anchoEtiqueta, altoEtiqueta, { tasaCambio, mostrarBs });
+      dibujarEtiqueta(doc, etq, 0, 0, anchoEtiqueta, altoEtiqueta);
     });
     await guardar(doc, `etiquetas_${Date.now()}.pdf`, 'Etiquetas');
     return;
@@ -159,7 +155,7 @@ export async function generarEtiquetasPDF(etiquetas, { layout = 'hojaCarta', tas
     const fila = Math.floor(posicionEnPagina / cfg.columnas);
     const x = cfg.margenX + col * (cfg.anchoEtiqueta + cfg.separacionX);
     const y = cfg.margenY + fila * (cfg.altoEtiqueta + cfg.separacionY);
-    dibujarEtiqueta(doc, etq, x, y, cfg.anchoEtiqueta, cfg.altoEtiqueta, { tasaCambio, mostrarBs });
+    dibujarEtiqueta(doc, etq, x, y, cfg.anchoEtiqueta, cfg.altoEtiqueta);
   });
 
   await guardar(doc, `etiquetas_${Date.now()}.pdf`, 'Etiquetas');
