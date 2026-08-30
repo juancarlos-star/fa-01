@@ -55,9 +55,10 @@ function envolverBase64(base64) {
   return base64.match(/.{1,76}/g).join('\r\n');
 }
 
-// Arma el correo en formato MIME: un cuerpo de texto plano y, si se indica, un archivo adjunto,
-// como dos partes separadas por un "boundary" (delimitador) unico.
-function construirMensajeMime({ remitente, destino, asunto, textoBody, adjunto }) {
+// Arma el correo en formato MIME: un cuerpo de texto plano y, si se indican, uno o varios
+// archivos adjuntos, cada uno como su propia parte separada por un "boundary" (delimitador)
+// unico compartido por todo el mensaje.
+function construirMensajeMime({ remitente, destino, asunto, textoBody, adjuntos }) {
   const boundary = `----MoviSync${Date.now()}`;
   const partes = [];
   partes.push(`From: ${remitente}`);
@@ -72,7 +73,7 @@ function construirMensajeMime({ remitente, destino, asunto, textoBody, adjunto }
   partes.push('');
   partes.push(envolverBase64(Buffer.from(textoBody, 'utf8').toString('base64')));
 
-  if (adjunto) {
+  (adjuntos || []).forEach((adjunto) => {
     partes.push('');
     partes.push(`--${boundary}`);
     partes.push(`Content-Type: application/octet-stream; name="${adjunto.nombre}"`);
@@ -80,7 +81,7 @@ function construirMensajeMime({ remitente, destino, asunto, textoBody, adjunto }
     partes.push(`Content-Disposition: attachment; filename="${adjunto.nombre}"`);
     partes.push('');
     partes.push(envolverBase64(adjunto.buffer.toString('base64')));
-  }
+  });
 
   partes.push('');
   partes.push(`--${boundary}--`);
@@ -88,11 +89,16 @@ function construirMensajeMime({ remitente, destino, asunto, textoBody, adjunto }
   return partes.join('\r\n');
 }
 
-// Envia un correo con (opcionalmente) un archivo adjunto, usando SMTP con TLS implicito
-// (puerto 465 de Gmail). Lanza un error con un mensaje entendible si algo falla en cualquier
-// paso de la conversacion SMTP (conexion, login, envio), para que quien llama pueda mostrarlo
-// tal cual al usuario.
-async function enviarCorreoConAdjunto({ host, port, usuario, password, remitente, destino, asunto, textoBody, adjunto }) {
+// Envia un correo con (opcionalmente) uno o varios archivos adjuntos, usando SMTP con TLS
+// implicito (puerto 465 de Gmail). Lanza un error con un mensaje entendible si algo falla en
+// cualquier paso de la conversacion SMTP (conexion, login, envio), para que quien llama pueda
+// mostrarlo tal cual al usuario.
+//
+// "adjuntos" acepta un array de { nombre, buffer }. Por compatibilidad con el codigo que ya
+// llamaba a esta funcion con un unico "adjunto" (singular), tambien se acepta ese nombre viejo
+// y se convierte solo internamente a la nueva forma de array.
+async function enviarCorreoConAdjunto({ host, port, usuario, password, remitente, destino, asunto, textoBody, adjunto, adjuntos }) {
+  const listaAdjuntos = adjuntos || (adjunto ? [adjunto] : []);
   return new Promise((resolve, reject) => {
     const socket = tls.connect({ host, port: port || 465, rejectUnauthorized: true }, async () => {
       try {
@@ -120,7 +126,7 @@ async function enviarCorreoConAdjunto({ host, port, usuario, password, remitente
         r = await comandoYRespuesta(socket, 'DATA');
         if (r.codigo !== 354) throw new Error('El servidor no acepto empezar a recibir el mensaje.');
 
-        const mensaje = construirMensajeMime({ remitente, destino, asunto, textoBody, adjunto });
+        const mensaje = construirMensajeMime({ remitente, destino, asunto, textoBody, adjuntos: listaAdjuntos });
         r = await comandoYRespuesta(socket, mensaje + '\r\n.');
         if (r.codigo !== 250) throw new Error('El servidor no confirmo la recepcion del correo.');
 
