@@ -92,14 +92,19 @@ function createWindow() {
   // automatico de la base de datos (y, si esta configurado, el correo con el resumen del dia).
   // "cerrandoConBackup" evita que esto se repita en bucle: la segunda vez que se pide cerrar
   // (la que se dispara nosotros mismos al terminar) ya deja pasar el cierre real. Se le pone un
-  // limite de tiempo (conTimeout) para que, si no hay internet o el correo tarda en responder,
-  // el programa igual se cierre en un tiempo razonable en vez de quedarse colgado.
+  // limite de tiempo generoso (conTimeout) para que, si el correo tiene varios adjuntos pesados
+  // (el .db del respaldo + un PDF por cada documento del dia + el resumen) y la subida es lenta,
+  // el envio SI alcance a terminar antes de que se cierre la ventana -con 15 segundos, un dia
+  // con varias facturas y una conexion de subida modesta bastaba para que Windows cerrara la
+  // app a la mitad del envio SMTP, perdiendo el correo sin ningun aviso-. En el peor de los
+  // casos (sin internet en absoluto) el programa igual cierra a los 2 minutos en vez de
+  // quedarse colgado para siempre.
   let cerrandoConBackup = false;
   mainWindow.on('close', (event) => {
     if (cerrandoConBackup) return;
     event.preventDefault();
     cerrandoConBackup = true;
-    conTimeout(respaldarYNotificarAlCerrar(), 15000).finally(() => {
+    conTimeout(respaldarYNotificarAlCerrar(), 120000).finally(() => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
     });
   });
@@ -2385,6 +2390,20 @@ function carpetaBackupsAutomaticos() {
   return carpeta;
 }
 
+// Deja un registro en un archivo de texto (no solo en consola) de cada intento de respaldo/
+// correo automatico al cerrar, con exito o error. Es indispensable porque la consola de
+// Electron desaparece apenas el programa termina de cerrar, asi que sin esto no habia forma de
+// saber por que un envio automatico habia fallado despues de que ya paso.
+function registrarLogBackup(mensaje) {
+  try {
+    const carpeta = carpetaBackupsAutomaticos();
+    const linea = `[${new Date().toLocaleString('es-VE')}] ${mensaje}\n`;
+    fs.appendFileSync(path.join(carpeta, 'respaldo-log.txt'), linea, 'utf8');
+  } catch (err) {
+    console.error('No se pudo escribir el log de respaldo:', err);
+  }
+}
+
 // Hace el respaldo automatico del dia (con .backup(), a prueba de WAL) y borra los respaldos
 // automaticos de mas de 30 dias para que la carpeta no crezca para siempre sola. Devuelve la
 // ruta del archivo recien creado.
@@ -2606,21 +2625,32 @@ function generarResumenDiarioTexto(db, cantidadDocumentosHoy) {
 // una vez en el mismo dia, se guarda en settings la fecha del ultimo envio exitoso y se compara
 // contra la fecha de hoy antes de intentar mandar otro.
 async function respaldarYNotificarAlCerrar() {
+  const inicio = Date.now();
   try {
     const db = getDb();
     const backupPath = await crearBackupAutomaticoLocal();
+    registrarLogBackup(`Respaldo local creado: ${backupPath}`);
 
     const activo = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_activo'").get()?.value === '1';
-    if (!activo) return;
+    if (!activo) {
+      registrarLogBackup('Envio por correo desactivado en Configuracion (no se intento enviar nada).');
+      return;
+    }
 
     const destino = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_destino'").get()?.value || '';
     const remitente = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_remitente'").get()?.value || '';
     const password = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_password'").get()?.value || '';
-    if (!destino || !remitente || !password) return;
+    if (!destino || !remitente || !password) {
+      registrarLogBackup('Envio por correo activado pero falta destino/remitente/contraseña en Configuracion (no se intento enviar nada).');
+      return;
+    }
 
     const hoyISO = new Date().toISOString().slice(0, 10);
     const ultimaFecha = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_ultima_fecha'").get()?.value || '';
-    if (ultimaFecha === hoyISO) return; // ya se mando hoy, no repetir
+    if (ultimaFecha === hoyISO) {
+      registrarLogBackup('Ya se habia enviado el correo hoy, no se repite.');
+      return; // ya se mando hoy, no repetir
+    }
 
     // "settings" completo (objeto key->value), necesario para que los PDF de fondo dibujen
     // el logo/nombre/RIF/direccion/telefono/pie de pagina de la tienda igual que el resto de
@@ -2651,8 +2681,12 @@ async function respaldarYNotificarAlCerrar() {
         adjuntos.push({ nombre: resumenPdf.nombre, buffer: resumenPdf.buffer });
       } catch (err) {
         console.error('No se pudo generar el PDF-resumen del dia:', err);
+        registrarLogBackup('Aviso: fallo generando el PDF-resumen del dia: ' + (err?.message || String(err)));
       }
     }
+
+    const pesoTotalMB = (adjuntos.reduce((acc, a) => acc + a.buffer.length, 0) / (1024 * 1024)).toFixed(2);
+    registrarLogBackup(`Enviando correo con ${adjuntos.length} adjunto(s), ${pesoTotalMB} MB en total...`);
 
     const textoBody = generarResumenDiarioTexto(db, cantidadDocumentosHoy);
     await enviarCorreoConAdjunto({
@@ -2668,8 +2702,10 @@ async function respaldarYNotificarAlCerrar() {
     });
 
     db.prepare("UPDATE settings SET value = ? WHERE key = 'backup_email_ultima_fecha'").run(hoyISO);
+    registrarLogBackup(`Correo enviado correctamente a ${destino} (tardo ${((Date.now() - inicio) / 1000).toFixed(1)}s).`);
   } catch (err) {
     console.error('Error en el respaldo/notificacion automatica al cerrar:', err);
+    registrarLogBackup(`ERROR tras ${((Date.now() - inicio) / 1000).toFixed(1)}s: ${err?.message || String(err)}`);
   }
 }
 
