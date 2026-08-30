@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { getDb, initDb, cerrarDb, getDbPath } = require('./db');
+const { enviarCorreoConAdjunto } = require('./mailer');
 
 // ---------- Helpers de STOCK POR DEPOSITO (accesorios) ----------
 // Los accesorios no tienen unidad individual (IMEI/codigo), asi que su stock por deposito se
@@ -80,12 +81,39 @@ function createWindow() {
     mainWindow.show();
   });
 
+  // Antes de cerrar de verdad, se intercepta el cierre UNA vez para hacer el respaldo
+  // automatico de la base de datos (y, si esta configurado, el correo con el resumen del dia).
+  // "cerrandoConBackup" evita que esto se repita en bucle: la segunda vez que se pide cerrar
+  // (la que se dispara nosotros mismos al terminar) ya deja pasar el cierre real. Se le pone un
+  // limite de tiempo (conTimeout) para que, si no hay internet o el correo tarda en responder,
+  // el programa igual se cierre en un tiempo razonable en vez de quedarse colgado.
+  let cerrandoConBackup = false;
+  mainWindow.on('close', (event) => {
+    if (cerrandoConBackup) return;
+    event.preventDefault();
+    cerrandoConBackup = true;
+    conTimeout(respaldarYNotificarAlCerrar(), 15000).finally(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    });
+  });
+
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
     mainWindow.loadURL(devServerUrl);
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
+}
+
+// Ejecuta una promesa pero no espera mas de "ms" milisegundos por ella (por ejemplo, para que
+// el respaldo/correo automatico al cerrar el programa nunca lo deje "colgado" si no hay
+// internet). Si se pasa el tiempo, sigue igual -el respaldo LOCAL ya se hizo antes de intentar
+// el correo, asi que lo unico que se pierde en el peor caso es el envio de ese correo puntual.
+function conTimeout(promesa, ms) {
+  return Promise.race([
+    promesa,
+    new Promise((resolve) => setTimeout(resolve, ms))
+  ]);
 }
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -2313,6 +2341,11 @@ ipcMain.handle('reportes:ganancias', (event, { desde, hasta }) => {
 });
 
 // ---------- IPC: Respaldo de base de datos ----------
+// Usa el metodo .backup() de better-sqlite3 (en vez de copiar el archivo .db a mano) porque la
+// base de datos trabaja en modo WAL: los cambios mas recientes pueden quedar unos segundos en
+// un archivo aparte (".db-wal") antes de pasar al .db principal, asi que copiar solo el .db a
+// mano podia dejar fuera movimientos recien hechos. .backup() consolida todo correctamente
+// antes de escribir la copia, para que el respaldo sea siempre fiel y completo.
 ipcMain.handle('backup:crear', async () => {
   const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
     title: 'Guardar respaldo de la base de datos',
@@ -2320,7 +2353,7 @@ ipcMain.handle('backup:crear', async () => {
     filters: [{ name: 'Base de datos', extensions: ['db'] }]
   });
   if (canceled || !filePath) return { ok: false, message: 'Cancelado' };
-  fs.copyFileSync(getDbPath(), filePath);
+  await getDb().backup(filePath);
   return { ok: true, path: filePath };
 });
 
@@ -2334,6 +2367,160 @@ ipcMain.handle('backup:restaurar', async () => {
   cerrarDb();
   fs.copyFileSync(filePaths[0], getDbPath());
   return { ok: true, mensaje: 'Respaldo restaurado. Cierra y vuelve a abrir el programa para ver los cambios.' };
+});
+
+// ---------- Copia de seguridad automatica al cerrar el programa + correo de resumen diario ----------
+// Carpeta fija donde se van guardando los respaldos automaticos (distinta de "Descargas", donde
+// van los PDF, porque un respaldo es para guardar a largo plazo, no para revisar una vez).
+function carpetaBackupsAutomaticos() {
+  const carpeta = path.join(app.getPath('documents'), 'MoviSync', 'Backups');
+  if (!fs.existsSync(carpeta)) fs.mkdirSync(carpeta, { recursive: true });
+  return carpeta;
+}
+
+// Hace el respaldo automatico del dia (con .backup(), a prueba de WAL) y borra los respaldos
+// automaticos de mas de 30 dias para que la carpeta no crezca para siempre sola. Devuelve la
+// ruta del archivo recien creado.
+async function crearBackupAutomaticoLocal() {
+  const carpeta = carpetaBackupsAutomaticos();
+  const fecha = new Date();
+  const sello = fecha.toISOString().slice(0, 16).replace(/[:T]/g, '-'); // ej. 2026-08-30-14-05
+  const filePath = path.join(carpeta, `respaldo-automatico-${sello}.db`);
+  await getDb().backup(filePath);
+
+  const treintaDiasMs = 30 * 24 * 60 * 60 * 1000;
+  const ahora = Date.now();
+  fs.readdirSync(carpeta)
+    .filter((nombre) => nombre.startsWith('respaldo-automatico-') && nombre.endsWith('.db'))
+    .forEach((nombre) => {
+      const ruta = path.join(carpeta, nombre);
+      try {
+        const stat = fs.statSync(ruta);
+        if (ahora - stat.mtimeMs > treintaDiasMs) fs.unlinkSync(ruta);
+      } catch (err) {
+        console.error('No se pudo revisar/borrar respaldo antiguo', nombre, err);
+      }
+    });
+
+  return filePath;
+}
+
+// Arma el texto del correo de resumen diario: ventas del dia, facturas emitidas ese dia, e
+// inventario (unidades y valor) tal como quedo al momento de cerrar el programa.
+function generarResumenDiarioTexto(db) {
+  const hoyLegible = new Date().toLocaleDateString('es-VE');
+
+  const ventasHoy = db.prepare(
+    `SELECT COUNT(*) AS cantidad, COALESCE(SUM(total_usd), 0) AS totalUsd, COALESCE(SUM(total_bs), 0) AS totalBs
+     FROM facturas WHERE es_devolucion = 0 AND date(created_at) = date('now', 'localtime')`
+  ).get();
+  const devolucionesHoy = db.prepare(
+    `SELECT COUNT(*) AS cantidad, COALESCE(SUM(total_usd), 0) AS totalUsd
+     FROM facturas WHERE es_devolucion = 1 AND date(created_at) = date('now', 'localtime')`
+  ).get();
+
+  const productos = db.prepare('SELECT * FROM products').all();
+  let stockTotal = 0;
+  let valorCostoUsd = 0;
+  let valorVentaUsd = 0;
+  productos.forEach((p) => {
+    const stock = obtenerStockPorDepositoDeProducto(db, p).reduce((acc, d) => acc + d.cantidad, 0);
+    stockTotal += stock;
+    valorCostoUsd += stock * (p.costo_promedio_usd || 0);
+    valorVentaUsd += stock * (p.precio2 || 0);
+  });
+
+  const num = (n) => Number(n || 0).toFixed(2);
+  const lineas = [];
+  lineas.push(`Resumen diario de MoviSync — ${hoyLegible}`);
+  lineas.push('');
+  lineas.push('VENTAS DE HOY');
+  lineas.push(`Facturas emitidas: ${ventasHoy.cantidad}`);
+  lineas.push(`Total vendido: $${num(ventasHoy.totalUsd)} (Bs. ${num(ventasHoy.totalBs)})`);
+  if (devolucionesHoy.cantidad > 0) {
+    lineas.push(`Devoluciones de hoy: ${devolucionesHoy.cantidad} por $${num(devolucionesHoy.totalUsd)}`);
+  }
+  lineas.push('');
+  lineas.push('INVENTARIO AL CIERRE DE HOY');
+  lineas.push(`Unidades totales en stock: ${stockTotal}`);
+  lineas.push(`Valor del inventario al costo: $${num(valorCostoUsd)}`);
+  lineas.push(`Valor del inventario a precio de venta: $${num(valorVentaUsd)}`);
+  lineas.push('');
+  lineas.push('Se adjunta el respaldo de la base de datos de hoy (archivo .db).');
+  lineas.push('');
+  lineas.push('Este correo se genera y se envía automáticamente al cerrar MoviSync.');
+  return lineas.join('\n');
+}
+
+// Se llama una sola vez, justo antes de cerrar el programa: hace el respaldo local automatico
+// siempre, y si el envio por correo esta activado y configurado, ademas manda el resumen del
+// dia con el respaldo adjunto. Nunca deja que un fallo de correo bloquee el cierre del programa
+// (se guarda el respaldo local pase lo que pase); los errores solo quedan en consola.
+//
+// Para no mandar el mismo correo varias veces si el usuario abre y cierra el programa mas de
+// una vez en el mismo dia, se guarda en settings la fecha del ultimo envio exitoso y se compara
+// contra la fecha de hoy antes de intentar mandar otro.
+async function respaldarYNotificarAlCerrar() {
+  try {
+    const db = getDb();
+    const backupPath = await crearBackupAutomaticoLocal();
+
+    const activo = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_activo'").get()?.value === '1';
+    if (!activo) return;
+
+    const destino = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_destino'").get()?.value || '';
+    const remitente = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_remitente'").get()?.value || '';
+    const password = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_password'").get()?.value || '';
+    if (!destino || !remitente || !password) return;
+
+    const hoyISO = new Date().toISOString().slice(0, 10);
+    const ultimaFecha = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_ultima_fecha'").get()?.value || '';
+    if (ultimaFecha === hoyISO) return; // ya se mando hoy, no repetir
+
+    const textoBody = generarResumenDiarioTexto(db);
+    await enviarCorreoConAdjunto({
+      host: 'smtp.gmail.com',
+      port: 465,
+      usuario: remitente,
+      password,
+      remitente,
+      destino,
+      asunto: `MoviSync — Resumen y respaldo del ${new Date().toLocaleDateString('es-VE')}`,
+      textoBody,
+      adjunto: { nombre: path.basename(backupPath), buffer: fs.readFileSync(backupPath) }
+    });
+
+    db.prepare("UPDATE settings SET value = ? WHERE key = 'backup_email_ultima_fecha'").run(hoyISO);
+  } catch (err) {
+    console.error('Error en el respaldo/notificacion automatica al cerrar:', err);
+  }
+}
+
+// ---------- IPC: enviar un correo de prueba con las credenciales que se esten escribiendo en
+// el formulario (todavia sin guardar) ----------
+// Se separa del envio automatico de "backup:crear" porque configurar SMTP/contrasenas de
+// aplicacion es propenso a errores (contrasena normal en vez de la de aplicacion, correo mal
+// escrito, etc.) y conviene poder confirmar que funciona ANTES de guardar y de esperar a que
+// el usuario cierre el programa para enterarse de que algo estaba mal.
+ipcMain.handle('backup:enviarCorreoPrueba', async (event, { destino, remitente, password }) => {
+  if (!destino || !remitente || !password) {
+    return { ok: false, message: 'Completa el correo de destino, el remitente y la contraseña antes de probar.' };
+  }
+  try {
+    await enviarCorreoConAdjunto({
+      host: 'smtp.gmail.com',
+      port: 465,
+      usuario: remitente,
+      password,
+      remitente,
+      destino,
+      asunto: 'MoviSync — Correo de prueba',
+      textoBody: 'Este es un correo de prueba de MoviSync.\n\nSi lo recibiste, la configuración de correo para el resumen y respaldo diario está funcionando correctamente.'
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: err.message || String(err) };
+  }
 });
 
 // ---------- IPC: verificar si un codigo ya existe en el inventario ----------
