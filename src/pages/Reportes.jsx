@@ -198,10 +198,10 @@ function ReporteGanancias({ desde, hasta }) {
   if (cargando) return <p>Cargando...</p>;
   if (!reporte) return null;
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFGanancias(reporte, desde, hasta);
+      await generarPDFGanancias(reporte, desde, hasta, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -273,10 +273,10 @@ function ReporteCompras({ desde, hasta }) {
     if (res.ok) setDetalle(res);
   };
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFCompras(reporte, desde, hasta);
+      await generarPDFCompras(reporte, desde, hasta, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -442,10 +442,10 @@ function ReporteFacturas({ desde, hasta }) {
     if (res.ok) setDetalle(res);
   };
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFFacturas(reporte, desde, hasta);
+      await generarPDFFacturas(reporte, desde, hasta, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -699,11 +699,11 @@ function ReporteProductosVendidos({ desde, hasta }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
       const tipoLabel = TIPOS_PRODUCTO.find((t) => t.key === tipo)?.label || tipo;
-      await generarPDFProductosVendidos(reporte, desde, hasta, tipoLabel);
+      await generarPDFProductosVendidos(reporte, desde, hasta, tipoLabel, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -837,10 +837,10 @@ function ReporteCargosDescargos({ desde, hasta }) {
 
   useEffect(() => { cargar(); setDetalleDocumento(null); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFCargosDescargos(reporte, desde, hasta);
+      await generarPDFCargosDescargos(reporte, desde, hasta, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1019,10 +1019,10 @@ function ReporteInventarioProductos() {
     ? (depositos.find((d) => d.id === Number(depositoId))?.nombre || '—')
     : 'Todos los depositos';
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFInventarioProductos(reporte, depositoLabel);
+      await generarPDFInventarioProductos(reporte, depositoLabel, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1286,10 +1286,10 @@ function ReporteInventarioFisico() {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFInventarioFisico(reporte);
+      await generarPDFInventarioFisico(reporte, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1386,10 +1386,10 @@ function ReporteVendedoresEfectividad({ desde, hasta }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFVendedoresEfectividad(reporte);
+      await generarPDFVendedoresEfectividad(reporte, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1463,10 +1463,10 @@ function ReporteVendedoresUltimasVentas() {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFVendedoresUltimasVentas(reporte.filas);
+      await generarPDFVendedoresUltimasVentas(reporte.filas, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1527,10 +1527,10 @@ function ReporteVendedoresPorCategoria({ desde, hasta }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFVendedoresPorCategoria(reporte);
+      await generarPDFVendedoresPorCategoria(reporte, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1591,10 +1591,10 @@ function ReporteVendedoresEstadisticas({ desde, hasta }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFVendedoresEstadisticas(reporte);
+      await generarPDFVendedoresEstadisticas(reporte, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1653,10 +1653,10 @@ function ReporteVentasTransacciones({ desde, hasta }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFVentasTransacciones(reporte);
+      await generarPDFVentasTransacciones(reporte, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1717,10 +1717,10 @@ function ReporteVentasCierreDiario() {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFVentasCierreDiario(reporte);
+      await generarPDFVentasCierreDiario(reporte, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1793,10 +1793,10 @@ function ReporteVentasRelacion({ desde, hasta }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFVentasRelacion(reporte);
+      await generarPDFVentasRelacion(reporte, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -1902,10 +1902,10 @@ function ReporteVentasPorCliente({ desde, hasta }) {
     if (res.ok) setDetalle(res);
   };
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFVentasPorCliente(clienteSeleccionado, facturasCliente);
+      await generarPDFVentasPorCliente(clienteSeleccionado, facturasCliente, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -2088,10 +2088,10 @@ function ReporteClientes() {
   const emails = clientesFiltrados.map((c) => (c.email || '').trim()).filter(Boolean);
   const telefonos = clientesFiltrados.map((c) => (c.telefono || '').trim()).filter(Boolean);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFClientes(clientesFiltrados);
+      await generarPDFClientes(clientesFiltrados, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -2257,10 +2257,10 @@ function ReporteLibroVentasIva({ desde, hasta }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFLibroVentasIva(reporte, desde, hasta);
+      await generarPDFLibroVentasIva(reporte, desde, hasta, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -2343,10 +2343,10 @@ function ReporteLibroComprasIva({ desde, hasta }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const descargarPDF = async () => {
+  const descargarPDF = async (imprimir = false) => {
     setGenerandoPDF(true);
     try {
-      await generarPDFLibroComprasIva(reporte, desde, hasta);
+      await generarPDFLibroComprasIva(reporte, desde, hasta, { imprimir });
     } finally {
       setGenerandoPDF(false);
     }
@@ -2419,20 +2419,35 @@ function ReporteLibroComprasIva({ desde, hasta }) {
 
 function BotonPDF({ onClick, generando }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={generando}
-      style={{
-        marginBottom: '0.75rem',
-        backgroundColor: '#0b4f9e',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '4px',
-        padding: '0.5rem 1rem',
-        cursor: generando ? 'default' : 'pointer'
-      }}
-    >
-      {generando ? 'Generando PDF...' : '📄 Descargar PDF'}
-    </button>
+    <div style={{ display: 'flex', gap: '8px', marginBottom: '0.75rem' }}>
+      <button
+        onClick={() => onClick(false)}
+        disabled={generando}
+        style={{
+          backgroundColor: '#0b4f9e',
+          color: '#fff',
+          border: 'none',
+          borderRadius: '4px',
+          padding: '0.5rem 1rem',
+          cursor: generando ? 'default' : 'pointer'
+        }}
+      >
+        {generando ? 'Generando...' : '📄 Descargar PDF'}
+      </button>
+      <button
+        onClick={() => onClick(true)}
+        disabled={generando}
+        style={{
+          backgroundColor: '#fff',
+          color: '#0b4f9e',
+          border: '1px solid #0b4f9e',
+          borderRadius: '4px',
+          padding: '0.5rem 1rem',
+          cursor: generando ? 'default' : 'pointer'
+        }}
+      >
+        {generando ? 'Generando...' : '🖨️ Imprimir'}
+      </button>
+    </div>
   );
 }
