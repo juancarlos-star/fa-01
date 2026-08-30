@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { guardarYAbrirPDF, fechaParaNombreArchivo } from './pdfUtils.js';
+import { guardarYAbrirPDF, guardarAbrirEImprimirPDF, fechaParaNombreArchivo } from './pdfUtils.js';
 import { fmt } from './format.js';
 
 function encabezado(doc, titulo, desde, hasta) {
@@ -49,7 +49,7 @@ function dibujarGraficoBarrasPDF(doc, { x, y, ancho, alto, datos, color = [11, 7
 
 // ---------------- Ventas y ganancias ----------------
 
-export async function generarPDFGanancias(reporte, desde, hasta) {
+export async function generarPDFGanancias(reporte, desde, hasta, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Reporte de Ventas y Ganancias', desde, hasta);
 
@@ -95,12 +95,16 @@ export async function generarPDFGanancias(reporte, desde, hasta) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Reporte-Ventas-Ganancias_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Reporte-Ventas-Ganancias_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Reporte-Ventas-Ganancias_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Compras ----------------
 
-export async function generarPDFCompras(reporte, desde, hasta) {
+export async function generarPDFCompras(reporte, desde, hasta, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Reporte de Compras', desde, hasta);
 
@@ -118,12 +122,16 @@ export async function generarPDFCompras(reporte, desde, hasta) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Reporte-Compras_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Reporte-Compras_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Reporte-Compras_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Facturas ----------------
 
-export async function generarPDFFacturas(reporte, desde, hasta) {
+export async function generarPDFFacturas(reporte, desde, hasta, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Reporte de Facturas', desde, hasta);
 
@@ -151,12 +159,16 @@ export async function generarPDFFacturas(reporte, desde, hasta) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Reporte-Facturas_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Reporte-Facturas_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Reporte-Facturas_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Productos vendidos ----------------
 
-export async function generarPDFProductosVendidos(reporte, desde, hasta, tipoLabel) {
+export async function generarPDFProductosVendidos(reporte, desde, hasta, tipoLabel, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, `Reporte de Productos Vendidos — ${tipoLabel}`, desde, hasta);
 
@@ -200,12 +212,16 @@ export async function generarPDFProductosVendidos(reporte, desde, hasta, tipoLab
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Reporte-Productos-Vendidos_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Reporte-Productos-Vendidos_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Reporte-Productos-Vendidos_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Cargos y descargos de inventario ----------------
 
-export async function generarPDFCargosDescargos(reporte, desde, hasta) {
+export async function generarPDFCargosDescargos(reporte, desde, hasta, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Reporte de Cargos y Descargos de Inventario', desde, hasta);
 
@@ -254,12 +270,16 @@ export async function generarPDFCargosDescargos(reporte, desde, hasta) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Reporte-Cargos-Descargos_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Reporte-Cargos-Descargos_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Reporte-Cargos-Descargos_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Clientes ----------------
 
-export async function generarPDFClientes(clientes) {
+export async function generarPDFClientes(clientes, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
@@ -287,14 +307,18 @@ export async function generarPDFClientes(clientes) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Reporte-Clientes_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Reporte-Clientes_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Reporte-Clientes_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Inventario: Productos (valorizado) ----------------
 
 const TIPO_LABEL = { equipo: 'Teléfono', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
 
-export async function generarPDFInventarioProductos(reporte, depositoLabel) {
+export async function generarPDFInventarioProductos(reporte, depositoLabel, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
@@ -345,12 +369,16 @@ export async function generarPDFInventarioProductos(reporte, depositoLabel) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Reporte-Inventario-Productos_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Reporte-Inventario-Productos_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Reporte-Inventario-Productos_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Inventario: Fisico (hoja de conteo) ----------------
 
-export async function generarPDFInventarioFisico(reporte) {
+export async function generarPDFInventarioFisico(reporte, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
@@ -388,14 +416,18 @@ export async function generarPDFInventarioFisico(reporte) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Inventario-Fisico_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Inventario-Fisico_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Inventario-Fisico_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Vendedores: Efectividad ----------------
 
 const AGRUPACION_LABEL = { dia: 'Diario', mes: 'Mensual', anio: 'Anual' };
 
-export async function generarPDFVendedoresEfectividad(reporte) {
+export async function generarPDFVendedoresEfectividad(reporte, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, `Efectividad de Vendedores — ${AGRUPACION_LABEL[reporte.agrupacion] || ''}`, reporte.desde, reporte.hasta);
 
@@ -412,12 +444,16 @@ export async function generarPDFVendedoresEfectividad(reporte) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Vendedores-Efectividad_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Vendedores-Efectividad_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Vendedores-Efectividad_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Vendedores: Ultimas ventas a clientes ----------------
 
-export async function generarPDFVendedoresUltimasVentas(filas) {
+export async function generarPDFVendedoresUltimasVentas(filas, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
@@ -445,14 +481,18 @@ export async function generarPDFVendedoresUltimasVentas(filas) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Vendedores-Ultimas-Ventas_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Vendedores-Ultimas-Ventas_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Vendedores-Ultimas-Ventas_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Vendedores: Ventas por categoria ----------------
 
 const TIPO_LABEL_CAT = { equipo: 'Teléfono', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
 
-export async function generarPDFVendedoresPorCategoria(reporte) {
+export async function generarPDFVendedoresPorCategoria(reporte, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Ventas por Categoria de Producto (por Vendedor)', reporte.desde, reporte.hasta);
 
@@ -470,12 +510,16 @@ export async function generarPDFVendedoresPorCategoria(reporte) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Vendedores-Por-Categoria_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Vendedores-Por-Categoria_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Vendedores-Por-Categoria_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Vendedores: Estadisticas ----------------
 
-export async function generarPDFVendedoresEstadisticas(reporte) {
+export async function generarPDFVendedoresEstadisticas(reporte, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Estadisticas de Vendedores', reporte.desde, reporte.hasta);
 
@@ -498,12 +542,16 @@ export async function generarPDFVendedoresEstadisticas(reporte) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Vendedores-Estadisticas_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Vendedores-Estadisticas_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Vendedores-Estadisticas_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Ventas: Transacciones ----------------
 
-export async function generarPDFVentasTransacciones(reporte) {
+export async function generarPDFVentasTransacciones(reporte, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Transacciones — Resumen Diario', reporte.desde, reporte.hasta);
 
@@ -524,12 +572,16 @@ export async function generarPDFVentasTransacciones(reporte) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Ventas-Transacciones_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Ventas-Transacciones_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Ventas-Transacciones_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Ventas: Cierre diario ----------------
 
-export async function generarPDFVentasCierreDiario(reporte) {
+export async function generarPDFVentasCierreDiario(reporte, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
@@ -557,12 +609,16 @@ export async function generarPDFVentasCierreDiario(reporte) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Cierre-Ventas-Diario_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Cierre-Ventas-Diario_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Cierre-Ventas-Diario_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Ventas: Relacion de ventas ----------------
 
-export async function generarPDFVentasRelacion(reporte) {
+export async function generarPDFVentasRelacion(reporte, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, `Relación de Ventas — ${AGRUPACION_LABEL[reporte.agrupacion] || ''}`, reporte.desde, reporte.hasta);
 
@@ -583,12 +639,16 @@ export async function generarPDFVentasRelacion(reporte) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Ventas-Relacion_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Ventas-Relacion_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Ventas-Relacion_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Ventas: Transacciones por cliente ----------------
 
-export async function generarPDFVentasPorCliente(cliente, facturas) {
+export async function generarPDFVentasPorCliente(cliente, facturas, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
@@ -615,12 +675,16 @@ export async function generarPDFVentasPorCliente(cliente, facturas) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Transacciones-Cliente_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Transacciones-Cliente_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Transacciones-Cliente_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Impuestos: Libro de Ventas IVA ----------------
 
-export async function generarPDFLibroVentasIva(reporte, desde, hasta) {
+export async function generarPDFLibroVentasIva(reporte, desde, hasta, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Libro de Ventas IVA', desde, hasta);
 
@@ -652,12 +716,16 @@ export async function generarPDFLibroVentasIva(reporte, desde, hasta) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Libro-Ventas-IVA_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Libro-Ventas-IVA_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Libro-Ventas-IVA_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
 
 // ---------------- Impuestos: Libro de Compras IVA ----------------
 
-export async function generarPDFLibroComprasIva(reporte, desde, hasta) {
+export async function generarPDFLibroComprasIva(reporte, desde, hasta, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Libro de Compras IVA', desde, hasta);
 
@@ -689,5 +757,9 @@ export async function generarPDFLibroComprasIva(reporte, desde, hasta) {
     margin: { left: 10, right: 10 }
   });
 
-  await guardarYAbrirPDF(doc, `Libro-Compras-IVA_${fechaParaNombreArchivo()}`, 'Reportes');
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Libro-Compras-IVA_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Libro-Compras-IVA_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
 }
