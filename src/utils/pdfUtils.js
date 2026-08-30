@@ -28,7 +28,9 @@ export async function guardarYAbrirPDF(doc, nombreArchivo, subcarpeta) {
 }
 
 // Igual que guardarYAbrirPDF, pero ademas dispara la impresion automaticamente (sin que el
-// usuario tenga que abrir el archivo manualmente y buscar la opcion de imprimir).
+// usuario tenga que abrir el archivo manualmente y buscar la opcion de imprimir). Si no hay
+// ninguna impresora fisica conectada, el proceso principal no intenta imprimir (para no
+// disparar el dialogo de "Guardar como" de una impresora virtual) y aqui se avisa de eso.
 export async function guardarAbrirEImprimirPDF(doc, nombreArchivo, subcarpeta) {
   try {
     const arrayBuffer = doc.output('arraybuffer');
@@ -36,6 +38,8 @@ export async function guardarAbrirEImprimirPDF(doc, nombreArchivo, subcarpeta) {
     const res = await window.api.guardarAbrirEImprimirPDF(nombreArchivo, base64, subcarpeta);
     if (!res.ok) {
       alert(res.message || 'No se pudo guardar el PDF');
+    } else if (res.impreso === false && res.message) {
+      alert(res.message);
     }
     return res;
   } catch (err) {
