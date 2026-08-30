@@ -182,6 +182,10 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
   const colorAcento = esCargo ? [11, 79, 158] : [180, 35, 24];
   const titulo = esCargo ? 'COMPROBANTE DE CARGO DE INVENTARIO' : 'COMPROBANTE DE DESCARGO DE INVENTARIO';
   const prefijo = esCargo ? 'CAR' : 'DES';
+  // El numero de documento secuencial (independiente para Cargo y para Descargo) se pasa por
+  // opciones.numeroDocumento; si no viene (documentos antiguos generados antes de que
+  // existiera este contador), se usa el id interno como respaldo para no romper nada.
+  const numeroMostrado = opciones.numeroDocumento != null ? opciones.numeroDocumento : encabezadoId;
 
   dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88 });
 
@@ -190,7 +194,7 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
   doc.setTextColor(...colorAcento);
   doc.text(titulo, 200, 15, { align: 'right' });
   doc.setFontSize(10);
-  doc.text(`N°: ${prefijo}-${String(encabezadoId).padStart(5, '0')}`, 200, 21, { align: 'right' });
+  doc.text(`N°: ${prefijo}-${String(numeroMostrado).padStart(6, '0')}`, 200, 21, { align: 'right' });
   doc.setTextColor(0, 0, 0);
 
   const primero = registros[0] || {};
@@ -294,7 +298,7 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
   doc.setTextColor(140);
   doc.text(`Documento generado por el sistema el ${new Date().toLocaleString('es-VE')}.`, 10, 285);
 
-  const nombreArchivo = `${prefijo}-${String(encabezadoId).padStart(5, '0')}`;
+  const nombreArchivo = `${prefijo}-${String(numeroMostrado).padStart(6, '0')}`;
   if (opciones.imprimir) {
     await guardarAbrirEImprimirPDF(doc, nombreArchivo, 'Cargos y Descargos');
   } else {
