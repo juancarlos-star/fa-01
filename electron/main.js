@@ -279,6 +279,16 @@ ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subca
   try {
     const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
     shell.showItemInFolder(filePath);
+    // El Explorador de Windows que acaba de abrirse le roba el foco del sistema operativo a la
+    // ventana de MoviSync. Sin este refocus explicito, la ventana se queda "inactiva" para
+    // Windows -aunque se vea normal en pantalla- y deja de recibir lo que se escribe en
+    // CUALQUIER campo, hasta que el usuario le hace click manualmente. El setTimeout le da
+    // tiempo a Windows de terminar de abrir el Explorador antes de reclamar el foco de vuelta
+    // (si se llama de inmediato, a veces el propio Explorador lo vuelve a tomar un instante
+    // despues, dejando el bug intacto).
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus();
+    }, 400);
     return { ok: true, path: filePath };
   } catch (err) {
     console.error('Error guardando PDF', err);
@@ -297,15 +307,25 @@ ipcMain.handle('pdf:guardarAbrirEImprimir', async (event, { nombreArchivo, base6
     const impresora = await buscarImpresoraFisica(ventanaSonda);
     if (!ventanaSonda.isDestroyed()) ventanaSonda.close();
 
+    const refocusMainWindow = () => {
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus();
+      }, 400);
+    };
+
     if (!impresora) {
       // No hay impresora fisica: se guarda y se muestra en el explorador de archivos (igual que
       // "guardarYAbrir"), pero NUNCA se intenta imprimir ni se abre ningun visor -eso es lo que
       // disparaba el dialogo fantasma de "Guardar como" en equipos sin impresora fisica.
       shell.showItemInFolder(filePath);
+      refocusMainWindow();
       return { ok: true, path: filePath, impreso: false, message: 'No se detectó ninguna impresora física conectada. El documento se guardó en Descargas; ábrelo para imprimirlo manualmente cuando conectes una impresora.' };
     }
     const impreso = await imprimirPdfEnSegundoPlano(filePath, impresora);
     if (!impreso) shell.showItemInFolder(filePath);
+    // Se refuerza el foco tambien cuando SI se imprimio: la ventana oculta de impresion, aunque
+    // nunca sea visible, puede dejar a Windows con la duda de cual ventana esta realmente activa.
+    refocusMainWindow();
     return { ok: true, path: filePath, impreso };
   } catch (err) {
     console.error('Error guardando/imprimiendo PDF', err);
