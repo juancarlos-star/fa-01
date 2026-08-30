@@ -350,11 +350,61 @@ function SeccionBaseDatos() {
     setMensajeBackup(res.mensaje);
   };
 
+  // --- Copia de seguridad automatica + correo de resumen diario ---
+  // Estado propio de esta seccion (no comparte el "form" de Datos de Tienda/Cotizacion/Factura)
+  // porque son campos sin nada que ver con esos, igual que ya hace la seccion de Depositos.
+  const [correo, setCorreo] = useState({ activo: false, destino: '', remitente: '', password: '' });
+  const [cargandoCorreo, setCargandoCorreo] = useState(true);
+  const [guardandoCorreo, setGuardandoCorreo] = useState(false);
+  const [probandoCorreo, setProbandoCorreo] = useState(false);
+  const [mensajeCorreo, setMensajeCorreo] = useState('');
+  const [mostrarPassword, setMostrarPassword] = useState(false);
+
+  useEffect(() => {
+    window.api.getSettings().then((data) => {
+      setCorreo({
+        activo: data.backup_email_activo === '1',
+        destino: data.backup_email_destino || '',
+        remitente: data.backup_email_remitente || '',
+        password: data.backup_email_password || ''
+      });
+      setCargandoCorreo(false);
+    });
+  }, []);
+
+  const handleGuardarCorreo = async (e) => {
+    e.preventDefault();
+    setMensajeCorreo('');
+    setGuardandoCorreo(true);
+    try {
+      await window.api.updateSettings({
+        backup_email_activo: correo.activo ? '1' : '0',
+        backup_email_destino: correo.destino.trim(),
+        backup_email_remitente: correo.remitente.trim(),
+        backup_email_password: correo.password
+      });
+      setMensajeCorreo('✅ Configuración de correo guardada.');
+    } finally {
+      setGuardandoCorreo(false);
+    }
+  };
+
+  const handleProbarCorreo = async () => {
+    setMensajeCorreo('');
+    setProbandoCorreo(true);
+    try {
+      const res = await window.api.enviarCorreoPrueba(correo.destino.trim(), correo.remitente.trim(), correo.password);
+      setMensajeCorreo(res.ok ? '✅ Correo de prueba enviado. Revisa la bandeja de entrada (y spam) de ' + correo.destino : '❌ ' + res.message);
+    } finally {
+      setProbandoCorreo(false);
+    }
+  };
+
   return (
     <div>
       <h1>Bases de datos</h1>
       <div className="form-box" style={{ maxWidth: '460px' }}>
-        <h3 style={{ marginTop: 0 }}>Respaldo de base de datos</h3>
+        <h3 style={{ marginTop: 0 }}>Respaldo manual</h3>
         <p style={{ fontSize: '0.85rem', color: '#666' }}>
           Guarda una copia de toda la informacion (inventario, clientes, facturas, gastos) en un archivo que puedes
           guardar en un USB o en la nube. Hazlo periodicamente.
@@ -363,6 +413,67 @@ function SeccionBaseDatos() {
         <button type="button" onClick={handleRestaurar} style={{ marginLeft: '8px' }}>Restaurar respaldo</button>
         {mensajeBackup && <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>{mensajeBackup}</p>}
       </div>
+
+      <form className="form-box" onSubmit={handleGuardarCorreo} style={{ maxWidth: '460px', marginTop: '1.2rem' }}>
+        <h3 style={{ marginTop: 0 }}>Copia de seguridad automática por correo</h3>
+        <p style={{ fontSize: '0.85rem', color: '#666' }}>
+          Cada vez que cierres MoviSync, se guarda automáticamente un respaldo local en tu carpeta
+          "Documentos/MoviSync/Backups". Si activas esto además, ese mismo día también se envía por
+          correo un resumen (ventas, facturas e inventario del día) con el respaldo adjunto — como
+          mucho una vez por día, aunque cierres el programa varias veces.
+        </p>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={correo.activo}
+            onChange={(e) => setCorreo({ ...correo, activo: e.target.checked })}
+          />
+          Enviar resumen y respaldo diario por correo
+        </label>
+
+        <label style={{ marginTop: '10px' }}>Correo de destino (a quién le llega el resumen)</label>
+        <input
+          type="email"
+          value={correo.destino}
+          onChange={(e) => setCorreo({ ...correo, destino: e.target.value })}
+          placeholder="dueño@ejemplo.com"
+        />
+
+        <label>Correo remitente (cuenta de Gmail que envía)</label>
+        <input
+          type="email"
+          value={correo.remitente}
+          onChange={(e) => setCorreo({ ...correo, remitente: e.target.value })}
+          placeholder="tunegocio@gmail.com"
+        />
+
+        <label>Contraseña de aplicación de Gmail</label>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <input
+            type={mostrarPassword ? 'text' : 'password'}
+            value={correo.password}
+            onChange={(e) => setCorreo({ ...correo, password: e.target.value })}
+            placeholder="xxxx xxxx xxxx xxxx"
+            style={{ flex: 1 }}
+          />
+          <button type="button" onClick={() => setMostrarPassword((v) => !v)}>{mostrarPassword ? 'Ocultar' : 'Ver'}</button>
+        </div>
+        <p style={{ fontSize: '0.75rem', color: '#98a2b3', margin: '4px 0 0' }}>
+          No es la contraseña normal de Gmail. Se genera en la cuenta de Google, en
+          "Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones".
+        </p>
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+          <button type="submit" disabled={guardandoCorreo || cargandoCorreo}>
+            {guardandoCorreo ? 'Guardando...' : 'Guardar configuración'}
+          </button>
+          <button type="button" onClick={handleProbarCorreo} disabled={probandoCorreo || cargandoCorreo}>
+            {probandoCorreo ? 'Enviando...' : 'Enviar correo de prueba'}
+          </button>
+        </div>
+        {mensajeCorreo && <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>{mensajeCorreo}</p>}
+      </form>
     </div>
   );
 }
