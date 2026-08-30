@@ -74,6 +74,8 @@ contextBridge.exposeInMainWorld('api', {
   crearTraslado: (data) => ipcRenderer.invoke('traslados:crear', data),
   listarTraslados: (filtros) => ipcRenderer.invoke('traslados:listar', filtros),
   detalleTraslado: (id) => ipcRenderer.invoke('traslados:detalle', { id }),
+  listarCargosDescargos: (filtros) => ipcRenderer.invoke('cargosDescargos:listar', filtros),
+  detalleCargoDescargo: (id) => ipcRenderer.invoke('cargosDescargos:detalle', { id }),
   // Facturacion
   crearFactura: (payload) => ipcRenderer.invoke('facturas:crear', payload),
   listFacturas: () => ipcRenderer.invoke('facturas:list'),

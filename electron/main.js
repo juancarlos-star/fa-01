@@ -1242,11 +1242,16 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
   }
 
   let encabezadoId;
+  let numeroDocumento;
   const registros = [];
   const transaccion = db.transaction(() => {
+    numeroDocumento = db.prepare(
+      'SELECT COALESCE(MAX(numero_documento), 0) + 1 AS proximo FROM cargos_descargos_encabezado WHERE tipo_documento = ?'
+    ).get(tipoDocumento).proximo;
+
     encabezadoId = db.prepare(
-      `INSERT INTO cargos_descargos_encabezado (tipo_documento, motivo, usuario, created_at) VALUES (?, ?, ?, datetime('now','localtime'))`
-    ).run(tipoDocumento, (motivo || '').trim() || null, usuario || '').lastInsertRowid;
+      `INSERT INTO cargos_descargos_encabezado (tipo_documento, motivo, usuario, numero_documento, created_at) VALUES (?, ?, ?, ?, datetime('now','localtime'))`
+    ).run(tipoDocumento, (motivo || '').trim() || null, usuario || '', numeroDocumento).lastInsertRowid;
 
     for (const it of items) {
       const product = getProducto(it.productId);
@@ -1320,7 +1325,72 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
   });
   transaccion();
 
-  return { ok: true, encabezadoId, registros };
+  return { ok: true, encabezadoId, numeroDocumento, registros };
+});
+
+// ---------- IPC: Historial de documentos de Cargo/Descargo (por encabezado, no por renglon) ----------
+ipcMain.handle('cargosDescargos:listar', (event, { desde, hasta, tipoDocumento } = {}) => {
+  const db = getDb();
+  let sql = `
+    SELECT e.*,
+      CASE WHEN e.tipo_documento = 'cargo'
+        THEN (SELECT deposito_id FROM compras WHERE encabezado_id = e.id LIMIT 1)
+        ELSE (SELECT deposito_id FROM descargos WHERE encabezado_id = e.id LIMIT 1)
+      END AS deposito_id,
+      CASE WHEN e.tipo_documento = 'cargo'
+        THEN (SELECT COUNT(*) FROM compras WHERE encabezado_id = e.id)
+        ELSE (SELECT COUNT(*) FROM descargos WHERE encabezado_id = e.id)
+      END AS total_renglones,
+      CASE WHEN e.tipo_documento = 'cargo'
+        THEN (SELECT COALESCE(SUM(cantidad), 0) FROM compras WHERE encabezado_id = e.id)
+        ELSE (SELECT COALESCE(SUM(cantidad), 0) FROM descargos WHERE encabezado_id = e.id)
+      END AS total_items,
+      CASE WHEN e.tipo_documento = 'cargo'
+        THEN (SELECT COALESCE(SUM(total_usd), 0) FROM compras WHERE encabezado_id = e.id)
+        ELSE 0
+      END AS total_usd
+    FROM cargos_descargos_encabezado e
+    WHERE 1=1
+  `;
+  const params = [];
+  if (desde) { sql += ' AND date(e.created_at) >= date(?)'; params.push(desde); }
+  if (hasta) { sql += ' AND date(e.created_at) <= date(?)'; params.push(hasta); }
+  if (tipoDocumento) { sql += ' AND e.tipo_documento = ?'; params.push(tipoDocumento); }
+  sql += ' ORDER BY e.created_at DESC';
+
+  const filas = db.prepare(sql).all(...params);
+  const depositos = db.prepare('SELECT id, nombre FROM depositos').all();
+  const nombreDeposito = {};
+  depositos.forEach((d) => { nombreDeposito[d.id] = d.nombre; });
+  return filas.map((f) => ({ ...f, deposito_nombre: f.deposito_id ? (nombreDeposito[f.deposito_id] || '—') : '—' }));
+});
+
+ipcMain.handle('cargosDescargos:detalle', (event, { id }) => {
+  const db = getDb();
+  const encabezado = db.prepare('SELECT * FROM cargos_descargos_encabezado WHERE id = ?').get(id);
+  if (!encabezado) return { ok: false, message: 'Documento no encontrado' };
+
+  const items = encabezado.tipo_documento === 'cargo'
+    ? db.prepare(
+        `SELECT c.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo, d.nombre AS deposito_nombre
+         FROM compras c
+         LEFT JOIN products p ON p.id = c.product_id
+         LEFT JOIN inventory_units u ON u.id = c.unit_id
+         LEFT JOIN depositos d ON d.id = c.deposito_id
+         WHERE c.encabezado_id = ?
+         ORDER BY c.id ASC`
+      ).all(id)
+    : db.prepare(
+        `SELECT dsc.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo, d.nombre AS deposito_nombre
+         FROM descargos dsc
+         LEFT JOIN products p ON p.id = dsc.product_id
+         LEFT JOIN inventory_units u ON u.id = dsc.unit_id
+         LEFT JOIN depositos d ON d.id = dsc.deposito_id
+         WHERE dsc.encabezado_id = ?
+         ORDER BY dsc.id ASC`
+      ).all(id);
+
+  return { ok: true, encabezado, items };
 });
 
 // ---------- IPC: Historial de descargos ----------

@@ -336,6 +336,26 @@ function migrarCargosDescargosEncabezadoSiHaceFalta(database) {
   }
 }
 
+// Numero de documento secuencial para Cargos y Descargos (independiente entre los dos tipos:
+// "Cargo N° 1, 2, 3..." y "Descargo N° 1, 2, 3..." cada uno con su propio contador), igual
+// que ya existia para Traslados (numero_traslado). Antes se usaba el id interno de la fila
+// (compartido entre cargos y descargos, con saltos), lo cual no servia como numero de
+// documento presentable. A los documentos que ya existian se les asigna su numero en orden
+// de creacion, por tipo, para no dejar ninguno sin numero.
+function migrarNumeroDocumentoCargosDescargosSiHaceFalta(database) {
+  const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='cargos_descargos_encabezado'").get();
+  if (!existe) return;
+  if (tieneColumna(database, 'cargos_descargos_encabezado', 'numero_documento')) return;
+  database.exec('ALTER TABLE cargos_descargos_encabezado ADD COLUMN numero_documento INTEGER');
+  ['cargo', 'descargo'].forEach((tipo) => {
+    const filas = database
+      .prepare('SELECT id FROM cargos_descargos_encabezado WHERE tipo_documento = ? ORDER BY created_at ASC, id ASC')
+      .all(tipo);
+    const actualizar = database.prepare('UPDATE cargos_descargos_encabezado SET numero_documento = ? WHERE id = ?');
+    filas.forEach((fila, indice) => actualizar.run(indice + 1, fila.id));
+  });
+}
+
 // Campos adicionales del cliente, para que la ventana de "Cliente nuevo" en Facturacion
 // (identica a la del modulo de Clientes del software Saint) pueda guardar Tipo de Cliente,
 // Movil, las 3 Redes Sociales y Notas, ademas de los campos que ya existian.
@@ -657,6 +677,7 @@ function initDb() {
   migrarComprasSiHaceFalta(database);
   migrarUsersSiHaceFalta(database);
   migrarCargosDescargosEncabezadoSiHaceFalta(database);
+  migrarNumeroDocumentoCargosDescargosSiHaceFalta(database);
   migrarDepositosSiHaceFalta(database);
   migrarPreciosYCodigoProductoSiHaceFalta(database);
   migrarClientesCamposSiHaceFalta(database);
