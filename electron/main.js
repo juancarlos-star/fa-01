@@ -1502,6 +1502,135 @@ ipcMain.handle('depositos:toggleActive', (event, { id }) => {
   return { ok: true };
 });
 
+// ---------- IPC: Traslados entre depositos ----------
+// Un traslado NO es ni una venta ni una compra: solo mueve stock que ya era tuyo de un deposito
+// a otro. Por eso nunca toca costo_promedio_usd, ganancias, ni los reportes de Compras/Ventas -
+// products.stock_cantidad (el TOTAL) tampoco cambia, porque lo que sale de un deposito entra
+// exactamente igual en el otro.
+//
+// items: [{ productId, tipo, descripcion, cantidad, unitIds: [] }]
+//   - accesorio: cantidad se usa (mueve esa cantidad de stock "suelto"), unitIds va vacio.
+//   - equipo/simcard/usim: unitIds trae los ids puntuales de inventory_units a mover (cada
+//     unidad individual, por su IMEI/codigo); cantidad = unitIds.length, por consistencia.
+ipcMain.handle('traslados:crear', (event, { depositoOrigenId, depositoDestinoId, items, nota, usuario }) => {
+  const db = getDb();
+  if (!depositoOrigenId || !depositoDestinoId) return { ok: false, message: 'Selecciona deposito de origen y de destino' };
+  if (Number(depositoOrigenId) === Number(depositoDestinoId)) {
+    return { ok: false, message: 'El deposito de origen y el de destino no pueden ser el mismo' };
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return { ok: false, message: 'Agrega al menos un producto para trasladar' };
+  }
+  const origen = depositoValido(db, depositoOrigenId);
+  const destino = depositoValido(db, depositoDestinoId);
+  if (!origen) return { ok: false, message: 'El deposito de origen no existe' };
+  if (!destino) return { ok: false, message: 'El deposito de destino no existe' };
+
+  // Validar TODO antes de mover nada (para no dejar un traslado a medias si un producto no
+  // tiene stock suficiente en el origen).
+  for (const item of items) {
+    if (item.tipo === 'accesorio') {
+      const disponible = obtenerStockDeposito(db, item.productId, depositoOrigenId) || 0;
+      if ((item.cantidad || 0) <= 0) return { ok: false, message: `Cantidad invalida para ${item.descripcion}` };
+      if (disponible < item.cantidad) {
+        return { ok: false, message: `No hay suficiente stock de "${item.descripcion}" en ${origen.nombre} (disponible: ${disponible})` };
+      }
+    } else {
+      if (!Array.isArray(item.unitIds) || item.unitIds.length === 0) {
+        return { ok: false, message: `Selecciona al menos una unidad de "${item.descripcion}" para trasladar` };
+      }
+      for (const unitId of item.unitIds) {
+        const unidad = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(unitId);
+        if (!unidad) return { ok: false, message: `Una de las unidades de "${item.descripcion}" ya no existe` };
+        if (unidad.estado !== 'disponible') {
+          return { ok: false, message: `La unidad ${unidad.codigo} de "${item.descripcion}" no esta disponible (ya fue vendida o dada de baja)` };
+        }
+        if (Number(unidad.deposito_id) !== Number(depositoOrigenId)) {
+          return { ok: false, message: `La unidad ${unidad.codigo} de "${item.descripcion}" no esta en ${origen.nombre}` };
+        }
+      }
+    }
+  }
+
+  const transaccion = db.transaction(() => {
+    const filaNumero = db.prepare('SELECT COALESCE(MAX(numero_traslado), 0) + 1 AS proximo FROM traslados').get();
+    const numeroTraslado = filaNumero.proximo;
+
+    const traslado = db.prepare(
+      `INSERT INTO traslados (numero_traslado, deposito_origen_id, deposito_destino_id, nota, usuario, created_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))`
+    ).run(numeroTraslado, depositoOrigenId, depositoDestinoId, nota || null, usuario || '');
+    const trasladoId = traslado.lastInsertRowid;
+
+    items.forEach((item) => {
+      if (item.tipo === 'accesorio') {
+        ajustarStockDeposito(db, item.productId, depositoOrigenId, -item.cantidad);
+        ajustarStockDeposito(db, item.productId, depositoDestinoId, item.cantidad);
+        db.prepare(
+          `INSERT INTO traslados_detalle (traslado_id, product_id, tipo, descripcion, unit_id, cantidad)
+           VALUES (?, ?, 'accesorio', ?, NULL, ?)`
+        ).run(trasladoId, item.productId, item.descripcion, item.cantidad);
+      } else {
+        item.unitIds.forEach((unitId) => {
+          db.prepare('UPDATE inventory_units SET deposito_id = ? WHERE id = ?').run(depositoDestinoId, unitId);
+          db.prepare(
+            `INSERT INTO traslados_detalle (traslado_id, product_id, tipo, descripcion, unit_id, cantidad)
+             VALUES (?, ?, ?, ?, ?, 1)`
+          ).run(trasladoId, item.productId, item.tipo, item.descripcion, unitId);
+        });
+      }
+    });
+
+    return { trasladoId, numeroTraslado };
+  });
+
+  try {
+    const resultado = transaccion();
+    return { ok: true, ...resultado };
+  } catch (err) {
+    console.error('Error creando traslado', err);
+    return { ok: false, message: 'Error inesperado creando el traslado: ' + (err?.message || String(err)) };
+  }
+});
+
+ipcMain.handle('traslados:listar', (event, { desde, hasta, depositoId } = {}) => {
+  const db = getDb();
+  let sql = `
+    SELECT t.*, do.nombre AS deposito_origen_nombre, dd.nombre AS deposito_destino_nombre,
+      (SELECT COALESCE(SUM(cantidad), 0) FROM traslados_detalle WHERE traslado_id = t.id) AS total_items
+    FROM traslados t
+    JOIN depositos do ON do.id = t.deposito_origen_id
+    JOIN depositos dd ON dd.id = t.deposito_destino_id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (desde) { sql += ' AND date(t.created_at) >= date(?)'; params.push(desde); }
+  if (hasta) { sql += ' AND date(t.created_at) <= date(?)'; params.push(hasta); }
+  if (depositoId) { sql += ' AND (t.deposito_origen_id = ? OR t.deposito_destino_id = ?)'; params.push(depositoId, depositoId); }
+  sql += ' ORDER BY t.created_at DESC';
+  return db.prepare(sql).all(...params);
+});
+
+ipcMain.handle('traslados:detalle', (event, { id }) => {
+  const db = getDb();
+  const traslado = db.prepare(
+    `SELECT t.*, do.nombre AS deposito_origen_nombre, dd.nombre AS deposito_destino_nombre
+     FROM traslados t
+     JOIN depositos do ON do.id = t.deposito_origen_id
+     JOIN depositos dd ON dd.id = t.deposito_destino_id
+     WHERE t.id = ?`
+  ).get(id);
+  if (!traslado) return { ok: false, message: 'Traslado no encontrado' };
+  const items = db.prepare(
+    `SELECT td.*, u.codigo AS unit_codigo
+     FROM traslados_detalle td
+     LEFT JOIN inventory_units u ON u.id = td.unit_id
+     WHERE td.traslado_id = ?
+     ORDER BY td.id ASC`
+  ).all(id);
+  return { ok: true, traslado, items };
+});
+
 ipcMain.handle('clientes:list', () => {
   const db = getDb();
   return db.prepare('SELECT * FROM clientes ORDER BY nombre').all();

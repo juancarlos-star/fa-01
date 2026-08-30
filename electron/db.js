@@ -237,6 +237,29 @@ function migrarDepositosSiHaceFalta(database) {
       FOREIGN KEY (deposito_id) REFERENCES depositos(id),
       UNIQUE(product_id, deposito_id)
     );
+    CREATE TABLE IF NOT EXISTS traslados (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      numero_traslado INTEGER NOT NULL,
+      deposito_origen_id INTEGER NOT NULL,
+      deposito_destino_id INTEGER NOT NULL,
+      nota TEXT,
+      usuario TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (deposito_origen_id) REFERENCES depositos(id),
+      FOREIGN KEY (deposito_destino_id) REFERENCES depositos(id)
+    );
+    CREATE TABLE IF NOT EXISTS traslados_detalle (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      traslado_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      tipo TEXT NOT NULL,
+      descripcion TEXT NOT NULL,
+      unit_id INTEGER,
+      cantidad INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (traslado_id) REFERENCES traslados(id),
+      FOREIGN KEY (product_id) REFERENCES products(id),
+      FOREIGN KEY (unit_id) REFERENCES inventory_units(id)
+    );
   `);
 
   const totalDepositos = database.prepare('SELECT COUNT(*) AS c FROM depositos').get().c;

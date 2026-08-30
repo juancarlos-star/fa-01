@@ -70,6 +70,10 @@ contextBridge.exposeInMainWorld('api', {
   createDeposito: (data) => ipcRenderer.invoke('depositos:create', data),
   updateDeposito: (id, data) => ipcRenderer.invoke('depositos:update', { id, ...data }),
   toggleDepositoActive: (id) => ipcRenderer.invoke('depositos:toggleActive', { id }),
+
+  crearTraslado: (data) => ipcRenderer.invoke('traslados:crear', data),
+  listarTraslados: (filtros) => ipcRenderer.invoke('traslados:listar', filtros),
+  detalleTraslado: (id) => ipcRenderer.invoke('traslados:detalle', { id }),
   // Facturacion
   crearFactura: (payload) => ipcRenderer.invoke('facturas:crear', payload),
   listFacturas: () => ipcRenderer.invoke('facturas:list'),
