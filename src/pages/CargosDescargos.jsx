@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
 import { generarCargoDescargoDocumentoPDF } from '../utils/generarCargoDescargoPDF.js';
+import { fmt } from '../utils/format.js';
 
 const TIPOS = [
   { key: 'equipo', label: 'Teléfonos (IMEI)' },
@@ -43,6 +44,10 @@ function nuevaKeyItem() {
 }
 
 export default function CargosDescargos({ currentUser }) {
+  // 'nuevo' | 'historial' -- igual que en Traslados, esta pantalla tiene dos vistas: armar un
+  // documento nuevo, o consultar el historial de documentos ya registrados.
+  const [vista, setVista] = useState('nuevo');
+
   // ---- El documento que se esta armando: puede incluir varios productos y tipos distintos
   // (equipos, simcards, usim y accesorios mezclados) en un mismo procedimiento. Nada se
   // guarda en la base de datos hasta que se presiona "Registrar documento": todo lo de abajo
@@ -171,11 +176,11 @@ export default function CargosDescargos({ currentUser }) {
       // problema de archivos duplicados " (1)" y visor de PDF confundido que se corrigio en
       // Facturacion).
       try {
-        await generarCargoDescargoDocumentoPDF(res.encabezadoId, res.registros, tipoDocumento, settings, { imprimir: true });
+        await generarCargoDescargoDocumentoPDF(res.encabezadoId, res.registros, tipoDocumento, settings, { imprimir: true, numeroDocumento: res.numeroDocumento });
       } catch (errImpresion) {
         console.error('Error al imprimir el documento automaticamente:', errImpresion);
       }
-      setConfirmacion({ encabezadoId: res.encabezadoId, registros: res.registros, tipoDocumento });
+      setConfirmacion({ encabezadoId: res.encabezadoId, numeroDocumento: res.numeroDocumento, registros: res.registros, tipoDocumento });
     } catch (err) {
       setError('Ocurrio un error inesperado al registrar el documento: ' + (err?.message || String(err)));
     } finally {
@@ -187,6 +192,17 @@ export default function CargosDescargos({ currentUser }) {
     setConfirmacion(null);
     setComprobanteAbierto(null);
   };
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'F10' && !e.repeat && vista === 'nuevo' && !confirmacion) {
+        e.preventDefault();
+        handleRegistrarDocumento();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 
   if (comprobanteAbierto) {
     return (
@@ -200,89 +216,166 @@ export default function CargosDescargos({ currentUser }) {
 
   if (confirmacion) {
     const esCargo = confirmacion.tipoDocumento === 'cargo';
+    const prefijoDoc = esCargo ? 'Cargo' : 'Descargo';
     const totalConfirmacion = confirmacion.registros.reduce((acc, r) => acc + (r.total_usd || 0), 0);
     return (
-      <div>
-        <h1>Documento registrado</h1>
-        <div className="form-box" style={{ maxWidth: '620px' }}>
-          <p>
-            <strong>N° de documento:</strong> {esCargo ? 'CAR' : 'DES'}-{String(confirmacion.encabezadoId).padStart(5, '0')}
-          </p>
-          <p><strong>Articulos incluidos:</strong> {confirmacion.registros.length}</p>
-          {esCargo && <p><strong>Total del documento:</strong> ${totalConfirmacion.toFixed(2)}</p>}
-          <ul style={{ listStyle: 'none', padding: 0, maxHeight: '260px', overflowY: 'auto', margin: '0.75rem 0' }}>
+      <div className="pos-receipt">
+        <div className="pos-receipt-header">
+          <div className="check">✓</div>
+          <h1>{prefijoDoc} registrado</h1>
+        </div>
+        <div className="pos-receipt-body">
+          <div className="pos-receipt-row">
+            <span>N° de documento</span>
+            <strong>{prefijoDoc} N° {String(confirmacion.numeroDocumento ?? confirmacion.encabezadoId).padStart(6, '0')}</strong>
+          </div>
+          <div className="pos-receipt-row">
+            <span>Artículos incluidos</span>
+            <strong>{confirmacion.registros.length}</strong>
+          </div>
+          {esCargo && (
+            <div className="pos-receipt-row">
+              <span>Total del documento</span>
+              <strong>${fmt(totalConfirmacion)}</strong>
+            </div>
+          )}
+          <ul style={{ listStyle: 'none', padding: 0, maxHeight: '220px', overflowY: 'auto', margin: '10px 0 0' }}>
             {confirmacion.registros.map((r) => (
-              <li key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.3rem 0', borderBottom: '1px solid #eee' }}>
-                <span>
-                  {r.producto_nombre} {r.unidad_codigo ? `— ${r.unidad_codigo}` : `(x${r.cantidad})`}
-                </span>
-                <button type="button" onClick={() => setComprobanteAbierto(r)}>Ver comprobante</button>
+              <li key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.35rem 0', borderBottom: '1px solid #eee', fontSize: '0.85rem' }}>
+                <span>{r.producto_nombre} {r.unidad_codigo ? `— ${r.unidad_codigo}` : `(x${r.cantidad})`}</span>
+                <button type="button" className="pos-btn-link" onClick={() => setComprobanteAbierto(r)}>Ver</button>
               </li>
             ))}
           </ul>
+        </div>
+        <div className="pos-receipt-actions">
+          <button className="btn-ghost" onClick={() => setVista('historial')}>Ver historial</button>
           <button
+            className="btn-ghost"
+            disabled={generandoPDF}
             onClick={async () => {
               setGenerandoPDF(true);
               try {
-                await generarCargoDescargoDocumentoPDF(confirmacion.encabezadoId, confirmacion.registros, confirmacion.tipoDocumento, settings);
+                await generarCargoDescargoDocumentoPDF(confirmacion.encabezadoId, confirmacion.registros, confirmacion.tipoDocumento, settings, { numeroDocumento: confirmacion.numeroDocumento });
               } finally {
                 setGenerandoPDF(false);
               }
             }}
-            disabled={generandoPDF}
-            style={{ marginRight: '8px' }}
           >
-            {generandoPDF ? 'Generando...' : 'Descargar PDF del documento'}
+            {generandoPDF ? 'Generando...' : 'Descargar PDF'}
           </button>
-          <button onClick={nuevoDocumento}>Hacer otro documento</button>
+          <button className="btn-primary" onClick={nuevoDocumento}>Hacer otro documento</button>
         </div>
       </div>
     );
   }
 
+  if (vista === 'historial') {
+    return <HistorialCargosDescargos onVolver={() => setVista('nuevo')} settings={settings} />;
+  }
+
+  const esCargoActivo = tipoDocumento === 'cargo';
+
   return (
-    <div>
-      <h1>Cargos y Descargos de inventario</h1>
-      <p style={{ color: '#666', fontSize: '0.85rem', maxWidth: '650px' }}>
-        Todo ingreso o baja de stock fuera de una compra formal a proveedor (modulo Compras) se hace aqui.
-        Un mismo documento puede incluir varios articulos de productos distintos (por ejemplo, 4 iPhone,
-        3 SIM Card y 3 estuches a la vez): agregalos abajo uno por uno y al final registra todo el
-        documento de una sola vez. Solo el administrador tiene acceso a este modulo.
-      </p>
+    <div className="pos-page">
+      <div className="pos-topbar">
+        <span className="pos-topbar-side">MODULO DE INVENTARIO</span>
+        <span className="pos-topbar-center">{esCargoActivo ? 'CARGO' : 'DESCARGO'} DE INVENTARIO</span>
+        <button
+          type="button"
+          onClick={() => setVista('historial')}
+          style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', borderRadius: '4px', padding: '4px 10px', fontSize: '0.8rem', cursor: 'pointer' }}
+        >
+          Ver historial
+        </button>
+      </div>
 
-      <div className="form-box" style={{ maxWidth: '500px' }}>
-        <label>Deposito de esta operacion</label>
-        <select value={depositoId} onChange={(e) => cambiarDeposito(e.target.value)} style={{ display: 'block', marginBottom: '0.75rem' }}>
-          {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
-          {depositos.map((d) => (
-            <option key={d.id} value={d.id}>{d.codigo} - {d.nombre}</option>
-          ))}
-        </select>
+      <div className="pos-panels">
+        <div className="pos-left">
+          <div className="pos-field">
+            <label>Depósito de esta operación <span className="required-mark">*</span></label>
+            <select value={depositoId} onChange={(e) => cambiarDeposito(e.target.value)}>
+              {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
+              {depositos.map((d) => (
+                <option key={d.id} value={d.id}>{d.codigo} - {d.nombre}</option>
+              ))}
+            </select>
+          </div>
 
-        <label>Tipo de documento</label>
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
-          <button
-            type="button"
-            onClick={() => cambiarTipoDocumento('cargo')}
-            style={{
-              padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
-              backgroundColor: tipoDocumento === 'cargo' ? '#027a48' : '#e2e8f0', color: tipoDocumento === 'cargo' ? '#fff' : '#111'
-            }}
-          >
-            Cargo (agregar stock)
-          </button>
-          <button
-            type="button"
-            onClick={() => cambiarTipoDocumento('descargo')}
-            style={{
-              padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
-              backgroundColor: tipoDocumento === 'descargo' ? '#b42318' : '#e2e8f0', color: tipoDocumento === 'descargo' ? '#fff' : '#111'
-            }}
-          >
-            Descargo (dar de baja)
-          </button>
+          <div className="pos-field">
+            <label>Tipo de documento</label>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => cambiarTipoDocumento('cargo')}
+                style={{
+                  padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
+                  backgroundColor: tipoDocumento === 'cargo' ? '#027a48' : '#e2e8f0', color: tipoDocumento === 'cargo' ? '#fff' : '#111'
+                }}
+              >
+                Cargo (agregar stock)
+              </button>
+              <button
+                type="button"
+                onClick={() => cambiarTipoDocumento('descargo')}
+                style={{
+                  padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
+                  backgroundColor: tipoDocumento === 'descargo' ? '#b42318' : '#e2e8f0', color: tipoDocumento === 'descargo' ? '#fff' : '#111'
+                }}
+              >
+                Descargo (dar de baja)
+              </button>
+            </div>
+          </div>
+
+          <div className="pos-field">
+            <label>Usuario</label>
+            <input value={currentUser?.username || ''} disabled />
+          </div>
+
+          {tipoDocumento === 'descargo' && (
+            <div className="pos-field">
+              <label>Motivo del descargo <span className="required-mark">*</span></label>
+              <textarea
+                value={motivoDocumento}
+                onChange={(e) => setMotivoDocumento(e.target.value)}
+                rows={2}
+                style={{ width: '100%', fontFamily: 'inherit', resize: 'vertical' }}
+                placeholder="Ej: dañado, perdido, robado, ajuste de inventario"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="pos-mid">
+          {depositoId ? (
+            <div className="pos-stripe">
+              Depósito: {depositos.find((d) => String(d.id) === String(depositoId))?.nombre || '—'}
+            </div>
+          ) : (
+            <div className="pos-stripe placeholder">Elige el depósito de la operación</div>
+          )}
+          <div className="pos-stripe">
+            {esCargoActivo ? 'Cargo: se agrega stock nuevo al inventario' : 'Descargo: se da de baja stock existente'}
+          </div>
+        </div>
+
+        <div className="pos-right">
+          <div className="pos-right-header">Documento</div>
+          <div className="pos-right-row total-final">
+            <span>Artículos</span>
+            <span>{itemsDocumento.length}</span>
+          </div>
+          {esCargoActivo && (
+            <div className="pos-right-footer">
+              <span>Total del documento</span>
+              <span>${fmt(totalDocumentoUsd)}</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {error && <div className="pos-error-banner">{error}</div>}
 
       {tipoDocumento === 'cargo' ? (
         <AgregarItemsCargo onAgregar={agregarItem} itemsDocumento={itemsDocumento} depositoId={depositoId} />
@@ -297,26 +390,9 @@ export default function CargosDescargos({ currentUser }) {
         totalUsd={totalDocumentoUsd}
       />
 
-      <div className="form-box" style={{ maxWidth: '600px' }}>
-        {tipoDocumento === 'descargo' && (
-          <>
-            <label>Motivo del descargo (aplica a todo el documento) *</label>
-            <textarea
-              value={motivoDocumento}
-              onChange={(e) => setMotivoDocumento(e.target.value)}
-              rows={2}
-              style={{ width: '100%' }}
-              placeholder="Ej: dañado, perdido, robado, ajuste de inventario"
-            />
-          </>
-        )}
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-        <button
-          onClick={handleRegistrarDocumento}
-          disabled={enviando || !hayItems}
-          style={{ marginTop: '0.75rem', padding: '0.5rem 1.2rem', fontWeight: 'bold' }}
-        >
-          {enviando ? 'Registrando...' : `Registrar documento (${itemsDocumento.length} articulo${itemsDocumento.length === 1 ? '' : 's'})`}
+      <div className="pos-footer-actions">
+        <button type="button" className="pos-btn-totalizar" onClick={handleRegistrarDocumento} disabled={enviando || !hayItems}>
+          {enviando ? 'Registrando...' : `F10 Registrar documento (${itemsDocumento.length})`}
         </button>
       </div>
     </div>
@@ -326,47 +402,47 @@ export default function CargosDescargos({ currentUser }) {
 // ---------------- Tabla del documento en borrador ----------------
 
 function DocumentoDraft({ tipoDocumento, items, onQuitar, totalUsd }) {
-  if (items.length === 0) {
-    return (
-      <div className="form-box" style={{ maxWidth: '600px', color: '#666' }}>
-        Todavia no has agregado ningun articulo a este documento.
-      </div>
-    );
-  }
   const esCargo = tipoDocumento === 'cargo';
   return (
-    <div className="form-box" style={{ maxWidth: '700px' }}>
-      <h3>Articulos del documento ({items.length})</h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div className="pos-table-wrap" style={{ marginTop: '1rem', maxHeight: 'none' }}>
+      <table className="pos-table">
         <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-            <th style={{ padding: '0.4rem' }}>Producto</th>
-            <th>Tipo</th>
-            <th>Codigo / Cantidad</th>
-            {esCargo && <th>Costo unit.</th>}
-            {esCargo && <th>Subtotal</th>}
-            <th></th>
+          <tr>
+            <th>Producto</th>
+            <th style={{ width: '14%' }}>Tipo</th>
+            <th style={{ width: '22%' }}>Código / Cantidad</th>
+            {esCargo && <th style={{ width: '12%' }}>Costo unit.</th>}
+            {esCargo && <th style={{ width: '12%' }}>Subtotal</th>}
+            <th style={{ width: '48px' }}></th>
           </tr>
         </thead>
         <tbody>
-          {items.map((it) => {
-            const cantidad = it.esAccesorio ? (parseInt(it.cantidad, 10) || 0) : 1;
-            const costo = parseFloat(it.costoUnitario) || 0;
-            return (
-              <tr key={it.key} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.4rem' }}>{it.productoNombre}</td>
-                <td>{it.tipo}</td>
-                <td>{it.esAccesorio ? `x${it.cantidad}` : it.codigo}</td>
-                {esCargo && <td>${costo.toFixed(2)}</td>}
-                {esCargo && <td>${(costo * cantidad).toFixed(2)}</td>}
-                <td><button type="button" onClick={() => onQuitar(it.key)}>Quitar</button></td>
-              </tr>
-            );
-          })}
+          {items.length === 0 ? (
+            <tr>
+              <td colSpan={esCargo ? 6 : 4} style={{ textAlign: 'center', color: '#98a2b3', padding: '1.2rem' }}>
+                Todavía no has agregado ningún artículo a este documento.
+              </td>
+            </tr>
+          ) : (
+            items.map((it) => {
+              const cantidad = it.esAccesorio ? (parseInt(it.cantidad, 10) || 0) : 1;
+              const costo = parseFloat(it.costoUnitario) || 0;
+              return (
+                <tr key={it.key}>
+                  <td>{it.productoNombre}</td>
+                  <td>{it.tipo}</td>
+                  <td>{it.esAccesorio ? `x${it.cantidad}` : it.codigo}</td>
+                  {esCargo && <td>${costo.toFixed(2)}</td>}
+                  {esCargo && <td>${(costo * cantidad).toFixed(2)}</td>}
+                  <td><button type="button" className="pos-remove-btn" onClick={() => onQuitar(it.key)}>×</button></td>
+                </tr>
+              );
+            })
+          )}
         </tbody>
       </table>
-      {esCargo && (
-        <p style={{ textAlign: 'right', fontWeight: 'bold', marginTop: '0.5rem' }}>
+      {esCargo && items.length > 0 && (
+        <p style={{ textAlign: 'right', fontWeight: 'bold', padding: '0.6rem 1rem' }}>
           Total del documento: ${totalUsd.toFixed(2)}
         </p>
       )}
@@ -852,5 +928,188 @@ function AgregarItemsDescargo({ onAgregar, itemsDocumento, depositoId }) {
         {errorAccesorio && <p style={{ color: 'red', fontSize: '0.85rem' }}>{errorAccesorio}</p>}
       </div>
     </>
+  );
+}
+
+// ---------------- Historial de documentos de Cargo/Descargo ----------------
+
+function HistorialCargosDescargos({ onVolver, settings }) {
+  const [documentos, setDocumentos] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [filtroTipo, setFiltroTipo] = useState('');
+  const [detalle, setDetalle] = useState(null);
+  const [comprobanteAbierto, setComprobanteAbierto] = useState(null);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  const cargar = useCallback(() => {
+    setCargando(true);
+    window.api.listarCargosDescargos({ tipoDocumento: filtroTipo || undefined }).then((data) => {
+      setDocumentos(data);
+      setCargando(false);
+    });
+  }, [filtroTipo]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const verDetalle = async (id) => {
+    const res = await window.api.detalleCargoDescargo(id);
+    if (res.ok) setDetalle(res);
+  };
+
+  if (comprobanteAbierto) {
+    return (
+      <CargoDescargoDetalle
+        registro={comprobanteAbierto}
+        tipoDocumento={detalle?.encabezado?.tipo_documento}
+        onVolver={() => setComprobanteAbierto(null)}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <div className="pos-topbar">
+        <span className="pos-topbar-side">MODULO DE INVENTARIO</span>
+        <span className="pos-topbar-center">HISTORIAL DE CARGOS Y DESCARGOS</span>
+        <button
+          type="button"
+          onClick={onVolver}
+          style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', borderRadius: '4px', padding: '4px 10px', fontSize: '0.8rem', cursor: 'pointer' }}
+        >
+          + Nuevo documento
+        </button>
+      </div>
+
+      <div style={{ background: '#fff', border: '1px solid #d0d5dd', borderTop: 'none', padding: '16px' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+          {[{ key: '', label: 'Todos' }, { key: 'cargo', label: 'Cargos' }, { key: 'descargo', label: 'Descargos' }].map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFiltroTipo(f.key)}
+              style={{
+                padding: '0.35rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem',
+                backgroundColor: filtroTipo === f.key ? '#0b4f9e' : '#e2e8f0', color: filtroTipo === f.key ? '#fff' : '#111'
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {cargando ? (
+          <p style={{ color: '#98a2b3' }}>Cargando...</p>
+        ) : documentos.length === 0 ? (
+          <p style={{ color: '#98a2b3' }}>Aún no se ha registrado ningún documento.</p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>
+                <th style={{ padding: '6px 4px' }}>Tipo</th>
+                <th style={{ padding: '6px 4px' }}>N°</th>
+                <th style={{ padding: '6px 4px' }}>Fecha</th>
+                <th style={{ padding: '6px 4px' }}>Depósito</th>
+                <th style={{ padding: '6px 4px' }}>Artículos</th>
+                <th style={{ padding: '6px 4px' }}>Total</th>
+                <th style={{ padding: '6px 4px' }}>Usuario</th>
+                <th style={{ padding: '6px 4px' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {documentos.map((d) => {
+                const esCargo = d.tipo_documento === 'cargo';
+                return (
+                  <tr key={d.id} style={{ borderBottom: '1px solid #eef0f3' }}>
+                    <td style={{ padding: '6px 4px' }}>
+                      <span style={{
+                        padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600,
+                        background: esCargo ? '#ecfdf3' : '#fef3f2', color: esCargo ? '#027a48' : '#b42318'
+                      }}>
+                        {esCargo ? 'Cargo' : 'Descargo'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '6px 4px' }}>{String(d.numero_documento ?? d.id).padStart(6, '0')}</td>
+                    <td style={{ padding: '6px 4px' }}>{d.created_at}</td>
+                    <td style={{ padding: '6px 4px' }}>{d.deposito_nombre}</td>
+                    <td style={{ padding: '6px 4px' }}>{d.total_items}</td>
+                    <td style={{ padding: '6px 4px' }}>{esCargo ? `$${fmt(d.total_usd)}` : '—'}</td>
+                    <td style={{ padding: '6px 4px' }}>{d.usuario}</td>
+                    <td style={{ padding: '6px 4px' }}>
+                      <button type="button" onClick={() => verDetalle(d.id)}>Ver detalle</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {detalle && (
+        <div className="pos-vertodo-overlay" onClick={() => setDetalle(null)}>
+          <div className="pos-vertodo-box" onClick={(e) => e.stopPropagation()}>
+            <div className="pos-vertodo-header">
+              <span>
+                {detalle.encabezado.tipo_documento === 'cargo' ? 'Cargo' : 'Descargo'} N° {String(detalle.encabezado.numero_documento ?? detalle.encabezado.id).padStart(6, '0')}
+              </span>
+              <button type="button" className="pos-vertodo-cerrar" onClick={() => setDetalle(null)}>×</button>
+            </div>
+            <div className="pos-vertodo-body">
+              {detalle.encabezado.motivo && (
+                <p style={{ margin: '0 0 10px', fontSize: '0.9rem', color: '#475467' }}>
+                  Motivo: {detalle.encabezado.motivo}
+                </p>
+              )}
+              <table className="pos-vertodo-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Código</th>
+                    <th>Cantidad</th>
+                    {detalle.encabezado.tipo_documento === 'cargo' && <th>Total</th>}
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detalle.items.map((it) => (
+                    <tr key={it.id}>
+                      <td>{it.producto_nombre}</td>
+                      <td>{it.unidad_codigo || '—'}</td>
+                      <td>{it.cantidad}</td>
+                      {detalle.encabezado.tipo_documento === 'cargo' && <td>${fmt(it.total_usd)}</td>}
+                      <td><button type="button" onClick={() => setComprobanteAbierto(it)}>Ver comprobante</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="pos-vertodo-footer">
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={generandoPDF}
+                onClick={async () => {
+                  setGenerandoPDF(true);
+                  try {
+                    await generarCargoDescargoDocumentoPDF(
+                      detalle.encabezado.id,
+                      detalle.items,
+                      detalle.encabezado.tipo_documento,
+                      settings,
+                      { numeroDocumento: detalle.encabezado.numero_documento }
+                    );
+                  } finally {
+                    setGenerandoPDF(false);
+                  }
+                }}
+              >
+                {generandoPDF ? 'Generando...' : 'Descargar PDF'}
+              </button>
+              <button type="button" className="btn-primary" onClick={() => setDetalle(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
