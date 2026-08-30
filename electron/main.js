@@ -169,17 +169,22 @@ function prepararGuardadoPDF(nombreArchivo, base64, subcarpeta) {
   return guardarPdfEvitandoBloqueo(carpetaBase, nombreFinal, buffer);
 }
 
+// ---------- Utilidad: mostrar el PDF ya guardado con el visor externo por defecto ----------
+// Se usa SOLO cuando el usuario pide explicitamente "Ver PDF"/"Reimprimir" y quiere revisarlo
+// (no en los flujos automaticos de guardar/imprimir, ver mas abajo el porque).
+function abrirPdfConVisorExterno(filePath) {
+  shell.openPath(filePath);
+}
+
 // Busca, entre las impresoras que Windows/el sistema tiene instaladas, una que sea FISICA de
 // verdad (no "Microsoft Print to PDF", "Microsoft XPS Document Writer", "OneNote", "Fax",
 // etc.). Esas impresoras "virtuales" necesitan que el usuario elija donde guardar el archivo
-// SIEMPRE, sin importar que Electron pida impresion "silenciosa" -esa ventana de "Guardar como"
-// que aparecia no era un error de la app, era Windows preguntando donde guardar el PDF que esa
-// impresora virtual iba a generar. Si no hay ninguna impresora fisica, es mejor no intentar
-// imprimir (evita ese dialogo por completo) y avisar en vez de eso.
+// SIEMPRE, sin importar que Electron pida impresion "silenciosa". Si no hay ninguna impresora
+// fisica, es mejor no intentar imprimir en absoluto y avisar en vez de eso.
 async function buscarImpresoraFisica(ventana) {
   try {
     const impresoras = await ventana.webContents.getPrintersAsync();
-    const virtualKeywords = ['pdf', 'xps', 'onenote', 'fax', 'send to'];
+    const virtualKeywords = ['pdf', 'xps', 'onenote', 'fax', 'send to', 'enviar a'];
     const real = impresoras.find((p) => {
       const nombre = (p.name || '').toLowerCase();
       return !virtualKeywords.some((k) => nombre.includes(k));
@@ -191,58 +196,16 @@ async function buscarImpresoraFisica(ventana) {
   }
 }
 
-// ---------- Utilidad: mostrar un PDF en una ventana propia de la app (no delegar al visor
-// externo por defecto de Windows) ----------
-// Antes se usaba shell.openPath(), que abre el PDF con el programa que el usuario tenga
-// configurado por defecto (ej. Adobe Acrobat). El problema: Acrobat es un programa APARTE que
-// sigue corriendo en segundo plano aunque se reinstale esta app entre pruebas, y cuando se
-// vuelve a generar un archivo con el MISMO nombre (ej. "Factura-000002.pdf", tras reiniciar la
-// base de datos), Acrobat podia mostrar una pestaña vieja con contenido cacheado/desactualizado
-// (se veia en negro) junto a la nueva. Mostrando el PDF en una ventana propia de Electron, cada
-// factura se lee siempre fresca desde el disco, sin ningun cache externo que se desincronice.
-//
-// El visor de PDF integrado de Chromium trae su PROPIA barra de herramientas con botones de
-// descargar/imprimir/rotar. Esos botones usan el flujo de impresion/descarga crudo del sistema
-// operativo, que en muchos Windows (sobre todo si no hay una impresora fisica configurada como
-// predeterminada, o si la predeterminada es la impresora virtual "Microsoft Print to PDF") abre
-// el dialogo nativo "Guardar archivo PDF como" en vez de imprimir de una vez. Para evitar esto
-// del todo, se le agrega "#toolbar=0" a la URL del archivo: es un parametro que el visor de PDF
-// de Chromium reconoce para ocultar COMPLETO su barra de herramientas (nada de descargar,
-// imprimir ni rotar desde ahi). En su lugar, esta misma ventana registra su propio atajo
-// Ctrl+P/Cmd+P (ver mas abajo) que abre el dialogo ESTANDAR de impresion de Windows (donde el
-// usuario elige cualquier impresora), nunca un dialogo de guardado.
-function abrirPdfEnVentanaPropia(filePath, titulo) {
-  const ventana = new BrowserWindow({
-    width: 950,
-    height: 1000,
-    title: titulo || path.basename(filePath),
-    webPreferences: { plugins: true }
-  });
-  ventana.setMenuBarVisibility(false);
-
-  const imprimirEstaVentana = () => {
-    ventana.webContents.print({ silent: false, printBackground: true }, () => {});
-  };
-
-  ventana.webContents.on('before-input-event', (event, input) => {
-    const teclaImprimir = input.key && input.key.toLowerCase() === 'p';
-    const conModificador = input.control || input.meta;
-    if (teclaImprimir && conModificador && input.type === 'keyDown') {
-      event.preventDefault();
-      imprimirEstaVentana();
-    }
-  });
-
-  ventana.loadFile(filePath, { hash: 'toolbar=0' });
-  return ventana;
-}
-
 // ---------- Utilidad: imprimir un PDF automaticamente en segundo plano ----------
-// Abre el PDF en una ventana oculta (usando el visor de PDF integrado de Chromium) y lo manda
-// directo a una impresora FISICA (nunca a una virtual como "Microsoft Print to PDF", que
-// obligaria a Windows a mostrar su propio dialogo de "Guardar como" sin importar el modo
-// silencioso). Si no hay ninguna impresora fisica instalada, no se intenta imprimir -se avisa
-// en su lugar- para no disparar ese dialogo.
+// Abre el PDF en una ventana OCULTA (show:false, nunca visible) y lo manda directo a una
+// impresora FISICA real (nunca a una virtual). Esta ventana oculta es clave: las pruebas
+// mostraron que aunque se pida impresion "silenciosa", si el PDF se muestra primero en una
+// ventana VISIBLE (con el visor de PDF integrado de Chromium), Windows puede igual disparar su
+// propio dialogo nativo de "Guardar archivo PDF como" -ese dialogo pertenece al DRIVER de la
+// impresora, no a Electron, y aparece en cuanto el visor visible intenta procesar el archivo,
+// sin importar los flags de impresion que se usen despues. Por eso ahora los flujos automaticos
+// (guardar, guardar+imprimir) YA NO abren ninguna ventana visible: solo esta oculta para
+// imprimir, y shell.openPath/showItemInFolder para que el usuario vea el archivo si quiere.
 function imprimirPdfEnSegundoPlano(filePath, impresora) {
   return new Promise((resolve) => {
     const ventanaImpresion = new BrowserWindow({
@@ -267,11 +230,15 @@ function imprimirPdfEnSegundoPlano(filePath, impresora) {
   });
 }
 
-// ---------- IPC: Guardar y abrir automaticamente un PDF (facturas y reportes) ----------
+// ---------- IPC: Guardar un PDF en Descargas (facturas y reportes) ----------
+// Ya NO abre ninguna ventana ni el archivo: solo lo guarda y abre el EXPLORADOR DE ARCHIVOS
+// con el archivo ya seleccionado (shell.showItemInFolder), que es el equivalente de escritorio
+// a "descargar" -el usuario ve de inmediato que se guardo y donde, sin ningun riesgo de que
+// aparezca el dialogo nativo de "Guardar como" de una impresora virtual.
 ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subcarpeta }) => {
   try {
     const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
-    abrirPdfEnVentanaPropia(filePath, nombreArchivo);
+    shell.showItemInFolder(filePath);
     return { ok: true, path: filePath };
   } catch (err) {
     console.error('Error guardando PDF', err);
@@ -279,25 +246,44 @@ ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subca
   }
 });
 
-// ---------- IPC: Guardar, abrir e imprimir automaticamente un PDF (compras y facturas) ----------
+// ---------- IPC: Guardar e imprimir automaticamente un PDF (compras y facturas) ----------
 ipcMain.handle('pdf:guardarAbrirEImprimir', async (event, { nombreArchivo, base64, subcarpeta }) => {
   try {
     const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
-    const ventanaVisor = abrirPdfEnVentanaPropia(filePath, nombreArchivo);
-    const impresora = await buscarImpresoraFisica(ventanaVisor);
+
+    // La ventana oculta que se usa SOLO para consultar la lista de impresoras necesita existir,
+    // pero nunca se muestra ni carga el PDF todavia en este punto.
+    const ventanaSonda = new BrowserWindow({ show: false });
+    const impresora = await buscarImpresoraFisica(ventanaSonda);
+    if (!ventanaSonda.isDestroyed()) ventanaSonda.close();
+
     if (!impresora) {
-      // No hay impresora fisica: se deja el documento guardado y abierto para que el usuario
-      // decida (Ctrl+P dentro de la ventana), en vez de disparar el dialogo de "Guardar como"
-      // de una impresora virtual.
-      return { ok: true, path: filePath, impreso: false, message: 'No se detecto ninguna impresora fisica conectada. El documento se guardo y se abrio; puedes imprimirlo con Ctrl+P eligiendo tu impresora.' };
+      // No hay impresora fisica: se guarda y se muestra en el explorador de archivos (igual que
+      // "guardarYAbrir"), pero NUNCA se intenta imprimir ni se abre ningun visor -eso es lo que
+      // disparaba el dialogo fantasma de "Guardar como" en equipos sin impresora fisica.
+      shell.showItemInFolder(filePath);
+      return { ok: true, path: filePath, impreso: false, message: 'No se detectó ninguna impresora física conectada. El documento se guardó en Descargas; ábrelo para imprimirlo manualmente cuando conectes una impresora.' };
     }
     const impreso = await imprimirPdfEnSegundoPlano(filePath, impresora);
+    if (!impreso) shell.showItemInFolder(filePath);
     return { ok: true, path: filePath, impreso };
   } catch (err) {
     console.error('Error guardando/imprimiendo PDF', err);
     return { ok: false, message: 'Error guardando el PDF: ' + (err?.message || String(err)) };
   }
 });
+
+// ---------- IPC: Abrir un PDF ya guardado con el visor externo (accion manual del usuario) ----------
+ipcMain.handle('pdf:verConVisorExterno', async (event, { filePath }) => {
+  try {
+    if (!fs.existsSync(filePath)) return { ok: false, message: 'El archivo ya no existe en esa ubicación' };
+    abrirPdfConVisorExterno(filePath);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: 'No se pudo abrir el PDF: ' + (err?.message || String(err)) };
+  }
+});
+
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
