@@ -297,6 +297,14 @@ ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subca
 });
 
 // ---------- IPC: Guardar e imprimir automaticamente un PDF (compras y facturas) ----------
+// IMPORTANTE: a diferencia de "guardarYAbrir" (usado solo cuando el usuario pide "Descargar"
+// a proposito), este flujo se dispara SOLO automaticamente despues de CADA venta/compra. Por
+// eso aqui NUNCA se abre el Explorador de Windows ni se usa ningun dialogo nativo (alert),
+// pase lo que pase: hacerlo en cada transaccion (no solo la primera) fue lo que terminaba de
+// romper el foco de la ventana despues de varias ventas seguidas, sobre todo en equipos sin
+// impresora fisica conectada, donde esto se repetia en el 100% de las ventas. Si no hay
+// impresora, el documento simplemente se guarda en silencio en Descargas y se informa con un
+// aviso flotante DENTRO de la pagina (ver pdfUtils.js) en vez de un alert()/Explorador.
 ipcMain.handle('pdf:guardarAbrirEImprimir', async (event, { nombreArchivo, base64, subcarpeta }) => {
   try {
     const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
@@ -307,25 +315,14 @@ ipcMain.handle('pdf:guardarAbrirEImprimir', async (event, { nombreArchivo, base6
     const impresora = await buscarImpresoraFisica(ventanaSonda);
     if (!ventanaSonda.isDestroyed()) ventanaSonda.close();
 
-    const refocusMainWindow = () => {
-      setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus();
-      }, 400);
-    };
-
     if (!impresora) {
-      // No hay impresora fisica: se guarda y se muestra en el explorador de archivos (igual que
-      // "guardarYAbrir"), pero NUNCA se intenta imprimir ni se abre ningun visor -eso es lo que
-      // disparaba el dialogo fantasma de "Guardar como" en equipos sin impresora fisica.
-      shell.showItemInFolder(filePath);
-      refocusMainWindow();
-      return { ok: true, path: filePath, impreso: false, message: 'No se detectó ninguna impresora física conectada. El documento se guardó en Descargas; ábrelo para imprimirlo manualmente cuando conectes una impresora.' };
+      // No hay impresora fisica: se guarda EN SILENCIO (sin Explorador, sin dialogo). El
+      // usuario puede verlo despues con "Reimprimir PDF" (accion explicita) si lo necesita.
+      return { ok: true, path: filePath, impreso: false, message: 'No se detectó ninguna impresora física conectada. El documento se guardó en Descargas; ábrelo con "Reimprimir PDF" cuando conectes una impresora.' };
     }
     const impreso = await imprimirPdfEnSegundoPlano(filePath, impresora);
-    if (!impreso) shell.showItemInFolder(filePath);
-    // Se refuerza el foco tambien cuando SI se imprimio: la ventana oculta de impresion, aunque
-    // nunca sea visible, puede dejar a Windows con la duda de cual ventana esta realmente activa.
-    refocusMainWindow();
+    // Si por algun motivo la impresion fallo, tampoco se abre el Explorador aqui: mismo
+    // razonamiento que arriba, para no repetir el problema en cada venta.
     return { ok: true, path: filePath, impreso };
   } catch (err) {
     console.error('Error guardando/imprimiendo PDF', err);
