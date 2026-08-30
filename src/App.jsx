@@ -8,6 +8,7 @@ import Configuracion from './pages/Configuracion.jsx';
 import Facturacion from './pages/Facturacion.jsx';
 import DevolucionFacturas from './pages/DevolucionFacturas.jsx';
 import Compras from './pages/Compras.jsx';
+import Traslados from './pages/Traslados.jsx';
 import ComprasTelfAcces from './pages/ComprasTelfAcces.jsx';
 import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
@@ -202,7 +203,7 @@ export default function App() {
     setView('inicio');
   };
   const vistasFacturacion = ['facturacion', 'devolucionFacturas', 'notaVenta'];
-  const vistasCompras = ['compras', 'comprasTelfAcces', 'devolucionCompras'];
+  const vistasCompras = ['compras', 'comprasTelfAcces', 'devolucionCompras', 'traslados'];
   // Si hay CUALQUIER submenu abierto (Facturar, Compras o Reportes), los botones que no son el
   // que se abrio deben quedar apagados -- incluyendo los otros botones con submenu, que antes se
   // quedaban brillantes porque viven dentro de un <div> y no son hijos directos de <nav>, por lo
@@ -288,6 +289,12 @@ export default function App() {
                       onClick={() => { setView('devolucionCompras'); setMenuComprasAbierto(false); }}
                     >
                       ↩ Devolución de Compras
+                    </button>
+                    <button
+                      className={view === 'traslados' ? 'active' : ''}
+                      onClick={() => { setView('traslados'); setMenuComprasAbierto(false); }}
+                    >
+                      🔀 Traslados entre depósitos
                     </button>
               </SidebarSubmenu>
             </div>
@@ -387,6 +394,7 @@ export default function App() {
         {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
         {view === 'comprasTelfAcces' && user.role === 'administrador' && <ComprasTelfAcces currentUser={user} />}
         {view === 'devolucionCompras' && user.role === 'administrador' && <DevolucionCompras currentUser={user} />}
+        {view === 'traslados' && user.role === 'administrador' && <Traslados currentUser={user} />}
         {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
         {view === 'cargosDescargos' && user.role === 'administrador' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
