@@ -158,12 +158,37 @@ function guardarPdfEvitandoBloqueo(carpetaBase, nombreFinal, buffer) {
 }
 
 function prepararGuardadoPDF(nombreArchivo, base64, subcarpeta) {
-  const carpetaBase = path.join(app.getPath('documents'), 'Facturacion Movistar', subcarpeta || 'PDFs');
+  // Se guarda directo en la carpeta de Descargas del usuario (no en Documentos), tal como se
+  // pidio: "que lo guarde automaticamente en Descargas". subcarpeta (Facturas/Compras/Reportes)
+  // organiza un poco sin esconder el archivo en una ruta rara.
+  const carpetaBase = path.join(app.getPath('downloads'), 'MoviSync', subcarpeta || 'PDFs');
   if (!fs.existsSync(carpetaBase)) fs.mkdirSync(carpetaBase, { recursive: true });
   const nombreSeguro = String(nombreArchivo || 'documento').replace(/[\\/:*?"<>|]/g, '-');
   const nombreFinal = nombreSeguro.toLowerCase().endsWith('.pdf') ? nombreSeguro : `${nombreSeguro}.pdf`;
   const buffer = Buffer.from(base64, 'base64');
   return guardarPdfEvitandoBloqueo(carpetaBase, nombreFinal, buffer);
+}
+
+// Busca, entre las impresoras que Windows/el sistema tiene instaladas, una que sea FISICA de
+// verdad (no "Microsoft Print to PDF", "Microsoft XPS Document Writer", "OneNote", "Fax",
+// etc.). Esas impresoras "virtuales" necesitan que el usuario elija donde guardar el archivo
+// SIEMPRE, sin importar que Electron pida impresion "silenciosa" -esa ventana de "Guardar como"
+// que aparecia no era un error de la app, era Windows preguntando donde guardar el PDF que esa
+// impresora virtual iba a generar. Si no hay ninguna impresora fisica, es mejor no intentar
+// imprimir (evita ese dialogo por completo) y avisar en vez de eso.
+async function buscarImpresoraFisica(ventana) {
+  try {
+    const impresoras = await ventana.webContents.getPrintersAsync();
+    const virtualKeywords = ['pdf', 'xps', 'onenote', 'fax', 'send to'];
+    const real = impresoras.find((p) => {
+      const nombre = (p.name || '').toLowerCase();
+      return !virtualKeywords.some((k) => nombre.includes(k));
+    });
+    return real || null;
+  } catch (err) {
+    console.error('Error listando impresoras', err);
+    return null;
+  }
 }
 
 // ---------- Utilidad: mostrar un PDF en una ventana propia de la app (no delegar al visor
@@ -214,27 +239,31 @@ function abrirPdfEnVentanaPropia(filePath, titulo) {
 
 // ---------- Utilidad: imprimir un PDF automaticamente en segundo plano ----------
 // Abre el PDF en una ventana oculta (usando el visor de PDF integrado de Chromium) y lo manda
-// directo a la impresora predeterminada del sistema apenas termina de cargar, SIN mostrar el
-// dialogo de impresion de Windows (impresion 100% silenciosa, sin que el usuario tenga que
-// confirmar nada).
-function imprimirPdfEnSegundoPlano(filePath) {
+// directo a una impresora FISICA (nunca a una virtual como "Microsoft Print to PDF", que
+// obligaria a Windows a mostrar su propio dialogo de "Guardar como" sin importar el modo
+// silencioso). Si no hay ninguna impresora fisica instalada, no se intenta imprimir -se avisa
+// en su lugar- para no disparar ese dialogo.
+function imprimirPdfEnSegundoPlano(filePath, impresora) {
   return new Promise((resolve) => {
     const ventanaImpresion = new BrowserWindow({
       show: false,
       webPreferences: { plugins: true }
     });
 
-    const finalizar = () => {
+    const finalizar = (impreso) => {
       if (!ventanaImpresion.isDestroyed()) ventanaImpresion.close();
-      resolve();
+      resolve(impreso);
     };
 
     ventanaImpresion.webContents.on('did-finish-load', () => {
-      ventanaImpresion.webContents.print({ silent: true, printBackground: true }, () => finalizar());
+      ventanaImpresion.webContents.print(
+        { silent: true, printBackground: true, deviceName: impresora.name },
+        (exito) => finalizar(!!exito)
+      );
     });
-    ventanaImpresion.webContents.on('did-fail-load', () => finalizar());
+    ventanaImpresion.webContents.on('did-fail-load', () => finalizar(false));
 
-    ventanaImpresion.loadFile(filePath).catch(() => finalizar());
+    ventanaImpresion.loadFile(filePath).catch(() => finalizar(false));
   });
 }
 
@@ -254,9 +283,16 @@ ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subca
 ipcMain.handle('pdf:guardarAbrirEImprimir', async (event, { nombreArchivo, base64, subcarpeta }) => {
   try {
     const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
-    abrirPdfEnVentanaPropia(filePath, nombreArchivo);
-    await imprimirPdfEnSegundoPlano(filePath);
-    return { ok: true, path: filePath };
+    const ventanaVisor = abrirPdfEnVentanaPropia(filePath, nombreArchivo);
+    const impresora = await buscarImpresoraFisica(ventanaVisor);
+    if (!impresora) {
+      // No hay impresora fisica: se deja el documento guardado y abierto para que el usuario
+      // decida (Ctrl+P dentro de la ventana), en vez de disparar el dialogo de "Guardar como"
+      // de una impresora virtual.
+      return { ok: true, path: filePath, impreso: false, message: 'No se detecto ninguna impresora fisica conectada. El documento se guardo y se abrio; puedes imprimirlo con Ctrl+P eligiendo tu impresora.' };
+    }
+    const impreso = await imprimirPdfEnSegundoPlano(filePath, impresora);
+    return { ok: true, path: filePath, impreso };
   } catch (err) {
     console.error('Error guardando/imprimiendo PDF', err);
     return { ok: false, message: 'Error guardando el PDF: ' + (err?.message || String(err)) };
