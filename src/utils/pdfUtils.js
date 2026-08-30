@@ -12,38 +12,68 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
+// Aviso flotante NO bloqueante (un div comun dentro de la propia pagina), en vez de alert().
+// Los alert()/confirm() nativos de Electron son ventanas del sistema operativo: le quitan el
+// foco a la ventana principal, y Electron no avisa cuando se cierran, asi que no hay forma
+// confiable de devolver el foco despues -eso era la causa real de que, tras facturar sin
+// impresora conectada, el programa dejara de aceptar lo que se escribia en cualquier campo-.
+// Este aviso, al ser solo HTML dentro de la misma pagina, nunca toca el foco del sistema.
+function mostrarAvisoFlotante(mensaje, tipo = 'info') {
+  try {
+    const contenedorId = 'movisync-avisos-flotantes';
+    let contenedor = document.getElementById(contenedorId);
+    if (!contenedor) {
+      contenedor = document.createElement('div');
+      contenedor.id = contenedorId;
+      contenedor.style.cssText = 'position:fixed;top:14px;right:14px;z-index:99999;display:flex;flex-direction:column;gap:8px;max-width:360px;';
+      document.body.appendChild(contenedor);
+    }
+    const aviso = document.createElement('div');
+    aviso.textContent = mensaje;
+    const colores = tipo === 'error'
+      ? { bg: '#fef3f2', border: '#fda29b', texto: '#b42318' }
+      : { bg: '#eff8ff', border: '#84caff', texto: '#175cd3' };
+    aviso.style.cssText = `background:${colores.bg};color:${colores.texto};border:1px solid ${colores.border};padding:10px 14px;border-radius:8px;font-size:0.85rem;line-height:1.4;box-shadow:0 4px 14px rgba(16,24,40,0.15);`;
+    contenedor.appendChild(aviso);
+    setTimeout(() => aviso.remove(), 7000);
+  } catch (err) {
+    console.error(mensaje);
+  }
+}
+
 export async function guardarYAbrirPDF(doc, nombreArchivo, subcarpeta) {
   try {
     const arrayBuffer = doc.output('arraybuffer');
     const base64 = arrayBufferToBase64(arrayBuffer);
     const res = await window.api.guardarYAbrirPDF(nombreArchivo, base64, subcarpeta);
     if (!res.ok) {
-      alert(res.message || 'No se pudo guardar el PDF');
+      mostrarAvisoFlotante(res.message || 'No se pudo guardar el PDF', 'error');
     }
     return res;
   } catch (err) {
-    alert('Error generando el PDF: ' + (err?.message || String(err)));
+    mostrarAvisoFlotante('Error generando el PDF: ' + (err?.message || String(err)), 'error');
     return { ok: false };
   }
 }
 
 // Igual que guardarYAbrirPDF, pero ademas dispara la impresion automaticamente (sin que el
 // usuario tenga que abrir el archivo manualmente y buscar la opcion de imprimir). Si no hay
-// ninguna impresora fisica conectada, el proceso principal no intenta imprimir (para no
-// disparar el dialogo de "Guardar como" de una impresora virtual) y aqui se avisa de eso.
+// ninguna impresora fisica conectada, el proceso principal ya NO abre el Explorador de Windows
+// ni intenta imprimir (ver electron/main.js) -solo guarda el archivo en silencio-, y aqui se
+// avisa con un mensaje flotante no bloqueante en vez de un alert() nativo.
 export async function guardarAbrirEImprimirPDF(doc, nombreArchivo, subcarpeta) {
   try {
     const arrayBuffer = doc.output('arraybuffer');
     const base64 = arrayBufferToBase64(arrayBuffer);
     const res = await window.api.guardarAbrirEImprimirPDF(nombreArchivo, base64, subcarpeta);
     if (!res.ok) {
-      alert(res.message || 'No se pudo guardar el PDF');
+      mostrarAvisoFlotante(res.message || 'No se pudo guardar el PDF', 'error');
     } else if (res.impreso === false && res.message) {
-      alert(res.message);
+      mostrarAvisoFlotante(res.message, 'info');
     }
     return res;
   } catch (err) {
-    alert('Error generando el PDF: ' + (err?.message || String(err)));
+    mostrarAvisoFlotante('Error generando el PDF: ' + (err?.message || String(err)), 'error');
     return { ok: false };
   }
 }
