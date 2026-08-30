@@ -4,6 +4,13 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { getDb, initDb, cerrarDb, getDbPath } = require('./db');
 const { enviarCorreoConAdjunto } = require('./mailer');
+const {
+  generarPDFFacturaFondo,
+  generarPDFCompraFondo,
+  generarPDFCargoDescargoFondo,
+  generarPDFGastoFondo,
+  generarPDFResumenDiarioFondo
+} = require('./pdfGeneradoresFondo');
 
 // ---------- Helpers de STOCK POR DEPOSITO (accesorios) ----------
 // Los accesorios no tienen unidad individual (IMEI/codigo), asi que su stock por deposito se
@@ -2405,9 +2412,141 @@ async function crearBackupAutomaticoLocal() {
   return filePath;
 }
 
-// Arma el texto del correo de resumen diario: ventas del dia, facturas emitidas ese dia, e
+// Extrae "HH:MM" de un created_at con forma "YYYY-MM-DD HH:MM:SS". Tolerante a valores
+// vacios o mal formados (nunca lanza error, en el peor caso devuelve '—').
+function horaCorta(createdAt) {
+  const partes = (createdAt || '').split(' ');
+  return partes[1] ? partes[1].slice(0, 5) : '—';
+}
+
+// Junta TODOS los documentos de hoy (notas de venta, facturas, compras, cargos/descargos,
+// gastos), generando de una vez tanto el PDF individual de cada uno (para adjuntar tal cual)
+// como la fila resumida que va a la tabla del PDF-resumen. Se hace todo en una sola pasada
+// para no consultar la base de datos dos veces por lo mismo.
+function recolectarDocumentosDeHoy(db, settings) {
+  const adjuntosIndividuales = [];
+  const resumen = { notasVenta: [], facturas: [], compras: [], cargosDescargos: [], gastos: [] };
+
+  // ---- Notas de Venta y Facturas (misma tabla "facturas", separadas por es_nota_venta) ----
+  const facturasHoy = db.prepare(
+    `SELECT * FROM facturas WHERE es_devolucion = 0 AND date(created_at) = date('now','localtime') ORDER BY created_at ASC`
+  ).all();
+  facturasHoy.forEach((factura) => {
+    const items = db.prepare('SELECT * FROM factura_items WHERE factura_id = ?').all(factura.id);
+    try {
+      const pdf = generarPDFFacturaFondo(factura, items, settings);
+      adjuntosIndividuales.push({ nombre: pdf.nombre, buffer: pdf.buffer });
+    } catch (err) {
+      console.error('No se pudo generar el PDF de la factura', factura.id, err);
+    }
+    const detalle = items.map((it) => `${it.cantidad}x ${it.descripcion}`).join(', ') || '—';
+    const fila = {
+      numero: factura.numero_factura || String(factura.id).padStart(6, '0'),
+      hora: horaCorta(factura.created_at),
+      cliente: factura.cliente_nombre || 'Consumidor final',
+      detalle,
+      totalUsd: factura.total_usd
+    };
+    if (factura.es_nota_venta) resumen.notasVenta.push(fila);
+    else resumen.facturas.push(fila);
+  });
+
+  // ---- Compras (incluye devoluciones de compra, cada una con su propio PDF) ----
+  const comprasHoy = db.prepare(
+    `SELECT * FROM compras_encabezado WHERE date(created_at) = date('now','localtime') ORDER BY created_at ASC`
+  ).all();
+  comprasHoy.forEach((encabezado) => {
+    const itemsCrudos = db.prepare('SELECT * FROM compras WHERE compra_encabezado_id = ?').all(encabezado.id);
+    const getCodigos = encabezado.es_devolucion
+      ? db.prepare('SELECT codigo FROM inventory_units WHERE devolucion_encabezado_id = ? AND product_id = ? ORDER BY id')
+      : db.prepare('SELECT codigo FROM inventory_units WHERE compra_encabezado_id = ? AND product_id = ? ORDER BY id');
+    const items = itemsCrudos.map((item) => ({
+      ...item,
+      codigos: item.tipo === 'accesorio' ? [] : getCodigos.all(encabezado.id, item.product_id).map((r) => r.codigo)
+    }));
+    try {
+      const pdf = generarPDFCompraFondo(encabezado, items, settings);
+      adjuntosIndividuales.push({ nombre: pdf.nombre, buffer: pdf.buffer });
+    } catch (err) {
+      console.error('No se pudo generar el PDF de la compra', encabezado.id, err);
+    }
+    const detalle = items.map((it) => `${it.cantidad}x ${it.descripcion}`).join(', ') || '—';
+    const numeroMostrado = encabezado.es_devolucion ? encabezado.numero_devolucion : encabezado.id;
+    resumen.compras.push({
+      numero: `${encabezado.es_devolucion ? 'DEV-' : ''}${String(numeroMostrado).padStart(6, '0')}`,
+      hora: horaCorta(encabezado.created_at),
+      proveedor: encabezado.proveedor || '—',
+      detalle,
+      totalUsd: encabezado.total_usd
+    });
+  });
+
+  // ---- Cargos y Descargos (agrupados por encabezado, igual que en su historial) ----
+  const cargosDescargosHoy = db.prepare(
+    `SELECT * FROM cargos_descargos_encabezado WHERE date(created_at) = date('now','localtime') ORDER BY created_at ASC`
+  ).all();
+  cargosDescargosHoy.forEach((encabezado) => {
+    const esCargo = encabezado.tipo_documento === 'cargo';
+    const registros = esCargo
+      ? db.prepare(
+          `SELECT c.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo
+           FROM compras c LEFT JOIN products p ON p.id = c.product_id LEFT JOIN inventory_units u ON u.id = c.unit_id
+           WHERE c.encabezado_id = ? ORDER BY c.id ASC`
+        ).all(encabezado.id)
+      : db.prepare(
+          `SELECT dsc.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo
+           FROM descargos dsc LEFT JOIN products p ON p.id = dsc.product_id LEFT JOIN inventory_units u ON u.id = dsc.unit_id
+           WHERE dsc.encabezado_id = ? ORDER BY dsc.id ASC`
+        ).all(encabezado.id);
+    try {
+      const pdf = generarPDFCargoDescargoFondo(encabezado, registros, settings);
+      adjuntosIndividuales.push({ nombre: pdf.nombre, buffer: pdf.buffer });
+    } catch (err) {
+      console.error('No se pudo generar el PDF del cargo/descargo', encabezado.id, err);
+    }
+    const detalleMapa = new Map();
+    registros.forEach((r) => {
+      const clave = r.producto_nombre || '—';
+      const cantidad = r.cantidad != null ? r.cantidad : 1;
+      detalleMapa.set(clave, (detalleMapa.get(clave) || 0) + cantidad);
+    });
+    const detalle = Array.from(detalleMapa.entries()).map(([nombre, cant]) => `${cant}x ${nombre}`).join(', ') || '—';
+    const totalUsd = esCargo ? registros.reduce((acc, r) => acc + (r.total_usd || 0), 0) : 0;
+    resumen.cargosDescargos.push({
+      numero: `${esCargo ? 'CAR' : 'DES'}-${String(encabezado.numero_documento != null ? encabezado.numero_documento : encabezado.id).padStart(6, '0')}`,
+      hora: horaCorta(encabezado.created_at),
+      tipo: esCargo ? 'Cargo' : 'Descargo',
+      detalle,
+      totalUsd
+    });
+  });
+
+  // ---- Gastos (comprobante individual nuevo, no existia hasta ahora) ----
+  const gastosHoy = db.prepare(
+    `SELECT * FROM gastos WHERE date(created_at) = date('now','localtime') ORDER BY created_at ASC`
+  ).all();
+  gastosHoy.forEach((gasto) => {
+    try {
+      const pdf = generarPDFGastoFondo(gasto, settings);
+      adjuntosIndividuales.push({ nombre: pdf.nombre, buffer: pdf.buffer });
+    } catch (err) {
+      console.error('No se pudo generar el PDF del gasto', gasto.id, err);
+    }
+    resumen.gastos.push({
+      numero: `GAS-${String(gasto.id).padStart(6, '0')}`,
+      hora: horaCorta(gasto.created_at),
+      concepto: gasto.concepto || '—',
+      categoria: gasto.categoria || '—',
+      totalUsd: gasto.monto_usd
+    });
+  });
+
+  return { adjuntosIndividuales, resumen };
+}
+
+
 // inventario (unidades y valor) tal como quedo al momento de cerrar el programa.
-function generarResumenDiarioTexto(db) {
+function generarResumenDiarioTexto(db, cantidadDocumentosHoy) {
   const hoyLegible = new Date().toLocaleDateString('es-VE');
 
   const ventasHoy = db.prepare(
@@ -2447,6 +2586,12 @@ function generarResumenDiarioTexto(db) {
   lineas.push(`Valor del inventario a precio de venta: $${num(valorVentaUsd)}`);
   lineas.push('');
   lineas.push('Se adjunta el respaldo de la base de datos de hoy (archivo .db).');
+  if (cantidadDocumentosHoy > 0) {
+    lineas.push(`Tambien se adjunta el PDF de cada documento de hoy (${cantidadDocumentosHoy} en total: notas de venta,`);
+    lineas.push('facturas, compras, cargos/descargos y gastos) y un PDF-resumen con todo detallado.');
+  } else {
+    lineas.push('Hoy no se registro ningun documento (notas de venta, facturas, compras, cargos/descargos o gastos).');
+  }
   lineas.push('');
   lineas.push('Este correo se genera y se envía automáticamente al cerrar MoviSync.');
   return lineas.join('\n');
@@ -2477,7 +2622,39 @@ async function respaldarYNotificarAlCerrar() {
     const ultimaFecha = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_ultima_fecha'").get()?.value || '';
     if (ultimaFecha === hoyISO) return; // ya se mando hoy, no repetir
 
-    const textoBody = generarResumenDiarioTexto(db);
+    // "settings" completo (objeto key->value), necesario para que los PDF de fondo dibujen
+    // el logo/nombre/RIF/direccion/telefono/pie de pagina de la tienda igual que el resto de
+    // los documentos que ya se imprimen desde la pantalla.
+    const settingsRows = db.prepare('SELECT key, value FROM settings').all();
+    const settingsObj = {};
+    settingsRows.forEach((r) => { settingsObj[r.key] = r.value; });
+
+    // Documentos de hoy: un PDF individual por cada uno (notas de venta, facturas, compras,
+    // cargos/descargos, gastos) + los datos ya resumidos para armar el PDF-resumen. Un fallo
+    // generando UN documento puntual no debe tumbar el correo completo (queda registrado en
+    // consola y el resto de los documentos se manda igual), asi que todo el trabajo pesado
+    // vive dentro de su propio try/catch por documento en recolectarDocumentosDeHoy().
+    const { adjuntosIndividuales, resumen } = recolectarDocumentosDeHoy(db, settingsObj);
+    const cantidadDocumentosHoy =
+      resumen.notasVenta.length + resumen.facturas.length + resumen.compras.length +
+      resumen.cargosDescargos.length + resumen.gastos.length;
+
+    const adjuntos = [{ nombre: path.basename(backupPath), buffer: fs.readFileSync(backupPath) }];
+    adjuntos.push(...adjuntosIndividuales);
+
+    if (cantidadDocumentosHoy > 0) {
+      try {
+        const resumenPdf = generarPDFResumenDiarioFondo(
+          { fecha: new Date().toLocaleDateString('es-VE'), ...resumen },
+          settingsObj
+        );
+        adjuntos.push({ nombre: resumenPdf.nombre, buffer: resumenPdf.buffer });
+      } catch (err) {
+        console.error('No se pudo generar el PDF-resumen del dia:', err);
+      }
+    }
+
+    const textoBody = generarResumenDiarioTexto(db, cantidadDocumentosHoy);
     await enviarCorreoConAdjunto({
       host: 'smtp.gmail.com',
       port: 465,
@@ -2487,7 +2664,7 @@ async function respaldarYNotificarAlCerrar() {
       destino,
       asunto: `MoviSync — Resumen y respaldo del ${new Date().toLocaleDateString('es-VE')}`,
       textoBody,
-      adjunto: { nombre: path.basename(backupPath), buffer: fs.readFileSync(backupPath) }
+      adjuntos
     });
 
     db.prepare("UPDATE settings SET value = ? WHERE key = 'backup_email_ultima_fecha'").run(hoyISO);
