@@ -579,9 +579,15 @@ ipcMain.handle('products:buscarPorCodigo', (event, { codigo, depositoId }) => {
 
 // Lista de unidades (IMEI/ICCID) disponibles de un producto puntual, usada por la pantalla de
 // Etiquetas para elegir cuales imprimir (a diferencia del conteo que ya devuelve products:list,
-// aqui se necesita el codigo de cada unidad).
-ipcMain.handle('products:unidadesDisponibles', (event, { productId }) => {
+// aqui se necesita el codigo de cada unidad). "depositoId" es opcional: Traslados lo manda
+// siempre (solo puede mover unidades que esten fisicamente en el deposito de origen elegido).
+ipcMain.handle('products:unidadesDisponibles', (event, { productId, depositoId }) => {
   const db = getDb();
+  if (depositoId) {
+    return db.prepare(
+      "SELECT id, codigo FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ? ORDER BY codigo"
+    ).all(productId, depositoId);
+  }
   return db.prepare(
     "SELECT id, codigo FROM inventory_units WHERE product_id = ? AND estado = 'disponible' ORDER BY codigo"
   ).all(productId);
