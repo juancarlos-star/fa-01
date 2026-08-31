@@ -703,7 +703,6 @@ function initDb() {
   insertSetting.run('backup_email_destino', '');
   insertSetting.run('backup_email_remitente', '');
   insertSetting.run('backup_email_password', '');
-  insertSetting.run('backup_email_ultima_fecha', '');
 
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {

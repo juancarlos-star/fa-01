@@ -2638,9 +2638,8 @@ function generarResumenDiarioTexto(db, cantidadDocumentosHoy) {
 // dia con el respaldo adjunto. Nunca deja que un fallo de correo bloquee el cierre del programa
 // (se guarda el respaldo local pase lo que pase); los errores solo quedan en consola.
 //
-// Para no mandar el mismo correo varias veces si el usuario abre y cierra el programa mas de
-// una vez en el mismo dia, se guarda en settings la fecha del ultimo envio exitoso y se compara
-// contra la fecha de hoy antes de intentar mandar otro.
+// Se manda SIEMPRE que se cierra el programa (si el envio por correo esta activado y
+// configurado), sin importar cuantas veces se cierre en el mismo dia.
 async function respaldarYNotificarAlCerrar() {
   const inicio = Date.now();
   try {
@@ -2660,13 +2659,6 @@ async function respaldarYNotificarAlCerrar() {
     if (!destino || !remitente || !password) {
       registrarLogBackup('Envio por correo activado pero falta destino/remitente/contraseña en Configuracion (no se intento enviar nada).');
       return;
-    }
-
-    const hoyISO = new Date().toISOString().slice(0, 10);
-    const ultimaFecha = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_ultima_fecha'").get()?.value || '';
-    if (ultimaFecha === hoyISO) {
-      registrarLogBackup('Ya se habia enviado el correo hoy, no se repite.');
-      return; // ya se mando hoy, no repetir
     }
 
     // "settings" completo (objeto key->value), necesario para que los PDF de fondo dibujen
@@ -2718,7 +2710,6 @@ async function respaldarYNotificarAlCerrar() {
       adjuntos
     });
 
-    db.prepare("UPDATE settings SET value = ? WHERE key = 'backup_email_ultima_fecha'").run(hoyISO);
     registrarLogBackup(`Correo enviado correctamente a ${destino} (tardo ${((Date.now() - inicio) / 1000).toFixed(1)}s).`);
   } catch (err) {
     console.error('Error en el respaldo/notificacion automatica al cerrar:', err);
