@@ -630,6 +630,129 @@ function generarPDFResumenDiarioFondo(datos, settings) {
   return { nombre: `Resumen-${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
 }
 
+// =========================================================================================
+// REPORTE DE INVENTARIO — PRODUCTOS -- mismo contenido que la version de pantalla en
+// src/utils/generarReportesPDF.js (generarPDFInventarioProductos), sin el grafico de barras
+// (ese depende de <canvas> del navegador, que no existe en el proceso principal). Los
+// productos llegan ya ordenados desde "reportes:inventarioProductos": primero los que tienen
+// cantidad en inventario, y al final los que estan en cantidad cero (agotados).
+// =========================================================================================
+const TIPO_LABEL_INV_FONDO = { equipo: 'Equipo', simcard: 'Simcard', usim: 'Usim', accesorio: 'Accesorio' };
+
+function generarPDFInventarioProductosFondo(reporte, depositoLabel, settings) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  const colorAcento = [11, 79, 158];
+
+  const yEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 90 });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(colorAcento[0], colorAcento[1], colorAcento[2]);
+  doc.text('REPORTE DE INVENTARIO — PRODUCTOS', 200, 15, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Deposito: ${depositoLabel}`, 200, 21, { align: 'right' });
+
+  let y = Math.max(30, yEmpresa + 6);
+  doc.setDrawColor(200);
+  doc.line(10, y, 200, y);
+  y += 6;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(
+    `Stock total: ${reporte.totales.stock}   —   Valor al costo: $${fmt(reporte.totales.valorCostoUsd)}   —   Valor Total $: $${fmt(reporte.totales.valorTotalUsd)}   —   Tasa del dia: ${fmt(reporte.tasaCambio)} Bs/USD`,
+    10,
+    y
+  );
+  y += 6;
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Tipo', 'Codigo', 'Producto', 'Stock', 'Costo', 'Precio Bs.', 'Precio $.', 'Valor Total $.']],
+    body: reporte.productos.map((p) => [
+      TIPO_LABEL_INV_FONDO[p.tipo] || p.tipo,
+      p.codigo_producto || '—',
+      p.nombre,
+      String(p.stock),
+      `$${fmt(p.costo_promedio_usd)}`,
+      `Bs. ${fmt(p.precioBs)}`,
+      `$${fmt(p.precioUsd)}`,
+      `$${fmt(p.valorTotalUsd)}`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2 },
+    headStyles: { fillColor: colorAcento, textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 },
+    didDrawPage: () => dibujarPiePaginaEmpresa(doc, settings)
+  });
+
+  const fechaArchivo = new Date().toISOString().slice(0, 10);
+  return { nombre: `Reporte-Inventario-Productos_${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
+}
+
+// =========================================================================================
+// INVENTARIO FISICO (hoja de conteo) -- mismo contenido que generarPDFInventarioFisico de
+// pantalla, para UN deposito puntual (el conteo fisico siempre se hace deposito por deposito,
+// nunca "todos juntos", porque el conteo real ocurre fisicamente en un solo lugar a la vez).
+// =========================================================================================
+function generarPDFInventarioFisicoFondo(reporte, settings) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  const colorAcento = [11, 79, 158];
+
+  const yEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 90 });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(colorAcento[0], colorAcento[1], colorAcento[2]);
+  doc.text('HOJA DE CONTEO FISICO DE INVENTARIO', 200, 15, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Deposito: ${reporte.deposito.nombre}`, 200, 21, { align: 'right' });
+
+  let y = Math.max(30, yEmpresa + 6);
+  doc.setDrawColor(200);
+  doc.line(10, y, 200, y);
+  y += 8;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Accesorios (por cantidad)', 10, y);
+
+  autoTable(doc, {
+    startY: y + 4,
+    head: [['Codigo', 'Producto', 'Cant. en sistema', 'Conteo fisico']],
+    body: reporte.accesorios.map((a) => [a.codigo_producto || '—', a.nombre, String(a.cantidadSistema), '']),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: colorAcento, textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 },
+    didDrawPage: () => dibujarPiePaginaEmpresa(doc, settings)
+  });
+
+  const y2 = (doc.lastAutoTable?.finalY || y + 10) + 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Teléfonos, SIM y USIM (por unidad — IMEI / codigo)', 10, y2);
+
+  autoTable(doc, {
+    startY: y2 + 4,
+    head: [['Tipo', 'Producto', 'Codigo/IMEI', 'Contado (Si/No)']],
+    body: reporte.unidades.map((u) => [TIPO_LABEL_INV_FONDO[u.tipo] || u.tipo, u.nombre, u.codigo, '']),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: colorAcento, textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 },
+    didDrawPage: () => dibujarPiePaginaEmpresa(doc, settings)
+  });
+
+  const fechaArchivo = new Date().toISOString().slice(0, 10);
+  const nombreDepositoArchivo = (reporte.deposito.nombre || 'deposito').replace(/[^a-z0-9]+/gi, '-');
+  return { nombre: `Inventario-Fisico-${nombreDepositoArchivo}_${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
+}
+
 module.exports = {
   fmt,
   agruparItemsPorProducto,
@@ -639,5 +762,7 @@ module.exports = {
   generarPDFCompraFondo,
   generarPDFCargoDescargoFondo,
   generarPDFGastoFondo,
-  generarPDFResumenDiarioFondo
+  generarPDFResumenDiarioFondo,
+  generarPDFInventarioProductosFondo,
+  generarPDFInventarioFisicoFondo
 };

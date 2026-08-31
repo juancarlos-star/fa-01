@@ -9,7 +9,9 @@ const {
   generarPDFCompraFondo,
   generarPDFCargoDescargoFondo,
   generarPDFGastoFondo,
-  generarPDFResumenDiarioFondo
+  generarPDFResumenDiarioFondo,
+  generarPDFInventarioProductosFondo,
+  generarPDFInventarioFisicoFondo
 } = require('./pdfGeneradoresFondo');
 
 // ---------- Helpers de STOCK POR DEPOSITO (accesorios) ----------
@@ -2660,6 +2662,8 @@ function generarResumenDiarioTexto(db, cantidadDocumentosHoy) {
   } else {
     lineas.push('Hoy no se registro ningun documento (notas de venta, facturas, compras, cargos/descargos o gastos).');
   }
+  lineas.push('Ademas se adjunta el Reporte de Inventario - Productos (Deposito: Todos) y la Hoja de');
+  lineas.push('Conteo Fisico de Inventario de cada deposito activo.');
   lineas.push('');
   lineas.push('Este correo se genera y se envía automáticamente al cerrar MoviSync.');
   return lineas.join('\n');
@@ -2724,6 +2728,33 @@ async function respaldarYNotificarAlCerrar() {
         console.error('No se pudo generar el PDF-resumen del dia:', err);
         registrarLogBackup('Aviso: fallo generando el PDF-resumen del dia: ' + (err?.message || String(err)));
       }
+    }
+
+    // Reporte de Inventario - Productos (Deposito: Todos) e Inventario Fisico (uno por cada
+    // deposito activo, porque el conteo fisico se hace deposito por deposito). A diferencia del
+    // PDF-resumen de arriba, estos dos SIEMPRE se adjuntan aunque hoy no haya habido ningun
+    // movimiento, porque son una "foto" del inventario actual, no un resumen de lo que paso hoy.
+    try {
+      const reporteProductos = obtenerReporteInventarioProductos(db, null);
+      const pdfProductos = generarPDFInventarioProductosFondo(reporteProductos, 'Todos', settingsObj);
+      adjuntos.push({ nombre: pdfProductos.nombre, buffer: pdfProductos.buffer });
+    } catch (err) {
+      console.error('No se pudo generar el Reporte de Inventario - Productos:', err);
+      registrarLogBackup('Aviso: fallo generando el Reporte de Inventario - Productos: ' + (err?.message || String(err)));
+    }
+
+    try {
+      const depositosActivos = db.prepare('SELECT id FROM depositos WHERE activo = 1 ORDER BY nombre').all();
+      depositosActivos.forEach((dep) => {
+        const reporteFisico = obtenerReporteInventarioFisico(db, dep.id);
+        if (reporteFisico.ok) {
+          const pdfFisico = generarPDFInventarioFisicoFondo(reporteFisico, settingsObj);
+          adjuntos.push({ nombre: pdfFisico.nombre, buffer: pdfFisico.buffer });
+        }
+      });
+    } catch (err) {
+      console.error('No se pudo generar el Inventario Fisico:', err);
+      registrarLogBackup('Aviso: fallo generando el Inventario Fisico: ' + (err?.message || String(err)));
     }
 
     const pesoTotalMB = (adjuntos.reduce((acc, a) => acc + a.buffer.length, 0) / (1024 * 1024)).toFixed(2);
@@ -3567,9 +3598,10 @@ function obtenerStockPorDepositoDeProducto(db, product) {
 }
 
 // "Productos": listado valorizado de todo el inventario (stock x costo promedio y stock x
-// precio de venta), opcionalmente filtrado a un solo deposito.
-ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
-  const db = getDb();
+// precio de venta), opcionalmente filtrado a un solo deposito. Se separa en una funcion propia
+// (en vez de vivir solo dentro del ipcMain.handle) para poder llamarla tambien desde el correo
+// automatico/manual de "Enviar reporte", sin tener que pasar por el puente IPC.
+function obtenerReporteInventarioProductos(db, depositoId) {
   const productos = db.prepare('SELECT * FROM products ORDER BY tipo, nombre').all();
   // Cotizacion del dia (Bs por 1 USD), tomada de settings. "Precio Bs." de cada producto se
   // calcula multiplicando esta tasa por el precio en dolares (precio2), en vez de venir de un
@@ -3600,6 +3632,12 @@ ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
     };
   });
 
+  // Primero los productos que tienen cantidad en inventario, y al final los que estan en
+  // cantidad cero (agotados). Es un sort estable (Array.prototype.sort en Node/V8 lo es), asi
+  // que dentro de cada uno de esos dos grupos se conserva el orden por tipo/nombre que ya trae
+  // la consulta de arriba.
+  filas.sort((a, b) => (b.stock > 0 ? 1 : 0) - (a.stock > 0 ? 1 : 0));
+
   const totales = filas.reduce(
     (acc, f) => ({
       stock: acc.stock + f.stock,
@@ -3610,13 +3648,19 @@ ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
   );
 
   return { ok: true, productos: filas, totales, tasaCambio };
+}
+
+ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
+  const db = getDb();
+  return obtenerReporteInventarioProductos(db, depositoId);
 });
 
 // "Inventario Fisico": hoja de conteo por deposito -- para accesorios muestra la cantidad que
 // dice el sistema (para comparar contra el conteo real); para equipo/simcard/usim lista cada
 // unidad individual (IMEI/codigo) porque el conteo fisico de esos se hace unidad por unidad.
-ipcMain.handle('reportes:inventarioFisico', (event, { depositoId }) => {
-  const db = getDb();
+// Igual que arriba, se separa en una funcion propia para poder llamarla desde el correo
+// automatico/manual sin pasar por IPC.
+function obtenerReporteInventarioFisico(db, depositoId) {
   if (!depositoId) return { ok: false, message: 'Debe seleccionar un deposito' };
 
   const deposito = db.prepare('SELECT * FROM depositos WHERE id = ?').get(depositoId);
@@ -3647,6 +3691,11 @@ ipcMain.handle('reportes:inventarioFisico', (event, { depositoId }) => {
     totalAccesorios: accesorios.reduce((acc, a) => acc + a.cantidadSistema, 0),
     totalUnidades: unidades.length
   };
+}
+
+ipcMain.handle('reportes:inventarioFisico', (event, { depositoId }) => {
+  const db = getDb();
+  return obtenerReporteInventarioFisico(db, depositoId);
 });
 
 ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
