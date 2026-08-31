@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('api', {
   createDeposito: (data) => ipcRenderer.invoke('depositos:create', data),
   updateDeposito: (id, data) => ipcRenderer.invoke('depositos:update', { id, ...data }),
   toggleDepositoActive: (id) => ipcRenderer.invoke('depositos:toggleActive', { id }),
+  setDepositoPredeterminado: (id) => ipcRenderer.invoke('depositos:setPredeterminado', { id }),
 
   crearTraslado: (data) => ipcRenderer.invoke('traslados:crear', data),
   listarTraslados: (filtros) => ipcRenderer.invoke('traslados:listar', filtros),
@@ -131,6 +132,7 @@ contextBridge.exposeInMainWorld('api', {
   crearBackup: () => ipcRenderer.invoke('backup:crear'),
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar'),
   enviarCorreoPrueba: (destino, remitente, password) => ipcRenderer.invoke('backup:enviarCorreoPrueba', { destino, remitente, password }),
+  enviarReporteManual: () => ipcRenderer.invoke('backup:enviarReporteManual'),
   // PDF (facturas y reportes): guarda automaticamente y abre con el visor por defecto
   guardarYAbrirPDF: (nombreArchivo, base64, subcarpeta) =>
     ipcRenderer.invoke('pdf:guardarYAbrir', { nombreArchivo, base64, subcarpeta }),

@@ -226,6 +226,7 @@ function migrarDepositosSiHaceFalta(database) {
       codigo TEXT UNIQUE NOT NULL,
       nombre TEXT NOT NULL,
       activo INTEGER NOT NULL DEFAULT 1,
+      predeterminado INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS product_stock_deposito (
@@ -262,14 +263,33 @@ function migrarDepositosSiHaceFalta(database) {
     );
   `);
 
+  // Instalacion nueva: el deposito "01 - Tienda" viene creado y marcado como predeterminado
+  // desde el primer arranque, para que el usuario no tenga que configurar nada antes de
+  // empezar a facturar.
   const totalDepositos = database.prepare('SELECT COUNT(*) AS c FROM depositos').get().c;
   let principalId;
   if (totalDepositos === 0) {
     principalId = database.prepare(
-      "INSERT INTO depositos (codigo, nombre, activo, created_at) VALUES ('01', 'Principal', 1, datetime('now','localtime'))"
+      "INSERT INTO depositos (codigo, nombre, activo, predeterminado, created_at) VALUES ('01', 'Tienda', 1, 1, datetime('now','localtime'))"
     ).run().lastInsertRowid;
   } else {
     principalId = database.prepare('SELECT id FROM depositos ORDER BY id ASC LIMIT 1').get().id;
+  }
+
+  // Instalaciones que ya existian antes de la columna "predeterminado": si nadie quedo marcado
+  // como predeterminado, se elige el primer deposito activo (o el primero que haya, si no hay
+  // ninguno activo) para que siempre haya exactamente uno predeterminado.
+  if (!tieneColumna(database, 'depositos', 'predeterminado')) {
+    database.exec('ALTER TABLE depositos ADD COLUMN predeterminado INTEGER NOT NULL DEFAULT 0');
+  }
+  const yaHayPredeterminado = database.prepare('SELECT COUNT(*) AS c FROM depositos WHERE predeterminado = 1').get().c;
+  if (yaHayPredeterminado === 0) {
+    const candidato =
+      database.prepare('SELECT id FROM depositos WHERE activo = 1 ORDER BY id ASC LIMIT 1').get() ||
+      database.prepare('SELECT id FROM depositos ORDER BY id ASC LIMIT 1').get();
+    if (candidato) {
+      database.prepare('UPDATE depositos SET predeterminado = 1 WHERE id = ?').run(candidato.id);
+    }
   }
 
   if (!tieneColumna(database, 'inventory_units', 'deposito_id')) {

@@ -1591,10 +1591,14 @@ ipcMain.handle('settings:update', (event, values) => {
 
 // ---------- IPC: Clientes ----------
 // ---------- IPC: Depositos (almacenes) ----------
+// El deposito predeterminado siempre sale de primero en la lista (ORDER BY predeterminado DESC),
+// asi que toda pantalla que hace "listDepositos(true)" y preselecciona data[0] automaticamente
+// preselecciona el predeterminado, sin necesidad de tocar cada pantalla por separado. El usuario
+// igual puede elegir otro deposito manualmente con el desplegable de cada pantalla.
 ipcMain.handle('depositos:list', (event, { soloActivos } = {}) => {
   const db = getDb();
-  if (soloActivos) return db.prepare('SELECT * FROM depositos WHERE activo = 1 ORDER BY nombre').all();
-  return db.prepare('SELECT * FROM depositos ORDER BY nombre').all();
+  if (soloActivos) return db.prepare('SELECT * FROM depositos WHERE activo = 1 ORDER BY predeterminado DESC, nombre ASC').all();
+  return db.prepare('SELECT * FROM depositos ORDER BY predeterminado DESC, nombre ASC').all();
 });
 
 ipcMain.handle('depositos:create', (event, { codigo, nombre }) => {
@@ -1632,6 +1636,34 @@ ipcMain.handle('depositos:toggleActive', (event, { id }) => {
     if (activos <= 1) return { ok: false, message: 'Debe quedar al menos un deposito activo' };
   }
   db.prepare('UPDATE depositos SET activo = ? WHERE id = ?').run(deposito.activo ? 0 : 1, id);
+
+  // Si el que se acaba de desactivar era el predeterminado, hay que pasarle la marca a otro
+  // deposito que siga activo (siempre debe haber exactamente un predeterminado, y tiene que
+  // estar activo para que las pantallas de gestion lo puedan preseleccionar de verdad).
+  if (deposito.activo && deposito.predeterminado) {
+    const siguiente = db.prepare('SELECT id FROM depositos WHERE activo = 1 AND id != ? ORDER BY nombre ASC LIMIT 1').get(id);
+    if (siguiente) {
+      db.prepare('UPDATE depositos SET predeterminado = 0 WHERE id = ?').run(id);
+      db.prepare('UPDATE depositos SET predeterminado = 1 WHERE id = ?').run(siguiente.id);
+    }
+  }
+  return { ok: true };
+});
+
+// Marca un deposito como el predeterminado para todas las gestiones del sistema (Facturacion,
+// Compras, Compras Telf/Acces, Cargos y Descargos, Traslados, Reportes). Solo puede haber uno:
+// se apaga el flag en todos los demas y se prende solo en el elegido. Debe estar activo, porque
+// un deposito inactivo no aparece en los desplegables de esas pantallas.
+ipcMain.handle('depositos:setPredeterminado', (event, { id }) => {
+  const db = getDb();
+  const deposito = db.prepare('SELECT * FROM depositos WHERE id = ?').get(id);
+  if (!deposito) return { ok: false, message: 'Deposito no encontrado' };
+  if (!deposito.activo) return { ok: false, message: 'Un deposito inactivo no puede ser el predeterminado' };
+  const actualizar = db.transaction(() => {
+    db.prepare('UPDATE depositos SET predeterminado = 0').run();
+    db.prepare('UPDATE depositos SET predeterminado = 1 WHERE id = ?').run(id);
+  });
+  actualizar();
   return { ok: true };
 });
 
@@ -2650,7 +2682,7 @@ async function respaldarYNotificarAlCerrar() {
     const activo = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_activo'").get()?.value === '1';
     if (!activo) {
       registrarLogBackup('Envio por correo desactivado en Configuracion (no se intento enviar nada).');
-      return;
+      return { ok: false, message: 'El envío por correo está desactivado en Configuración. Actívalo y guarda la configuración antes de enviar.' };
     }
 
     const destino = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_destino'").get()?.value || '';
@@ -2658,7 +2690,7 @@ async function respaldarYNotificarAlCerrar() {
     const password = db.prepare("SELECT value FROM settings WHERE key = 'backup_email_password'").get()?.value || '';
     if (!destino || !remitente || !password) {
       registrarLogBackup('Envio por correo activado pero falta destino/remitente/contraseña en Configuracion (no se intento enviar nada).');
-      return;
+      return { ok: false, message: 'Falta destino, remitente o contraseña en Configuración. Completa esos datos y guarda antes de enviar.' };
     }
 
     // "settings" completo (objeto key->value), necesario para que los PDF de fondo dibujen
@@ -2711,11 +2743,24 @@ async function respaldarYNotificarAlCerrar() {
     });
 
     registrarLogBackup(`Correo enviado correctamente a ${destino} (tardo ${((Date.now() - inicio) / 1000).toFixed(1)}s).`);
+    return { ok: true, message: `Correo enviado correctamente a ${destino}.` };
   } catch (err) {
     console.error('Error en el respaldo/notificacion automatica al cerrar:', err);
     registrarLogBackup(`ERROR tras ${((Date.now() - inicio) / 1000).toFixed(1)}s: ${err?.message || String(err)}`);
+    return { ok: false, message: err?.message || String(err) };
   }
 }
+
+// ---------- IPC: enviar el reporte manualmente desde el boton "Enviar reporte" en Configuracion
+// > Base de datos ----------
+// Hace exactamente lo mismo que se hace automaticamente al cerrar el programa (respaldo local +
+// correo con el PDF-resumen del dia, los PDFs individuales de cada documento, y el .db adjunto),
+// pero disparado a mano en cualquier momento, sin esperar a cerrar MoviSync. Reutiliza la misma
+// funcion para no duplicar logica; a diferencia del cierre, aqui SI le devolvemos el resultado
+// al frontend para poder mostrar un mensaje de exito o error.
+ipcMain.handle('backup:enviarReporteManual', async () => {
+  return await respaldarYNotificarAlCerrar();
+});
 
 // ---------- IPC: enviar un correo de prueba con las credenciales que se esten escribiendo en
 // el formulario (todavia sin guardar) ----------
