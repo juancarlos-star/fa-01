@@ -251,14 +251,37 @@ function SeccionDepositos() {
     cargarDepositos();
   };
 
+  // El deposito predeterminado es el que se preselecciona automaticamente en Facturacion,
+  // Compras, Compras Telf/Acces, Cargos y Descargos, Traslados y Reportes. Solo puede haber uno
+  // activado a la vez: al marcar uno, el backend apaga el resto (por eso alcanza con recargar
+  // la lista despues de marcar). No se puede activar un deposito que este inactivo.
+  const [guardandoPredeterminado, setGuardandoPredeterminado] = useState(false);
+  const marcarPredeterminado = async (d) => {
+    if (d.predeterminado || !d.activo || guardandoPredeterminado) return;
+    setErrorDeposito('');
+    setGuardandoPredeterminado(true);
+    try {
+      const res = await window.api.setDepositoPredeterminado(d.id);
+      if (!res.ok) {
+        setErrorDeposito(res.message || 'No se pudo marcar el deposito como predeterminado');
+        return;
+      }
+      cargarDepositos();
+    } finally {
+      setGuardandoPredeterminado(false);
+    }
+  };
+
   return (
     <div>
       <h1>Depósitos / almacenes</h1>
-      <div className="form-box" style={{ maxWidth: '620px' }}>
+      <div className="form-box" style={{ maxWidth: '680px' }}>
         <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '10px' }}>
           Crea y nombra aquí los depósitos de tu negocio. Se usan automáticamente en Facturación,
           Compras, Compras Telf/Acces, Cargos y Descargos, e Inventario — no hace falta
-          configurarlos en ningún otro lado.
+          configurarlos en ningún otro lado. El depósito marcado como <strong>predeterminado</strong> es
+          el que queda preseleccionado en todas esas pantallas (el usuario igual puede elegir otro
+          desde el desplegable de cada una, de forma manual, en cualquier momento).
         </p>
 
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '14px' }}>
@@ -267,12 +290,13 @@ function SeccionDepositos() {
               <th style={{ padding: '6px 4px' }}>Código</th>
               <th style={{ padding: '6px 4px' }}>Nombre</th>
               <th style={{ padding: '6px 4px' }}>Estado</th>
+              <th style={{ padding: '6px 4px' }}>Predeterminado</th>
               <th style={{ padding: '6px 4px' }}></th>
             </tr>
           </thead>
           <tbody>
             {depositos.length === 0 && (
-              <tr><td colSpan={4} style={{ padding: '10px 4px', color: '#98a2b3' }}>Aún no hay depósitos creados.</td></tr>
+              <tr><td colSpan={5} style={{ padding: '10px 4px', color: '#98a2b3' }}>Aún no hay depósitos creados.</td></tr>
             )}
             {depositos.map((d) => (
               <tr key={d.id} style={{ borderBottom: '1px solid #eef0f3' }}>
@@ -280,6 +304,42 @@ function SeccionDepositos() {
                 <td style={{ padding: '6px 4px' }}>{d.nombre}</td>
                 <td style={{ padding: '6px 4px' }}>
                   <span style={{ color: d.activo ? '#0b8f4e' : '#98a2b3' }}>{d.activo ? 'Activo' : 'Inactivo'}</span>
+                </td>
+                <td style={{ padding: '6px 4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => marcarPredeterminado(d)}
+                    disabled={!d.activo || guardandoPredeterminado}
+                    title={
+                      !d.activo
+                        ? 'Un deposito inactivo no puede ser el predeterminado'
+                        : (d.predeterminado ? 'Este es el deposito predeterminado' : 'Marcar como predeterminado')
+                    }
+                    style={{
+                      width: '42px',
+                      height: '22px',
+                      borderRadius: '999px',
+                      border: 'none',
+                      padding: '2px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: d.predeterminado ? 'flex-end' : 'flex-start',
+                      cursor: !d.activo ? 'not-allowed' : (d.predeterminado ? 'default' : 'pointer'),
+                      background: !d.activo ? '#e2e8f0' : (d.predeterminado ? '#0b8f4e' : '#cbd2d9'),
+                      transition: 'background 0.15s ease'
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        background: '#fff',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    />
+                  </button>
                 </td>
                 <td style={{ padding: '6px 4px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <button type="button" onClick={() => iniciarEdicionDeposito(d)} style={{ marginRight: '6px' }}>
@@ -400,6 +460,21 @@ function SeccionBaseDatos() {
     }
   };
 
+  // Envia el reporte del dia (respaldo + resumen + PDFs de cada documento) manualmente, con un
+  // clic, sin tener que cerrar el programa — hace exactamente lo mismo que ya hace el cierre
+  // automatico de MoviSync.
+  const [enviandoReporte, setEnviandoReporte] = useState(false);
+  const handleEnviarReporte = async () => {
+    setMensajeCorreo('');
+    setEnviandoReporte(true);
+    try {
+      const res = await window.api.enviarReporteManual();
+      setMensajeCorreo(res.ok ? '✅ ' + res.message : '❌ ' + res.message);
+    } finally {
+      setEnviandoReporte(false);
+    }
+  };
+
   return (
     <div>
       <h1>Bases de datos</h1>
@@ -418,9 +493,9 @@ function SeccionBaseDatos() {
         <h3 style={{ marginTop: 0 }}>Copia de seguridad automática por correo</h3>
         <p style={{ fontSize: '0.85rem', color: '#666' }}>
           Cada vez que cierres MoviSync, se guarda automáticamente un respaldo local en tu carpeta
-          "Documentos/MoviSync/Backups". Si activas esto además, ese mismo día también se envía por
-          correo un resumen (ventas, facturas e inventario del día) con el respaldo adjunto — como
-          mucho una vez por día, aunque cierres el programa varias veces.
+          "Documentos/MoviSync/Backups". Si activas esto además, en ese mismo cierre también se envía
+          por correo un resumen (ventas, facturas e inventario del día) con el respaldo adjunto —
+          cada vez que cierres el programa, sin límite de veces por día.
         </p>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
@@ -464,14 +539,22 @@ function SeccionBaseDatos() {
           "Seguridad → Verificación en dos pasos → Contraseñas de aplicaciones".
         </p>
 
-        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap' }}>
           <button type="submit" disabled={guardandoCorreo || cargandoCorreo}>
             {guardandoCorreo ? 'Guardando...' : 'Guardar configuración'}
           </button>
           <button type="button" onClick={handleProbarCorreo} disabled={probandoCorreo || cargandoCorreo}>
             {probandoCorreo ? 'Enviando...' : 'Enviar correo de prueba'}
           </button>
+          <button type="button" onClick={handleEnviarReporte} disabled={enviandoReporte || cargandoCorreo}>
+            {enviandoReporte ? 'Enviando reporte...' : 'Enviar reporte'}
+          </button>
         </div>
+        <p style={{ fontSize: '0.75rem', color: '#98a2b3', margin: '6px 0 0' }}>
+          "Enviar reporte" manda ahora mismo el respaldo y el resumen del día por correo, igual que
+          cuando cierras MoviSync, sin necesidad de cerrar el programa. Requiere que la configuración
+          de correo de arriba esté guardada.
+        </p>
         {mensajeCorreo && <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>{mensajeCorreo}</p>}
       </form>
     </div>
