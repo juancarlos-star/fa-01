@@ -30,6 +30,12 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
     codigo_producto: editando ? (productoEditar.codigo_producto || '') : (codigoInicial || ''),
     nombre: editando ? (productoEditar.nombre || '') : '',
     categoria: editando ? (productoEditar.categoria || '') : '',
+    // El costo se guarda SIEMPRE en dolares (costo_promedio_usd), pero se escribe en la moneda
+    // en la que el negocio realmente paga ese producto (ver monedaCosto mas abajo): Bs. para
+    // SIM/USIM (se compran a Movistar en bolivares) y dolares para equipos/accesorios. Si se
+    // esta editando, se precarga en bruto (USD) y una vez cargada la tasa se convierte a Bs. si
+    // corresponde (ver useEffect de tasaCambio, abajo) para no mostrar $2000 cuando en realidad
+    // son Bs 2000.
     costo_inicial: editando ? String(productoEditar.costo_promedio_usd ?? '0') : '',
     precio2: editando ? String(productoEditar.precio2 ?? '') : '',
     // Opcional: si se deja vacio, se guarda como 0 (sin alerta de stock bajo).
@@ -47,11 +53,11 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
   // Tasa del dia (Bs por 1 USD): el "Precio Bs." ya NO se escribe a mano -se calcula solo,
   // multiplicando el Precio Dolares por esta tasa- para que nunca quede desactualizado si el
   // dolar sube o baja de un dia a otro.
-  const [tasaCambio, setTasaCambio] = useState(1);
+  const [tasaCambio, setTasaCambio] = useState(null); // null = todavia no se cargo la tasa real
   useEffect(() => {
     window.api.getSettings().then((s) => setTasaCambio(parseFloat(s?.tasa_cambio) || 1));
   }, []);
-  const precioBsCalculado = (parseFloat(form.precio2) || 0) * tasaCambio;
+  const precioBsCalculado = (parseFloat(form.precio2) || 0) * (tasaCambio || 1);
 
   const [categorias, setCategorias] = useState([]);
   useEffect(() => {
@@ -87,6 +93,30 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
   // Categoria actualmente elegida (si hay) y el tipo que resulta de todo esto.
   const categoriaObj = categorias.find((c) => c.nombre === form.categoria);
   const tipoActual = categoriaObj ? categoriaObj.tipo : (form.seVendePorUnidad ? 'equipo' : 'accesorio');
+
+  // Moneda en la que se escribe el Costo: Bs. para SIM/USIM (se compran a Movistar en
+  // bolivares), dolares para equipo/accesorio (se compran en Compras Telf/Acces en dolares).
+  // Al editar, se usa el tipo YA GUARDADO del producto (estable, no depende de que carguen las
+  // categorias) para decidir en que moneda mostrar el costo existente; mientras se esta creando
+  // o cambiando de categoria, sigue la seleccion actual (tipoActual).
+  const tipoParaMonedaCosto = editando ? productoEditar.tipo : tipoActual;
+  const monedaCosto = (tipoParaMonedaCosto === 'simcard' || tipoParaMonedaCosto === 'usim') ? 'Bs' : 'USD';
+  const tasaLista = tasaCambio !== null;
+  const costoIngresado = parseFloat(form.costo_inicial) || 0;
+  const costoUsdFinal = monedaCosto === 'Bs' ? costoIngresado / (tasaCambio || 1) : costoIngresado;
+
+  // Al editar, precargar el Costo en la moneda correcta apenas se conoce la tasa real (si se
+  // hiciera antes, con la tasa por defecto de 1, un costo en Bs se mostraria igual al numero en
+  // USD guardado, que es justo el error que se queria evitar).
+  useEffect(() => {
+    if (editando && tasaLista) {
+      const costoUsdGuardado = productoEditar.costo_promedio_usd || 0;
+      const monedaCostoInicial = (productoEditar.tipo === 'simcard' || productoEditar.tipo === 'usim') ? 'Bs' : 'USD';
+      const valor = monedaCostoInicial === 'Bs' ? costoUsdGuardado * tasaCambio : costoUsdGuardado;
+      setForm((f) => ({ ...f, costo_inicial: String(Math.round(valor * 100) / 100) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasaLista]);
 
   // Si el producto ya tiene movimientos, solo se puede elegir "sin categoria" o una categoria
   // que quede del MISMO lado (accesorio, o "por unidad") en el que ya estaba el producto.
@@ -149,7 +179,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
           return;
         }
         // El costo (costo promedio) se guarda por una via separada del resto de los datos.
-        const nuevoCosto = parseFloat(form.costo_inicial) || 0;
+        const nuevoCosto = costoUsdFinal;
         if (nuevoCosto !== (productoEditar.costo_promedio_usd || 0)) {
           const resCosto = await window.api.updateProductCosto(productoEditar.id, nuevoCosto);
           if (!resCosto.ok) {
@@ -177,7 +207,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
         precio: precioBsCalculado,
         precio2: parseFloat(form.precio2) || 0,
         stock_minimo: parseInt(form.stock_minimo, 10) || 0,
-        costo_inicial: parseFloat(form.costo_inicial) || 0,
+        costo_inicial: costoUsdFinal,
         codigo_producto: codigoLimpio || null
       });
       if (!res.ok) {
@@ -196,7 +226,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
         precio: precioBsCalculado,
         precio2: parseFloat(form.precio2) || 0,
         stock_minimo: parseInt(form.stock_minimo, 10) || 0,
-        costo_promedio_usd: parseFloat(form.costo_inicial) || 0,
+        costo_promedio_usd: costoUsdFinal,
         stock_disponible: 0
       });
     } finally {
@@ -250,9 +280,20 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
               </p>
             </Campo>
 
-            <Campo label="Costo">
+            <Campo label={monedaCosto === 'Bs' ? `Costo (Bs.)` : 'Costo ($)'}>
               <input type="number" step="0.01" min="0" value={form.costo_inicial} onChange={set('costo_inicial')}
                 placeholder="0.00" style={inputStyle} />
+              {monedaCosto === 'Bs' ? (
+                <p style={{ fontSize: '0.72rem', color: '#98a2b3', margin: '4px 0 0' }}>
+                  {tasaLista
+                    ? `≈ $${fmt(costoUsdFinal)} USD (tasa ${fmt(tasaCambio)})`
+                    : 'Cargando tasa del día...'}
+                </p>
+              ) : (
+                <p style={{ fontSize: '0.72rem', color: '#98a2b3', margin: '4px 0 0' }}>
+                  Este tipo de producto se compra en dólares, así que el costo se escribe directo en $.
+                </p>
+              )}
             </Campo>
 
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -263,7 +304,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
                 </Campo>
               </div>
               <div style={{ flex: 1 }}>
-                <Campo label={`Precio Bs. (tasa ${fmt(tasaCambio)})`}>
+                <Campo label={`Precio Bs. (tasa ${tasaLista ? fmt(tasaCambio) : '...'})`}>
                   <div style={{ ...inputStyle, background: '#f4f6f8', color: '#475467' }}>
                     Bs {fmt(precioBsCalculado)}
                   </div>
