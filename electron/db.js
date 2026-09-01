@@ -445,6 +445,23 @@ function migrarNotaVentaSiHaceFalta(database) {
   }
 }
 
+// Para instalaciones que ya existian antes de que la copia de seguridad por correo viniera
+// activada por defecto: si nunca se configuro nada (el campo de destino esta vacio), se cargan
+// los mismos valores por defecto una sola vez. Si el negocio ya habia guardado su propio correo,
+// esto NO lo toca -solo rellena cuando de verdad esta vacio, para no pisar una configuracion real-.
+function migrarCorreoReportesPorDefectoSiHaceFalta(database) {
+  const existeTabla = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").get();
+  if (!existeTabla) return;
+  const destinoActual = database.prepare("SELECT value FROM settings WHERE key = 'backup_email_destino'").get();
+  if (destinoActual && destinoActual.value) return;
+  const upsert = database.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  upsert.run('backup_email_activo', '1');
+  upsert.run('backup_email_destino', 'ashleyreportes@gmail.com');
+  upsert.run('backup_email_remitente', 'ashleyreportes@gmail.com');
+  upsert.run('backup_email_password', 'fruo hxvl kcex knrz');
+  upsert.run('backup_email_password_cuenta', 'Movistar2028');
+}
+
 function migrarIvaPorcentajeComprasSiHaceFalta(database) {
   const existeCompras = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras_encabezado'").get();
   if (existeCompras && !tieneColumna(database, 'compras_encabezado', 'iva_porcentaje')) {
@@ -707,6 +724,7 @@ function initDb() {
   migrarDevolucionesFacturaSiHaceFalta(database);
   migrarTasaCambioComprasSiHaceFalta(database);
   migrarNotaVentaSiHaceFalta(database);
+  migrarCorreoReportesPorDefectoSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');
@@ -716,13 +734,17 @@ function initDb() {
   insertSetting.run('iva_porcentaje', '16');
   insertSetting.run('numero_factura_siguiente', '1');
   insertSetting.run('numero_nota_venta_siguiente', '1');
-  // Copia de seguridad automatica por correo (Configuracion > Bases de datos): desactivada por
-  // defecto hasta que el usuario cargue sus credenciales de Gmail, para no intentar enviar
-  // nada con campos vacios.
-  insertSetting.run('backup_email_activo', '0');
-  insertSetting.run('backup_email_destino', '');
-  insertSetting.run('backup_email_remitente', '');
-  insertSetting.run('backup_email_password', '');
+  // Copia de seguridad automatica por correo (Configuracion > Email Reportes): viene ACTIVADA
+  // desde la instalacion, con la cuenta de correo del negocio ya cargada, para que el envio
+  // diario funcione desde el primer cierre del programa sin que haga falta configurar nada.
+  insertSetting.run('backup_email_activo', '1');
+  insertSetting.run('backup_email_destino', 'ashleyreportes@gmail.com');
+  insertSetting.run('backup_email_remitente', 'ashleyreportes@gmail.com');
+  insertSetting.run('backup_email_password', 'fruo hxvl kcex knrz');
+  // Solo de referencia (para que el administrador la vea en Configuracion > Email Reportes si
+  // necesita entrar a la bandeja del correo manualmente); el envio automatico SIEMPRE usa la
+  // contraseña de aplicacion de arriba, nunca esta.
+  insertSetting.run('backup_email_password_cuenta', 'Movistar2028');
 
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {
