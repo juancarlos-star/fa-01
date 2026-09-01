@@ -110,7 +110,7 @@ function limpiarCategoriasDuplicadasSiHaceFalta(database) {
   const existeTabla = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categorias'").get();
   if (!existeTabla) return;
 
-  const nombreFijo = { equipo: 'Teléfonos', simcard: 'SIM (ICCID)', usim: 'USIM' };
+  const nombreFijo = { equipo: 'Teléfonos (IMEI)', simcard: 'SIMCards', usim: 'USIM' };
 
   ['equipo', 'simcard', 'usim'].forEach((tipo) => {
     const fijo = nombreFijo[tipo];
@@ -165,8 +165,8 @@ function limpiarCategoriasDuplicadasSiHaceFalta(database) {
 function seedCategoriasDefaultSiHaceFalta(database) {
   const existeTabla = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='categorias'").get();
   if (!existeTabla) return;
-  const defaults = [    { nombre: 'Teléfonos', tipo: 'equipo' },
-    { nombre: 'SIM (ICCID)', tipo: 'simcard' },
+  const defaults = [    { nombre: 'Teléfonos (IMEI)', tipo: 'equipo' },
+    { nombre: 'SIMCards', tipo: 'simcard' },
     { nombre: 'USIM', tipo: 'usim' },
     { nombre: 'Accesorios', tipo: 'accesorio' }
   ];
@@ -726,10 +726,10 @@ function initDb() {
 
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {
-    const hash = bcrypt.hashSync('admin123', 10);
+    const hash = bcrypt.hashSync('123', 10);
     database.prepare(
       "INSERT INTO users (username, password_hash, full_name, role, active, created_at) VALUES (?, ?, ?, ?, 1, datetime('now','localtime'))"
-    ).run('admin', hash, 'Administrador', 'administrador');
+    ).run('jhon', hash, 'Jhon', 'administrador');
   }
 }
 module.exports = { getDb, initDb, cerrarDb, getDbPath };
