@@ -212,7 +212,7 @@ export default function App() {
   // quedaban brillantes porque viven dentro de un <div> y no son hijos directos de <nav>, por lo
   // que la regla CSS que apaga al resto del menu no los alcanzaba.
   const algunSubmenuAbierto = menuFacturacionAbierto || menuComprasAbierto || menuReportesAbierto || menuConfigAbierto;
-  const vistasConfig = ['configDatosTienda', 'configCotizacion', 'configFactura', 'configDepositos', 'configBaseDatos'];
+  const vistasConfig = ['configDatosTienda', 'configCotizacion', 'configFactura', 'configDepositos', 'configBaseDatos', 'configEmailReportes'];
   const irAReporte = (catKey) => {
     setCategoriaReportes(catKey);
     setView('reportes');
@@ -369,6 +369,11 @@ export default function App() {
                   🗄 Bases de datos
                 </button>
               )}
+              {user.role === 'administrador' && (
+                <button className={view === 'configEmailReportes' ? 'active' : ''} onClick={() => { setView('configEmailReportes'); setMenuConfigAbierto(false); }}>
+                  📧 Email Reportes
+                </button>
+              )}
             </SidebarSubmenu>
           </div>
           {user.role === 'administrador' && (
@@ -397,6 +402,7 @@ export default function App() {
         {view === 'configFactura' && user.role === 'administrador' && <Configuracion seccion="factura" />}
         {view === 'configDepositos' && user.role === 'administrador' && <Configuracion seccion="depositos" />}
         {view === 'configBaseDatos' && user.role === 'administrador' && <Configuracion seccion="baseDatos" />}
+        {view === 'configEmailReportes' && user.role === 'administrador' && <Configuracion seccion="emailReportes" />}
         {view === 'usuarios' && user.role === 'administrador' && <UsersAdmin />}
       </main>
     </div>
