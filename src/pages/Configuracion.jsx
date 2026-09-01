@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { SwitchToggle } from '../components/ProductoRapidoModal.jsx';
 
 const LOGO_MAX_BYTES = 400 * 1024; // 400KB
 
@@ -410,15 +411,36 @@ function SeccionBaseDatos() {
     setMensajeBackup(res.mensaje);
   };
 
-  // --- Copia de seguridad automatica + correo de resumen diario ---
-  // Estado propio de esta seccion (no comparte el "form" de Datos de Tienda/Cotizacion/Factura)
-  // porque son campos sin nada que ver con esos, igual que ya hace la seccion de Depositos.
-  const [correo, setCorreo] = useState({ activo: false, destino: '', remitente: '', password: '' });
+  return (
+    <div>
+      <h1>Bases de datos</h1>
+      <div className="form-box" style={{ maxWidth: '460px' }}>
+        <h3 style={{ marginTop: 0 }}>Respaldo manual</h3>
+        <p style={{ fontSize: '0.85rem', color: '#666' }}>
+          Guarda una copia de toda la informacion (inventario, clientes, facturas, gastos) en un archivo que puedes
+          guardar en un USB o en la nube. Hazlo periodicamente.
+        </p>
+        <button type="button" onClick={handleBackup}>Crear respaldo</button>
+        <button type="button" onClick={handleRestaurar} style={{ marginLeft: '8px' }}>Restaurar respaldo</button>
+        {mensajeBackup && <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>{mensajeBackup}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- 6) Email Reportes ----------------
+// Antes vivia dentro de "Bases de datos"; ahora es su propio submenu, solo para administrador
+// (a diferencia de "Cotizacion del dia", que si ve el vendedor). Ademas del formulario editable
+// de siempre, se agrega arriba un recuadro de solo lectura con el formato pedido (Correo /
+// Contraseña / Contraseña de la aplicacion) para consulta rapida.
+function SeccionEmailReportes() {
+  const [correo, setCorreo] = useState({ activo: false, destino: '', remitente: '', password: '', passwordCuenta: '' });
   const [cargandoCorreo, setCargandoCorreo] = useState(true);
   const [guardandoCorreo, setGuardandoCorreo] = useState(false);
   const [probandoCorreo, setProbandoCorreo] = useState(false);
   const [mensajeCorreo, setMensajeCorreo] = useState('');
   const [mostrarPassword, setMostrarPassword] = useState(false);
+  const [mostrarPasswordCuenta, setMostrarPasswordCuenta] = useState(false);
 
   useEffect(() => {
     window.api.getSettings().then((data) => {
@@ -426,7 +448,8 @@ function SeccionBaseDatos() {
         activo: data.backup_email_activo === '1',
         destino: data.backup_email_destino || '',
         remitente: data.backup_email_remitente || '',
-        password: data.backup_email_password || ''
+        password: data.backup_email_password || '',
+        passwordCuenta: data.backup_email_password_cuenta || ''
       });
       setCargandoCorreo(false);
     });
@@ -441,7 +464,8 @@ function SeccionBaseDatos() {
         backup_email_activo: correo.activo ? '1' : '0',
         backup_email_destino: correo.destino.trim(),
         backup_email_remitente: correo.remitente.trim(),
-        backup_email_password: correo.password
+        backup_email_password: correo.password,
+        backup_email_password_cuenta: correo.passwordCuenta
       });
       setMensajeCorreo('✅ Configuración de correo guardada.');
     } finally {
@@ -460,9 +484,6 @@ function SeccionBaseDatos() {
     }
   };
 
-  // Envia el reporte del dia (respaldo + resumen + PDFs de cada documento) manualmente, con un
-  // clic, sin tener que cerrar el programa — hace exactamente lo mismo que ya hace el cierre
-  // automatico de MoviSync.
   const [enviandoReporte, setEnviandoReporte] = useState(false);
   const handleEnviarReporte = async () => {
     setMensajeCorreo('');
@@ -477,16 +498,36 @@ function SeccionBaseDatos() {
 
   return (
     <div>
-      <h1>Bases de datos</h1>
+      <h1>Email Reportes</h1>
+
       <div className="form-box" style={{ maxWidth: '460px' }}>
-        <h3 style={{ marginTop: 0 }}>Respaldo manual</h3>
-        <p style={{ fontSize: '0.85rem', color: '#666' }}>
-          Guarda una copia de toda la informacion (inventario, clientes, facturas, gastos) en un archivo que puedes
-          guardar en un USB o en la nube. Hazlo periodicamente.
+        <h3 style={{ marginTop: 0 }}>Información de la cuenta</h3>
+        <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '10px' }}>
+          Solo de referencia — la "Contraseña" normal no la usa el sistema para nada, es únicamente
+          para que puedas entrar a esa bandeja de correo manualmente si lo necesitas. El envío
+          automático siempre usa la Contraseña de la aplicación.
         </p>
-        <button type="button" onClick={handleBackup}>Crear respaldo</button>
-        <button type="button" onClick={handleRestaurar} style={{ marginLeft: '8px' }}>Restaurar respaldo</button>
-        {mensajeBackup && <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>{mensajeBackup}</p>}
+        {cargandoCorreo ? (
+          <p style={{ color: '#98a2b3' }}>Cargando...</p>
+        ) : (
+          <div style={{ fontSize: '0.92rem', lineHeight: '2' }}>
+            <div><strong>Correo:</strong> {correo.remitente || '—'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <strong>Contraseña:</strong>
+              <span>{mostrarPasswordCuenta ? (correo.passwordCuenta || '—') : '••••••••••'}</span>
+              <button type="button" onClick={() => setMostrarPasswordCuenta((v) => !v)} style={{ fontSize: '0.75rem' }}>
+                {mostrarPasswordCuenta ? 'Ocultar' : 'Ver'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <strong>Contraseña de la aplicación:</strong>
+              <span>{mostrarPassword ? (correo.password || '—') : '••••••••••'}</span>
+              <button type="button" onClick={() => setMostrarPassword((v) => !v)} style={{ fontSize: '0.75rem' }}>
+                {mostrarPassword ? 'Ocultar' : 'Ver'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <form className="form-box" onSubmit={handleGuardarCorreo} style={{ maxWidth: '460px', marginTop: '1.2rem' }}>
@@ -498,12 +539,8 @@ function SeccionBaseDatos() {
           cada vez que cierres el programa, sin límite de veces por día.
         </p>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={correo.activo}
-            onChange={(e) => setCorreo({ ...correo, activo: e.target.checked })}
-          />
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+          <SwitchToggle checked={correo.activo} onChange={(v) => setCorreo({ ...correo, activo: v })} />
           Enviar resumen y respaldo diario por correo
         </label>
 
@@ -521,6 +558,14 @@ function SeccionBaseDatos() {
           value={correo.remitente}
           onChange={(e) => setCorreo({ ...correo, remitente: e.target.value })}
           placeholder="tunegocio@gmail.com"
+        />
+
+        <label>Contraseña (solo de referencia, no se usa para enviar)</label>
+        <input
+          type="text"
+          value={correo.passwordCuenta}
+          onChange={(e) => setCorreo({ ...correo, passwordCuenta: e.target.value })}
+          placeholder="Contraseña normal de la cuenta de Gmail"
         />
 
         <label>Contraseña de aplicación de Gmail</label>
@@ -568,6 +613,7 @@ export default function Configuracion({ seccion }) {
     case 'factura': return <SeccionConfigFactura />;
     case 'depositos': return <SeccionDepositos />;
     case 'baseDatos': return <SeccionBaseDatos />;
+    case 'emailReportes': return <SeccionEmailReportes />;
     default: return <SeccionDatosTienda />;
   }
 }
