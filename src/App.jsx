@@ -261,51 +261,45 @@ export default function App() {
                   </button>
             </SidebarSubmenu>
           </div>
-          {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
-          {user.role === 'administrador' && (
-            <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuComprasAbierto ? ' dimmed' : ''}`}>
-              <button
-                ref={refCompras}
-                className={vistasCompras.includes(view) ? 'active' : ''}
-                onClick={() => setMenuComprasAbierto((v) => !v)}
-              >
-                <MIcon.Compras />Compras
-              </button>
-              <SidebarSubmenu open={menuComprasAbierto} anchorRef={refCompras} onClose={() => setMenuComprasAbierto(false)}>
-                    <button
-                      className={view === 'compras' ? 'active' : ''}
-                      onClick={() => { setView('compras'); setMenuComprasAbierto(false); }}
-                    >
-                      🛒 Generar Compras
-                    </button>
-                    <button
-                      className={view === 'comprasTelfAcces' ? 'active' : ''}
-                      onClick={() => { setView('comprasTelfAcces'); setMenuComprasAbierto(false); }}
-                    >
-                      ☎ Compras Telf/Acces
-                    </button>
-                    <button
-                      className={view === 'devolucionCompras' ? 'active' : ''}
-                      onClick={() => { setView('devolucionCompras'); setMenuComprasAbierto(false); }}
-                    >
-                      ↩ Devolución de Compras
-                    </button>
-                    <button
-                      className={view === 'traslados' ? 'active' : ''}
-                      onClick={() => { setView('traslados'); setMenuComprasAbierto(false); }}
-                    >
-                      🔀 Traslados entre depósitos
-                    </button>
-              </SidebarSubmenu>
-            </div>
-          )}
-          {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
-          {user.role === 'administrador' && (
-            <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}><MIcon.Categorias />Categorias</button>
-          )}
-          {user.role === 'administrador' && (
-            <button className={view === 'cargosDescargos' ? 'active' : ''} onClick={() => setView('cargosDescargos')}><MIcon.CargosDescargos />Cargos y Descargos</button>
-          )}
+          <hr className="sidebar-section-divider" />
+          <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuComprasAbierto ? ' dimmed' : ''}`}>
+            <button
+              ref={refCompras}
+              className={vistasCompras.includes(view) ? 'active' : ''}
+              onClick={() => setMenuComprasAbierto((v) => !v)}
+            >
+              <MIcon.Compras />Compras
+            </button>
+            <SidebarSubmenu open={menuComprasAbierto} anchorRef={refCompras} onClose={() => setMenuComprasAbierto(false)}>
+                  <button
+                    className={view === 'compras' ? 'active' : ''}
+                    onClick={() => { setView('compras'); setMenuComprasAbierto(false); }}
+                  >
+                    🛒 Generar Compras
+                  </button>
+                  <button
+                    className={view === 'comprasTelfAcces' ? 'active' : ''}
+                    onClick={() => { setView('comprasTelfAcces'); setMenuComprasAbierto(false); }}
+                  >
+                    ☎ Compras Telf/Acces
+                  </button>
+                  <button
+                    className={view === 'devolucionCompras' ? 'active' : ''}
+                    onClick={() => { setView('devolucionCompras'); setMenuComprasAbierto(false); }}
+                  >
+                    ↩ Devolución de Compras
+                  </button>
+                  <button
+                    className={view === 'traslados' ? 'active' : ''}
+                    onClick={() => { setView('traslados'); setMenuComprasAbierto(false); }}
+                  >
+                    🔀 Traslados entre depósitos
+                  </button>
+            </SidebarSubmenu>
+          </div>
+          <hr className="sidebar-section-divider" />
+          <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}><MIcon.Categorias />Categorias</button>
+          <button className={view === 'cargosDescargos' ? 'active' : ''} onClick={() => setView('cargosDescargos')}><MIcon.CargosDescargos />Cargos y Descargos</button>
           {user.role === 'administrador' && (
             <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}><MIcon.Gastos />Gastos</button>
           )}
@@ -391,12 +385,12 @@ export default function App() {
         {view === 'facturacion' && <Facturacion currentUser={user} />}
         {view === 'notaVenta' && <Facturacion currentUser={user} modo="notaVenta" />}
         {view === 'devolucionFacturas' && <DevolucionFacturas currentUser={user} />}
-        {view === 'compras' && user.role === 'administrador' && <Compras currentUser={user} />}
-        {view === 'comprasTelfAcces' && user.role === 'administrador' && <ComprasTelfAcces currentUser={user} />}
-        {view === 'devolucionCompras' && user.role === 'administrador' && <DevolucionCompras currentUser={user} />}
-        {view === 'traslados' && user.role === 'administrador' && <Traslados currentUser={user} />}
-        {view === 'categorias' && user.role === 'administrador' && <CategoriasAdmin />}
-        {view === 'cargosDescargos' && user.role === 'administrador' && <CargosDescargos currentUser={user} />}
+        {view === 'compras' && <Compras currentUser={user} />}
+        {view === 'comprasTelfAcces' && <ComprasTelfAcces currentUser={user} />}
+        {view === 'devolucionCompras' && <DevolucionCompras currentUser={user} />}
+        {view === 'traslados' && <Traslados currentUser={user} />}
+        {view === 'categorias' && <CategoriasAdmin />}
+        {view === 'cargosDescargos' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
         {view === 'reportes' && <Reportes key={categoriaReportes} currentUser={user} categoriaInicial={categoriaReportes} />}
         {view === 'configDatosTienda' && user.role === 'administrador' && <Configuracion seccion="datosTienda" />}
