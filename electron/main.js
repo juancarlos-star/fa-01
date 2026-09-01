@@ -346,29 +346,65 @@ ipcMain.handle('pdf:verConVisorExterno', async (event, { filePath }) => {
 
 
 app.on('window-all-closed', () => {
+  sesionActual = null;
   if (process.platform !== 'darwin') app.quit();
 });
 
 // ---------- IPC: Autenticacion ----------
+// El backend (este archivo, proceso principal de Electron) es quien de verdad decide que se
+// puede hacer y que no -- los "candados" que ya existen en las pantallas de React (botones y
+// menus ocultos segun el rol) son solo para que la interfaz se vea limpia, pero por si solos NO
+// alcanzan como seguridad real: cualquiera que lograra hablarle directo al proceso principal
+// (sin pasar por esos botones) podria saltarselos. Por eso aqui se guarda que usuario esta
+// logueado ahora mismo, y las acciones sensibles (usuarios, gastos, depositos, base de datos,
+// eliminar productos, y un par de reportes puntuales) se vuelven a validar aqui, sin confiar en
+// lo que la pantalla diga que el usuario deberia poder hacer.
+let sesionActual = null; // { id, username, role } del usuario logueado, o null si no hay sesion
+
+// Se usa como primera linea de un ipcMain.handle que solo el administrador deberia poder
+// ejecutar. Si devuelve algo (no null), esa accion NO se hace: se devuelve tal cual ese
+// resultado al frontend (para que muestre el mismo tipo de mensaje de error que ya usan las
+// demas validaciones de la app).
+function requireAdmin() {
+  if (!sesionActual) return { ok: false, message: 'No hay una sesion activa. Inicia sesion de nuevo.' };
+  if (sesionActual.role !== 'administrador') {
+    return { ok: false, message: 'Esta accion es solo para el administrador.' };
+  }
+  return null;
+}
+
 ipcMain.handle('auth:login', (event, { username, password }) => {
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
   if (!user) return { ok: false, message: 'Usuario no encontrado o inactivo' };
   const valid = bcrypt.compareSync(password, user.password_hash);
   if (!valid) return { ok: false, message: 'Contrasena incorrecta' };
+  sesionActual = { id: user.id, username: user.username, role: user.role };
   return {
     ok: true,
     user: { id: user.id, username: user.username, full_name: user.full_name, role: user.role }
   };
 });
 
+// El logout tambien se avisa al backend (ademas de borrar el usuario del estado de React), para
+// que una vez cerrada la sesion nadie pueda seguir usando acciones de administrador aunque la
+// ventana de la app se quede abierta.
+ipcMain.handle('auth:logout', () => {
+  sesionActual = null;
+  return { ok: true };
+});
+
 // ---------- IPC: Gestion de usuarios ----------
 ipcMain.handle('users:list', () => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   return db.prepare('SELECT id, username, full_name, role, active, created_at FROM users ORDER BY id').all();
 });
 
 ipcMain.handle('users:create', (event, { username, password, full_name, role }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const usuarioLimpio = (username || '').trim();
   const nombreLimpio = (full_name || '').trim();
@@ -386,6 +422,8 @@ ipcMain.handle('users:create', (event, { username, password, full_name, role }) 
 // Permite editar nombre completo, usuario, rol y (opcionalmente) la contrasena de un usuario
 // ya existente. Si newPassword viene vacio o no se envia, la contrasena actual no se toca.
 ipcMain.handle('users:update', (event, { id, username, full_name, role, newPassword }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!user) return { ok: false, message: 'Usuario no encontrado' };
@@ -410,6 +448,8 @@ ipcMain.handle('users:update', (event, { id, username, full_name, role, newPassw
 });
 
 ipcMain.handle('users:toggleActive', (event, { id }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const user = db.prepare('SELECT active FROM users WHERE id = ?').get(id);
   if (!user) return { ok: false, message: 'Usuario no encontrado' };
@@ -419,6 +459,8 @@ ipcMain.handle('users:toggleActive', (event, { id }) => {
 });
 
 ipcMain.handle('users:changePassword', (event, { id, newPassword }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const hash = bcrypt.hashSync(newPassword, 10);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id);
@@ -822,6 +864,8 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
 });
 
 ipcMain.handle('products:delete', (event, { id }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const unitsCount = db.prepare('SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ?').get(id).c;
   if (unitsCount > 0) return { ok: false, message: 'No se puede eliminar: tiene unidades (IMEI/SIM) registradas' };
@@ -1569,6 +1613,17 @@ ipcMain.handle('notificaciones:marcarLeidas', () => {
 });
 
 ipcMain.handle('settings:update', (event, values) => {
+  // "Cotizacion del dia" (tasa_cambio) es la unica configuracion que tambien puede tocar el
+  // vendedor -- todo lo demas que viaja por este mismo canal (datos de tienda, configuracion de
+  // factura, correo de respaldo, etc.) es exclusivo del administrador. Si en el mismo llamado
+  // viene SOLO la tasa (y su fecha, que se agrega mas abajo automaticamente), se deja pasar sin
+  // pedir rol de administrador; si viene cualquier otra clave, se exige administrador.
+  const clavesPermitidasVendedor = new Set(['tasa_cambio', 'tasa_cambio_actualizada_fecha']);
+  const soloTasaCambio = Object.keys(values || {}).every((k) => clavesPermitidasVendedor.has(k));
+  if (!soloTasaCambio) {
+    const chequeo = requireAdmin();
+    if (chequeo) return chequeo;
+  }
   const db = getDb();
   // El logo (si viene) se guarda como texto (data URL base64) en la misma tabla key/value; se
   // limita su tamano aqui tambien (ademas de la validacion en el formulario) para que un archivo
@@ -1605,6 +1660,8 @@ ipcMain.handle('depositos:list', (event, { soloActivos } = {}) => {
 });
 
 ipcMain.handle('depositos:create', (event, { codigo, nombre }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const codigoLimpio = (codigo || '').trim();
   const nombreLimpio = (nombre || '').trim();
@@ -1618,6 +1675,8 @@ ipcMain.handle('depositos:create', (event, { codigo, nombre }) => {
 });
 
 ipcMain.handle('depositos:update', (event, { id, codigo, nombre }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const codigoLimpio = (codigo || '').trim();
   const nombreLimpio = (nombre || '').trim();
@@ -1631,6 +1690,8 @@ ipcMain.handle('depositos:update', (event, { id, codigo, nombre }) => {
 // No se permite desactivar el ultimo deposito activo: siempre debe quedar al menos uno
 // disponible para poder facturar, comprar y hacer cargos/descargos.
 ipcMain.handle('depositos:toggleActive', (event, { id }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const deposito = db.prepare('SELECT * FROM depositos WHERE id = ?').get(id);
   if (!deposito) return { ok: false, message: 'Deposito no encontrado' };
@@ -1658,6 +1719,8 @@ ipcMain.handle('depositos:toggleActive', (event, { id }) => {
 // se apaga el flag en todos los demas y se prende solo en el elegido. Debe estar activo, porque
 // un deposito inactivo no aparece en los desplegables de esas pantallas.
 ipcMain.handle('depositos:setPredeterminado', (event, { id }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const deposito = db.prepare('SELECT * FROM depositos WHERE id = ?').get(id);
   if (!deposito) return { ok: false, message: 'Deposito no encontrado' };
@@ -2318,6 +2381,8 @@ ipcMain.handle('facturas:crearDevolucion', (event, payload) => {
   }
 });
 ipcMain.handle('gastos:create', (event, { concepto, categoria, monto_usd, usuario }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   if (!concepto || !concepto.trim()) return { ok: false, message: 'El concepto es obligatorio' };
   const monto = parseFloat(monto_usd);
@@ -2329,6 +2394,8 @@ ipcMain.handle('gastos:create', (event, { concepto, categoria, monto_usd, usuari
 });
 
 ipcMain.handle('gastos:list', (event, { desde, hasta } = {}) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   if (desde && hasta) {
     return db.prepare(
@@ -2339,6 +2406,8 @@ ipcMain.handle('gastos:list', (event, { desde, hasta } = {}) => {
 });
 
 ipcMain.handle('gastos:delete', (event, { id }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   db.prepare('DELETE FROM gastos WHERE id = ?').run(id);
   return { ok: true };
@@ -2415,6 +2484,8 @@ ipcMain.handle('reportes:ganancias', (event, { desde, hasta }) => {
 // mano podia dejar fuera movimientos recien hechos. .backup() consolida todo correctamente
 // antes de escribir la copia, para que el respaldo sea siempre fiel y completo.
 ipcMain.handle('backup:crear', async () => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
     title: 'Guardar respaldo de la base de datos',
     defaultPath: `respaldo-facturacion-${new Date().toISOString().slice(0, 10)}.db`,
@@ -2426,6 +2497,8 @@ ipcMain.handle('backup:crear', async () => {
 });
 
 ipcMain.handle('backup:restaurar', async () => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow, {
     title: 'Selecciona el archivo de respaldo (.db)',
     properties: ['openFile'],
@@ -2808,6 +2881,8 @@ async function respaldarYNotificarAlCerrar() {
 // funcion para no duplicar logica; a diferencia del cierre, aqui SI le devolvemos el resultado
 // al frontend para poder mostrar un mensaje de exito o error.
 ipcMain.handle('backup:enviarReporteManual', async () => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   return await respaldarYNotificarAlCerrar();
 });
 
@@ -2818,6 +2893,8 @@ ipcMain.handle('backup:enviarReporteManual', async () => {
 // escrito, etc.) y conviene poder confirmar que funciona ANTES de guardar y de esperar a que
 // el usuario cierre el programa para enterarse de que algo estaba mal.
 ipcMain.handle('backup:enviarCorreoPrueba', async (event, { destino, remitente, password }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   if (!destino || !remitente || !password) {
     return { ok: false, message: 'Completa el correo de destino, el remitente y la contraseña antes de probar.' };
   }
@@ -3487,6 +3564,10 @@ ipcMain.handle('reportes:devolucionesCompras', (event, { desde, hasta }) => {
 // datos del cliente, base imponible, IVA y total. Las devoluciones ya vienen con montos
 // NEGATIVOS (asi se guardaron), asi que sumarlas todas da directamente el neto del periodo.
 ipcMain.handle('reportes:libroVentasIva', (event, { desde, hasta }) => {
+  // Excepcion puntual: el vendedor ve casi todos los reportes, pero este (Impuestos > Libro de
+  // Ventas IVA) es exclusivo del administrador.
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const filas = db.prepare(
     "SELECT * FROM facturas WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at ASC, id ASC"
@@ -3768,6 +3849,10 @@ const FORMATO_PERIODO = { dia: '%Y-%m-%d', mes: '%Y-%m', anio: '%Y' };
 
 // "Efectividad": ventas por vendedor agrupadas por dia, mes o año dentro del rango de fechas.
 ipcMain.handle('reportes:vendedoresEfectividad', (event, { desde, hasta, agrupacion }) => {
+  // Excepcion puntual: el vendedor ve casi todos los reportes, pero este (Vendedores >
+  // Efectividad) es exclusivo del administrador.
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const formato = FORMATO_PERIODO[agrupacion] || FORMATO_PERIODO.dia;
   const filas = db.prepare(
