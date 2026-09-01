@@ -199,6 +199,9 @@ export default function App() {
     return <Login onLogin={setUser} />;
   }
   const handleLogout = () => {
+    // Se avisa al backend (ademas de borrar el usuario del estado de React) para que la sesion
+    // de administrador quede cerrada tambien ahi, y no solo "ocultada" en la pantalla.
+    window.api.logout();
     setUser(null);
     setView('inicio');
   };
