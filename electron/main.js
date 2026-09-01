@@ -11,7 +11,8 @@ const {
   generarPDFGastoFondo,
   generarPDFResumenDiarioFondo,
   generarPDFInventarioProductosFondo,
-  generarPDFInventarioFisicoFondo
+  generarPDFInventarioFisicoFondo,
+  generarPDFGananciasFondo
 } = require('./pdfGeneradoresFondo');
 
 // ---------- Helpers de STOCK POR DEPOSITO (accesorios) ----------
@@ -2355,8 +2356,11 @@ ipcMain.handle('compras:list', (event, { desde, hasta } = {}) => {
 });
 
 // ---------- IPC: Reportes ----------
-ipcMain.handle('reportes:ganancias', (event, { desde, hasta }) => {
-  const db = getDb();
+// Calculo del reporte de Ventas y Ganancias para un rango de fechas. Se separo en su propia
+// funcion (en vez de dejarlo solo dentro del handler IPC) para poder reutilizar exactamente la
+// misma logica desde el correo automatico/manual de cierre (que necesita "hoy" sin pasar por
+// el puente IPC del renderer).
+function calcularReporteGanancias(db, desde, hasta) {
   const facturas = db.prepare(
     "SELECT * FROM facturas WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at"
   ).all(desde, hasta);
@@ -2372,10 +2376,6 @@ ipcMain.handle('reportes:ganancias', (event, { desde, hasta }) => {
     const items = db.prepare(
       `SELECT cantidad, costo_unitario_usd, es_devolucion FROM factura_items WHERE factura_id IN (${placeholders})`
     ).all(...idsFacturas);
-    // Los renglones de una devolucion (es_devolucion = 1) restan del costo vendido en vez de
-    // sumar: ese producto ya no se quedo vendido, volvio al inventario. Sin este signo, una
-    // devolucion inflaba el costo (se contaba como si se hubiera vendido dos veces) en vez de
-    // anularlo, distorsionando la ganancia bruta/neta del periodo.
     costoVendidoUsd = items.reduce((acc, i) => acc + (i.costo_unitario_usd * i.cantidad) * (i.es_devolucion ? -1 : 1), 0);
   }
 
@@ -2401,6 +2401,11 @@ ipcMain.handle('reportes:ganancias', (event, { desde, hasta }) => {
     gananciaNetaUsd,
     gastos
   };
+}
+
+ipcMain.handle('reportes:ganancias', (event, { desde, hasta }) => {
+  const db = getDb();
+  return calcularReporteGanancias(db, desde, hasta);
 });
 
 // ---------- IPC: Respaldo de base de datos ----------
@@ -2728,6 +2733,19 @@ async function respaldarYNotificarAlCerrar() {
         console.error('No se pudo generar el PDF-resumen del dia:', err);
         registrarLogBackup('Aviso: fallo generando el PDF-resumen del dia: ' + (err?.message || String(err)));
       }
+    }
+
+    // Reporte de Ventas y Ganancias DEL DIA (hoy), igual que el resto de los reportes que
+    // siempre se adjuntan aunque no haya habido movimiento (una "foto" del dia, no solo un
+    // resumen de lo que paso).
+    try {
+      const hoyISO = new Date().toISOString().slice(0, 10);
+      const reporteGanancias = calcularReporteGanancias(db, hoyISO, hoyISO);
+      const pdfGanancias = generarPDFGananciasFondo(reporteGanancias, hoyISO, hoyISO, settingsObj);
+      adjuntos.push({ nombre: pdfGanancias.nombre, buffer: pdfGanancias.buffer });
+    } catch (err) {
+      console.error('No se pudo generar el Reporte de Ventas y Ganancias:', err);
+      registrarLogBackup('Aviso: fallo generando el Reporte de Ventas y Ganancias: ' + (err?.message || String(err)));
     }
 
     // Reporte de Inventario - Productos (Deposito: Todos) e Inventario Fisico (uno por cada

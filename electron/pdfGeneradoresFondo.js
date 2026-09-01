@@ -753,6 +753,106 @@ function generarPDFInventarioFisicoFondo(reporte, settings) {
   return { nombre: `Inventario-Fisico-${nombreDepositoArchivo}_${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
 }
 
+// =========================================================================================
+// VENTAS Y GANANCIAS DEL DIA -- mismo contenido que generarPDFGanancias de pantalla (incluido
+// el grafico de barras Ventas/Costo/Ganancia neta), para adjuntar al correo automatico/manual.
+// =========================================================================================
+function dibujarGraficoBarrasPDFFondo(doc, { x, y, ancho, alto, datos, color = [11, 79, 158], formatoValor }) {
+  const max = Math.max(1, ...datos.map((d) => d.valor));
+  const espacio = ancho / datos.length;
+  const anchoBarra = espacio * 0.5;
+  const altoUtil = alto - 8;
+
+  datos.forEach((d, i) => {
+    const alturaBarra = Math.max(0.5, (d.valor / max) * altoUtil);
+    const bx = x + i * espacio + (espacio - anchoBarra) / 2;
+    const by = y + altoUtil - alturaBarra;
+    doc.setFillColor(color[0], color[1], color[2]);
+    doc.rect(bx, by, anchoBarra, alturaBarra, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(52, 64, 84);
+    doc.text(formatoValor ? formatoValor(d.valor) : String(d.valor), bx + anchoBarra / 2, by - 1.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(102, 112, 133);
+    doc.text(d.etiqueta, bx + anchoBarra / 2, y + altoUtil + 4.5, { align: 'center' });
+  });
+
+  doc.setDrawColor(220);
+  doc.line(x, y + altoUtil, x + ancho, y + altoUtil);
+  doc.setTextColor(0, 0, 0);
+  return y + alto;
+}
+
+function generarPDFGananciasFondo(reporte, desde, hasta, settings) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  const colorAcento = [11, 79, 158];
+
+  const yEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 90 });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(colorAcento[0], colorAcento[1], colorAcento[2]);
+  doc.text('REPORTE DE VENTAS Y GANANCIAS', 200, 15, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Periodo: ${desde} al ${hasta}`, 200, 21, { align: 'right' });
+
+  let y = Math.max(30, yEmpresa + 6);
+  doc.setDrawColor(200);
+  doc.line(10, y, 200, y);
+  y += 8;
+
+  doc.setFontSize(10);
+  const lineas = [
+    ['Facturas emitidas', String(reporte.cantidadFacturas)],
+    ['Ventas (sin IVA)', `$${fmt(reporte.ventasSubtotalUsd)}`],
+    ['IVA cobrado', `$${fmt(reporte.ivaCobradoUsd)}`],
+    ['Costo de lo vendido', `$${fmt(reporte.costoVendidoUsd)}`],
+    ['Ganancia bruta', `$${fmt(reporte.gananciaBrutaUsd)}`],
+    ['Gastos del periodo', `$${fmt(reporte.gastosTotalUsd)}`],
+    ['Ganancia neta', `$${fmt(reporte.gananciaNetaUsd)}`]
+  ];
+  lineas.forEach(([label, valor]) => {
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${label}:`, 10, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(valor, 70, y);
+    y += 6;
+  });
+
+  y = dibujarGraficoBarrasPDFFondo(doc, {
+    x: 10,
+    y: y + 4,
+    ancho: 130,
+    alto: 42,
+    datos: [
+      { etiqueta: 'Ventas', valor: reporte.ventasSubtotalUsd },
+      { etiqueta: 'Costo', valor: reporte.costoVendidoUsd },
+      { etiqueta: 'Ganancia neta', valor: reporte.gananciaNetaUsd }
+    ],
+    formatoValor: (v) => `$${fmt(v)}`
+  });
+
+  autoTable(doc, {
+    startY: y + 6,
+    head: [['Fecha', 'Concepto', 'Categoria', 'Monto']],
+    body: reporte.gastos.map((g) => [g.created_at, g.concepto, g.categoria || '—', `$${fmt(g.monto_usd)}`]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: colorAcento, textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 },
+    didDrawPage: () => dibujarPiePaginaEmpresa(doc, settings)
+  });
+
+  const fechaArchivo = new Date().toISOString().slice(0, 10);
+  return { nombre: `Reporte-Ventas-Ganancias_${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
+}
+
 module.exports = {
   fmt,
   agruparItemsPorProducto,
@@ -764,5 +864,6 @@ module.exports = {
   generarPDFGastoFondo,
   generarPDFResumenDiarioFondo,
   generarPDFInventarioProductosFondo,
-  generarPDFInventarioFisicoFondo
+  generarPDFInventarioFisicoFondo,
+  generarPDFGananciasFondo
 };
