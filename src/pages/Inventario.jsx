@@ -322,7 +322,7 @@ export default function Inventario({ currentUser }) {
                         </button>
                       )}
                       <button onClick={() => setProductoEnEdicion(p)}>Editar</button>
-                      <button onClick={() => handleEliminar(p.id)}>Eliminar</button>
+                      {esAdmin && <button onClick={() => handleEliminar(p.id)}>Eliminar</button>}
                     </td>
                   </tr>
                   {expandedId === p.id && !esAccesorio && (
