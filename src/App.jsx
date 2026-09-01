@@ -319,28 +319,24 @@ export default function App() {
                   <button className={view === 'reportes' && categoriaReportes === 'inventario' ? 'active' : ''} onClick={() => irAReporte('inventario')}>
                     <RIcon.Inventario /> Inventario
                   </button>
-                  {user.role === 'administrador' && (
-                    <>
-                      <button className={view === 'reportes' && categoriaReportes === 'ventas' ? 'active' : ''} onClick={() => irAReporte('ventas')}>
-                        <RIcon.Ventas /> Ventas
-                      </button>
-                      <button className={view === 'reportes' && categoriaReportes === 'compras' ? 'active' : ''} onClick={() => irAReporte('compras')}>
-                        <RIcon.Compras /> Compras
-                      </button>
-                      <button className={view === 'reportes' && categoriaReportes === 'impuestos' ? 'active' : ''} onClick={() => irAReporte('impuestos')}>
-                        <RIcon.Impuestos /> Impuestos
-                      </button>
-                      <button className={view === 'reportes' && categoriaReportes === 'etiquetas' ? 'active' : ''} onClick={() => irAReporte('etiquetas')}>
-                        <RIcon.Etiquetas /> Etiquetas
-                      </button>
-                      <button className={view === 'reportes' && categoriaReportes === 'vendedores' ? 'active' : ''} onClick={() => irAReporte('vendedores')}>
-                        <RIcon.Vendedores /> Vendedores
-                      </button>
-                    </>
-                  )}
+                  <button className={view === 'reportes' && categoriaReportes === 'ventas' ? 'active' : ''} onClick={() => irAReporte('ventas')}>
+                    <RIcon.Ventas /> Ventas
+                  </button>
+                  <button className={view === 'reportes' && categoriaReportes === 'compras' ? 'active' : ''} onClick={() => irAReporte('compras')}>
+                    <RIcon.Compras /> Compras
+                  </button>
+                  <button className={view === 'reportes' && categoriaReportes === 'impuestos' ? 'active' : ''} onClick={() => irAReporte('impuestos')}>
+                    <RIcon.Impuestos /> Impuestos
+                  </button>
+                  <button className={view === 'reportes' && categoriaReportes === 'etiquetas' ? 'active' : ''} onClick={() => irAReporte('etiquetas')}>
+                    <RIcon.Etiquetas /> Etiquetas
+                  </button>
+                  <button className={view === 'reportes' && categoriaReportes === 'vendedores' ? 'active' : ''} onClick={() => irAReporte('vendedores')}>
+                    <RIcon.Vendedores /> Vendedores
+                  </button>
             </SidebarSubmenu>
           </div>
-          {user.role === 'administrador' && <hr className="sidebar-section-divider" />}
+          <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuConfigAbierto ? ' dimmed' : ''}`}>
             <button
               ref={refConfig}
