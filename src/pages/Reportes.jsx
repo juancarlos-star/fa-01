@@ -1037,6 +1037,17 @@ function ReporteInventarioProductos() {
   const productosFiltrados = busquedaLower ? reporte.productos.filter(coincide) : reporte.productos;
   const sugerencias = busquedaLower ? productosFiltrados.slice(0, 8) : [];
 
+  // Agrupados por tipo (Teléfono/SIM/USIM/Accesorio), en ese orden fijo, cada uno con su propio
+  // subtotal de unidades y valor -asi se puede ver de un vistazo cuanto stock/valor representa
+  // cada categoria, en vez de tener que sumarlo a mano de una lista plana de 50+ productos.
+  const ordenTipos = ['equipo', 'simcard', 'usim', 'accesorio'];
+  const grupos = ordenTipos
+    .map((tipo) => ({ tipo, productos: productosFiltrados.filter((p) => p.tipo === tipo) }))
+    .filter((g) => g.productos.length > 0);
+
+  const margenUsd = (p) => (p.precioUsd || 0) - (p.costo_promedio_usd || 0);
+  const margenPct = (p) => (p.costo_promedio_usd ? (margenUsd(p) / p.costo_promedio_usd) * 100 : null);
+
   return (
     <div style={{ marginTop: '1rem' }}>
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
@@ -1096,45 +1107,83 @@ function ReporteInventarioProductos() {
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
           <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Tipo</th>
-              <th>Codigo</th>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #1d2939' }}>
+              <th style={{ padding: '0.5rem' }}>Codigo</th>
               <th>Producto</th>
               <th>Stock</th>
               <th>Costo</th>
               <th>Precio Bs.</th>
               <th>Precio $.</th>
+              <th>Margen $.</th>
+              <th>Margen %</th>
               <th>Valor Total $.</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {productosFiltrados.map((p) => (
-              <tr key={p.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{TIPO_LABEL_INV[p.tipo] || p.tipo}</td>
-                <td>{p.codigo_producto || '—'}</td>
-                <td>{p.nombre}</td>
-                <td>{p.stock}</td>
-                <td>${fmt(p.costo_promedio_usd)}</td>
-                <td>Bs. {fmt(p.precioBs)}</td>
-                <td>${fmt(p.precioUsd)}</td>
-                <td>${fmt(p.valorTotalUsd)}</td>
-                <td>
-                  <button
-                    type="button"
-                    onClick={() => abrirEdicionProducto(p.id)}
-                    disabled={cargandoEdicion}
-                    style={{
-                      padding: '4px 10px', fontSize: '0.78rem', background: '#fff',
-                      border: '1px solid #0b4f9e', color: '#0b4f9e', borderRadius: '4px', cursor: 'pointer'
-                    }}
-                  >
-                    ✎ Editar
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {grupos.map((grupo) => {
+              const subtotalStock = grupo.productos.reduce((acc, p) => acc + p.stock, 0);
+              const subtotalCosto = grupo.productos.reduce((acc, p) => acc + p.stock * (p.costo_promedio_usd || 0), 0);
+              const subtotalValor = grupo.productos.reduce((acc, p) => acc + p.valorTotalUsd, 0);
+              return (
+                <React.Fragment key={grupo.tipo}>
+                  <tr style={{ background: '#eef4ff' }}>
+                    <td colSpan={10} style={{ padding: '0.45rem 0.5rem', fontWeight: 700, color: '#0b4f9e' }}>
+                      {TIPO_LABEL_INV[grupo.tipo] || grupo.tipo} ({grupo.productos.length})
+                    </td>
+                  </tr>
+                  {grupo.productos.map((p) => {
+                    const margen = margenUsd(p);
+                    const pct = margenPct(p);
+                    return (
+                      <tr key={p.id} style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: '0.5rem' }}>{p.codigo_producto || '—'}</td>
+                        <td>{p.nombre}</td>
+                        <td>{p.stock}</td>
+                        <td>${fmt(p.costo_promedio_usd)}</td>
+                        <td>Bs. {fmt(p.precioBs)}</td>
+                        <td>${fmt(p.precioUsd)}</td>
+                        <td style={{ color: margen >= 0 ? '#0b8f4e' : '#b42318' }}>${fmt(margen)}</td>
+                        <td style={{ color: margen >= 0 ? '#0b8f4e' : '#b42318' }}>{pct === null ? '—' : `${fmt(pct)}%`}</td>
+                        <td>${fmt(p.valorTotalUsd)}</td>
+                        <td>
+                          <button
+                            type="button"
+                            onClick={() => abrirEdicionProducto(p.id)}
+                            disabled={cargandoEdicion}
+                            style={{
+                              padding: '4px 10px', fontSize: '0.78rem', background: '#fff',
+                              border: '1px solid #0b4f9e', color: '#0b4f9e', borderRadius: '4px', cursor: 'pointer'
+                            }}
+                          >
+                            ✎ Editar
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr style={{ borderBottom: '2px solid #d0d5dd', fontWeight: 600, background: '#f9fafb' }}>
+                    <td style={{ padding: '0.5rem' }} colSpan={2}>Subtotal {TIPO_LABEL_INV[grupo.tipo] || grupo.tipo}</td>
+                    <td>{subtotalStock}</td>
+                    <td>${fmt(subtotalCosto)}</td>
+                    <td colSpan={3}></td>
+                    <td colSpan={2}>${fmt(subtotalValor)}</td>
+                    <td></td>
+                  </tr>
+                </React.Fragment>
+              );
+            })}
           </tbody>
+          <tfoot>
+            <tr style={{ borderTop: '2px solid #1d2939', fontWeight: 700 }}>
+              <td style={{ padding: '0.5rem' }} colSpan={2}>TOTAL GENERAL</td>
+              <td>{reporte.totales.stock}</td>
+              <td>${fmt(reporte.totales.valorCostoUsd)}</td>
+              <td colSpan={3}></td>
+              <td colSpan={2}>${fmt(reporte.totales.valorTotalUsd)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       )}
 
@@ -1189,6 +1238,17 @@ function ReporteStockBajo() {
     return p.stock === 0 || (minimo > 0 && p.stock <= minimo);
   });
 
+  const agotados = stockBajoLista.filter((p) => p.stock === 0);
+  const bajos = stockBajoLista.filter((p) => p.stock > 0);
+  // Estimado de cuanto costaria reponer cada producto hasta su stock minimo configurado (si no
+  // tiene minimo configurado, no se puede estimar cuanto reponer, asi que no suma nada).
+  const inversionReposicion = stockBajoLista.reduce((acc, p) => {
+    const minimo = Number(p.stock_minimo) || 0;
+    if (!minimo) return acc;
+    const faltante = Math.max(0, minimo - p.stock);
+    return acc + faltante * (p.costo_promedio_usd || 0);
+  }, 0);
+
   const busquedaLower = busqueda.trim().toLowerCase();
   const coincide = (p) =>
     (p.nombre || '').toLowerCase().includes(busquedaLower) ||
@@ -1207,7 +1267,10 @@ function ReporteStockBajo() {
       </div>
 
       <p>
-        Productos en stock bajo o agotado: <strong>{stockBajoLista.length}</strong>
+        Total en stock bajo o agotado: <strong>{stockBajoLista.length}</strong>
+        {' '}— Agotados: <strong style={{ color: '#b42318' }}>{agotados.length}</strong>
+        {' '}— Con stock bajo: <strong style={{ color: '#b54708' }}>{bajos.length}</strong>
+        {' '}— Inversión estimada para reponer al mínimo: <strong>${fmt(inversionReposicion)}</strong>
       </p>
 
       {productosFiltrados.length === 0 ? (
@@ -1338,30 +1401,70 @@ function ReporteInventarioFisico() {
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr style={{ borderTop: '2px solid #1d2939', fontWeight: 700, background: '#f9fafb' }}>
+                  <td style={{ padding: '0.5rem' }} colSpan={2}>Subtotal Accesorios</td>
+                  <td>{reporte.totalAccesorios}</td>
+                </tr>
+              </tfoot>
             </table>
           )}
 
           {reporte.unidades.length === 0 ? (
             <p>No hay unidades disponibles en este deposito.</p>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-              <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-                  <th style={{ padding: '0.5rem' }}>Tipo</th>
-                  <th>Producto</th>
-                  <th>Codigo / IMEI</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reporte.unidades.map((u) => (
-                  <tr key={u.unit_id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>{TIPO_LABEL_INV[u.tipo] || u.tipo}</td>
-                    <td>{u.nombre}</td>
-                    <td>{u.codigo}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            (() => {
+              // Agrupadas por tipo (Teléfono/SIM/USIM) y, dentro de cada tipo, por producto —
+              // asi se ve cuantas unidades de cada modelo hay que contar, en vez de tener que
+              // recorrer a mano una lista plana de decenas de IMEI/ICCID.
+              const ordenTipos = ['equipo', 'simcard', 'usim'];
+              const gruposPorTipo = ordenTipos
+                .map((tipo) => ({ tipo, unidades: reporte.unidades.filter((u) => u.tipo === tipo) }))
+                .filter((g) => g.unidades.length > 0);
+
+              return gruposPorTipo.map((grupoTipo) => {
+                const porProducto = new Map();
+                grupoTipo.unidades.forEach((u) => {
+                  if (!porProducto.has(u.nombre)) porProducto.set(u.nombre, []);
+                  porProducto.get(u.nombre).push(u);
+                });
+
+                return (
+                  <table key={grupoTipo.tipo} style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1.5rem' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', borderBottom: '2px solid #1d2939' }}>
+                        <th style={{ padding: '0.5rem' }} colSpan={3}>
+                          {TIPO_LABEL_INV[grupoTipo.tipo] || grupoTipo.tipo} ({grupoTipo.unidades.length})
+                        </th>
+                      </tr>
+                      <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd', color: '#667085', fontSize: '0.85rem' }}>
+                        <th style={{ padding: '0.35rem 0.5rem' }}>Producto</th>
+                        <th>Codigo / IMEI</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from(porProducto.entries()).map(([nombre, unidades]) => (
+                        <React.Fragment key={nombre}>
+                          <tr style={{ background: '#f9fafb' }}>
+                            <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }} colSpan={3}>
+                              {nombre} — {unidades.length} unidad{unidades.length === 1 ? '' : 'es'}
+                            </td>
+                          </tr>
+                          {unidades.map((u) => (
+                            <tr key={u.unit_id} style={{ borderBottom: '1px solid #eee' }}>
+                              <td style={{ padding: '0.5rem' }}></td>
+                              <td>{u.codigo}</td>
+                              <td></td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              });
+            })()
           )}
         </>
       )}

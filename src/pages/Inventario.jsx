@@ -167,8 +167,23 @@ export default function Inventario({ currentUser }) {
   );
 
   // Columnas siempre presentes: Nombre, Categoria, Precio 1, Precio 2, Codigo, Stock, Acciones.
-  // Mas las condicionales de accesorios (Cod. barras y, si es admin, Costo prom.).
-  const totalColumnas = 7 + (esAccesorio ? 1 : 0) + (esAccesorio && esAdmin ? 1 : 0);
+  // Mas las condicionales: Cod. barras (solo accesorios), y si es admin, Costo prom. + Margen $ +
+  // Margen % (para cualquier tipo, no solo accesorios -asi se puede comparar rentabilidad entre
+  // telefonos, SIM, etc.).
+  const totalColumnas = 7 + (esAccesorio ? 1 : 0) + (esAdmin ? 3 : 0);
+
+  const totalesTab = productosFiltrados.reduce(
+    (acc, p) => {
+      const stock = p.stock_disponible || 0;
+      const costo = Number(p.costo_promedio_usd || 0);
+      const precioUsd = Number(p.precio2 || 0);
+      acc.stock += stock;
+      acc.valorCosto += stock * costo;
+      acc.valorVenta += stock * precioUsd;
+      return acc;
+    },
+    { stock: 0, valorCosto: 0, valorVenta: 0 }
+  );
 
   return (
     <div>
@@ -246,25 +261,31 @@ export default function Inventario({ currentUser }) {
               <th>Precio 2 (Dolares)</th>
               <th>Código</th>
               {esAccesorio && <th>Cod. barras</th>}
-              {esAccesorio && esAdmin && <th>Costo prom.</th>}
+              {esAdmin && <th>Costo prom.</th>}
+              {esAdmin && <th>Margen $</th>}
+              {esAdmin && <th>Margen %</th>}
               <th>Stock</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
             {productosFiltrados.map((p) => {
+              const costo = Number(p.costo_promedio_usd || 0);
+              const precioUsd = Number(p.precio2 || 0);
+              const margen = precioUsd - costo;
+              const margenPct = costo ? (margen / costo) * 100 : null;
               return (
                 <React.Fragment key={p.id}>
                   <tr style={{ borderBottom: '1px solid #eee' }}>
                     <td style={{ padding: '0.5rem' }}>{p.nombre}</td>
                     <td>{p.categoria}</td>
                     <td>${fmt(Number(p.precio))}</td>
-                    <td>${fmt(Number(p.precio2 || 0))}</td>
+                    <td>${fmt(precioUsd)}</td>
                     <td>{p.codigo_producto || '—'}</td>
                     {esAccesorio && <td>{p.codigo_barras}</td>}
-                    {esAccesorio && esAdmin && (
+                    {esAdmin && (
                       <td>
-                        {editandoCostoId === p.id ? (
+                        {esAccesorio && editandoCostoId === p.id ? (
                           <span style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
                             <input
                               type="number"
@@ -279,12 +300,16 @@ export default function Inventario({ currentUser }) {
                           </span>
                         ) : (
                           <span>
-                            ${fmt(Number(p.costo_promedio_usd || 0))}{' '}
-                            <button onClick={() => abrirEdicionCosto(p)} style={{ fontSize: '0.75rem' }}>Editar</button>
+                            ${fmt(costo)}{' '}
+                            {esAccesorio && (
+                              <button onClick={() => abrirEdicionCosto(p)} style={{ fontSize: '0.75rem' }}>Editar</button>
+                            )}
                           </span>
                         )}
                       </td>
                     )}
+                    {esAdmin && <td style={{ color: margen >= 0 ? '#0b8f4e' : '#b42318' }}>${fmt(margen)}</td>}
+                    {esAdmin && <td style={{ color: margen >= 0 ? '#0b8f4e' : '#b42318' }}>{margenPct === null ? '—' : `${fmt(margenPct)}%`}</td>}
                     <td>{p.stock_disponible}</td>
                     <td style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                       {esAccesorio ? (
@@ -315,6 +340,16 @@ export default function Inventario({ currentUser }) {
               );
             })}
           </tbody>
+          <tfoot>
+            <tr style={{ borderTop: '2px solid #1d2939', fontWeight: 700, background: '#f9fafb' }}>
+              <td style={{ padding: '0.5rem' }} colSpan={4}>TOTAL {tab.label.toUpperCase()}</td>
+              <td colSpan={esAccesorio ? 2 : 1}></td>
+              {esAdmin && <td>${fmt(totalesTab.valorCosto)}</td>}
+              {esAdmin && <td colSpan={2}></td>}
+              <td>{totalesTab.stock}</td>
+              <td>Valor venta: ${fmt(totalesTab.valorVenta)}</td>
+            </tr>
+          </tfoot>
         </table>
       )}
 
