@@ -109,14 +109,19 @@ function useSettings() {
 
 export default function Reportes({ currentUser, categoriaInicial }) {
   const esAdmin = currentUser?.role === 'administrador';
-  // Los vendedores (no administradores) solo pueden entrar a Reportes por esta puerta puntual:
-  // la pestaña "Gestión de Productos" dentro de la categoria Inventario. El resto de categorias
-  // y pestañas (reportes financieros/operativos) siguen siendo exclusivas de administradores.
+  // El vendedor ve todas las categorias y pestañas de Reportes, con solo 2 excepciones
+  // puntuales: "Impuestos > Libro de Ventas IVA" y "Vendedores > Efectividad", que siguen
+  // siendo exclusivas del administrador (el backend tambien las bloquea por detras, en
+  // electron/main.js, asi que aunque alguien manipulara la app no podria traer esos datos).
   const categoriasVisibles = esAdmin
     ? CATEGORIAS
-    : CATEGORIAS.filter((c) => c.key === 'inventario').map((c) => ({
+    : CATEGORIAS.map((c) => ({
         ...c,
-        items: c.items.filter((i) => i.key === 'gestionProductos')
+        items: c.items.filter((i) => {
+          if (c.key === 'impuestos' && i.key === 'libroVentasIva') return false;
+          if (c.key === 'vendedores' && i.key === 'vendedoresEfectividad') return false;
+          return true;
+        })
       }));
 
   const categoriaDefault = categoriaInicial && categoriasVisibles.some((c) => c.key === categoriaInicial)
