@@ -1,6 +1,7 @@
-import React, { useState, useRef, useLayoutEffect } from 'react';
+import React, { useState, useRef, useLayoutEffect, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Login from './pages/Login.jsx';
+import Activacion from './pages/Activacion.jsx';
 import UsersAdmin from './pages/UsersAdmin.jsx';
 import CategoriasAdmin from './pages/CategoriasAdmin.jsx';
 import CargosDescargos from './pages/CargosDescargos.jsx';
@@ -173,6 +174,11 @@ function SidebarSubmenu({ open, anchorRef, onClose, children }) {
 
 export default function App() {
   const [user, setUser] = useState(null);
+  // Licencia de uso (Opcion 1: clave de activacion offline atada al equipo). Se revisa una sola
+  // vez al abrir la app, ANTES de mostrar el login: mientras "licencia" es null todavia se esta
+  // consultando; si "activada" es false, se bloquea todo detras de la pantalla de Activacion.
+  const [licencia, setLicencia] = useState(null);
+  useEffect(() => { window.api.licenciaEstado().then(setLicencia); }, []);
   const [view, setView] = useState('inicio');
   // Submenu de Facturacion (Generar Factura / Devolucion de Factura), igual al de Compras.
   const [menuFacturacionAbierto, setMenuFacturacionAbierto] = useState(false);
@@ -195,6 +201,12 @@ export default function App() {
   const refCompras = useRef(null);
   const refReportes = useRef(null);
   const refConfig = useRef(null);
+  if (!licencia) {
+    return <div className="login-screen" />;
+  }
+  if (!licencia.activada) {
+    return <Activacion machineId={licencia.machineId} onActivado={() => setLicencia({ ...licencia, activada: true })} />;
+  }
   if (!user) {
     return <Login onLogin={setUser} />;
   }
