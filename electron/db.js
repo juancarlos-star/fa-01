@@ -445,22 +445,14 @@ function migrarNotaVentaSiHaceFalta(database) {
   }
 }
 
-// Para instalaciones que ya existian antes de que la copia de seguridad por correo viniera
-// activada por defecto: si nunca se configuro nada (el campo de destino esta vacio), se cargan
-// los mismos valores por defecto una sola vez. Si el negocio ya habia guardado su propio correo,
-// esto NO lo toca -solo rellena cuando de verdad esta vacio, para no pisar una configuracion real-.
-function migrarCorreoReportesPorDefectoSiHaceFalta(database) {
-  const existeTabla = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").get();
-  if (!existeTabla) return;
-  const destinoActual = database.prepare("SELECT value FROM settings WHERE key = 'backup_email_destino'").get();
-  if (destinoActual && destinoActual.value) return;
-  const upsert = database.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
-  upsert.run('backup_email_activo', '1');
-  upsert.run('backup_email_destino', 'ashleyreportes@gmail.com');
-  upsert.run('backup_email_remitente', 'ashleyreportes@gmail.com');
-  upsert.run('backup_email_password', 'fruo hxvl kcex knrz');
-  upsert.run('backup_email_password_cuenta', 'Movistar2028');
-}
+// NOTA: aqui existia una migracion "migrarCorreoReportesPorDefectoSiHaceFalta" que rellenaba
+// backup_email_destino/remitente/password con una cuenta de Gmail y su contraseña de aplicacion
+// escritas directo en el codigo, para instalaciones viejas que no tuvieran nada configurado. Se
+// elimino por dos motivos: (1) esa contraseña de aplicacion quedaba expuesta en el codigo fuente
+// -un riesgo real si el repositorio se sube a GitHub-, y (2) cada negocio que compre este
+// programa debe usar SU PROPIO correo para su respaldo diario, no el del desarrollador -si no,
+// el resumen/respaldo de TODOS los clientes le llegaria a la misma bandeja de entrada. Cada
+// instalacion debe cargar sus propias credenciales desde Configuracion > Email Reportes.
 
 function migrarIvaPorcentajeComprasSiHaceFalta(database) {
   const existeCompras = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='compras_encabezado'").get();
@@ -724,7 +716,6 @@ function initDb() {
   migrarDevolucionesFacturaSiHaceFalta(database);
   migrarTasaCambioComprasSiHaceFalta(database);
   migrarNotaVentaSiHaceFalta(database);
-  migrarCorreoReportesPorDefectoSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');
