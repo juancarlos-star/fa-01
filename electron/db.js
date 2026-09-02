@@ -734,17 +734,24 @@ function initDb() {
   insertSetting.run('iva_porcentaje', '16');
   insertSetting.run('numero_factura_siguiente', '1');
   insertSetting.run('numero_nota_venta_siguiente', '1');
-  // Copia de seguridad automatica por correo (Configuracion > Email Reportes): viene ACTIVADA
-  // desde la instalacion, con la cuenta de correo del negocio ya cargada, para que el envio
-  // diario funcione desde el primer cierre del programa sin que haga falta configurar nada.
-  insertSetting.run('backup_email_activo', '1');
-  insertSetting.run('backup_email_destino', 'ashleyreportes@gmail.com');
-  insertSetting.run('backup_email_remitente', 'ashleyreportes@gmail.com');
-  insertSetting.run('backup_email_password', 'fruo hxvl kcex knrz');
-  // Solo de referencia (para que el administrador la vea en Configuracion > Email Reportes si
-  // necesita entrar a la bandeja del correo manualmente); el envio automatico SIEMPRE usa la
-  // contraseña de aplicacion de arriba, nunca esta.
-  insertSetting.run('backup_email_password_cuenta', 'Movistar2028');
+  // Copia de seguridad automatica por correo (Configuracion > Email Reportes): queda
+  // DESACTIVADA por defecto y sin credenciales cargadas. Antes este archivo traia una cuenta de
+  // Gmail y su contraseña de aplicacion puestas como valor por defecto -eso significaba que:
+  //  (a) TODA instalacion nueva mandaria el respaldo diario al correo del desarrollador, no al
+  //      del negocio que compra el programa, y
+  //  (b) esa contraseña de aplicacion quedaba expuesta en el codigo fuente, visible para
+  //      cualquiera que vea este archivo (por ejemplo, en un repositorio de GitHub).
+  // Cada instalacion debe cargar SU PROPIA cuenta de correo desde Configuracion, no una fija
+  // de fabrica.
+  insertSetting.run('backup_email_activo', '0');
+  insertSetting.run('backup_email_destino', '');
+  insertSetting.run('backup_email_remitente', '');
+  insertSetting.run('backup_email_password', '');
+  insertSetting.run('backup_email_password_cuenta', '');
+  // Licencia de uso (ver electron/licencia.js): sin activar hasta que se ingrese la clave
+  // correcta para el ID de este equipo.
+  insertSetting.run('licencia_activada', '0');
+  insertSetting.run('licencia_codigo', '');
 
   const userCount = database.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {

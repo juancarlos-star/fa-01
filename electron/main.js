@@ -4,6 +4,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { getDb, initDb, cerrarDb, getDbPath } = require('./db');
 const { enviarCorreoConAdjunto } = require('./mailer');
+const { obtenerMachineId, verificarCodigo } = require('./licencia');
 const {
   generarPDFFacturaFondo,
   generarPDFCompraFondo,
@@ -1512,6 +1513,25 @@ ipcMain.handle('descargos:list', () => {
 });
 
 // ---------- IPC: Configuracion (settings) ----------
+// ---------- IPC: Licencia de uso (ver electron/licencia.js) ----------
+ipcMain.handle('licencia:estado', () => {
+  const db = getDb();
+  const activada = db.prepare("SELECT value FROM settings WHERE key = 'licencia_activada'").get()?.value === '1';
+  const machineId = obtenerMachineId(app);
+  return { activada, machineId };
+});
+
+ipcMain.handle('licencia:activar', (event, { codigo }) => {
+  const db = getDb();
+  const machineId = obtenerMachineId(app);
+  if (!verificarCodigo(machineId, codigo)) {
+    return { ok: false, message: 'Esa clave de activación no es válida para este equipo. Revisa que la copiaste completa y sin espacios.' };
+  }
+  db.prepare("UPDATE settings SET value = '1' WHERE key = 'licencia_activada'").run();
+  db.prepare("UPDATE settings SET value = ? WHERE key = 'licencia_codigo'").run((codigo || '').trim().toUpperCase());
+  return { ok: true };
+});
+
 ipcMain.handle('settings:get', () => {
   const db = getDb();
   const rows = db.prepare('SELECT key, value FROM settings').all();

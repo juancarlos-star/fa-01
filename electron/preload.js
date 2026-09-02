@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('api', {
   // en un mismo procedimiento).
   crearDocumentoCargoDescargo: (payload) => ipcRenderer.invoke('cargosDescargos:crearDocumento', payload),
   // Configuracion
+  licenciaEstado: () => ipcRenderer.invoke('licencia:estado'),
+  licenciaActivar: (codigo) => ipcRenderer.invoke('licencia:activar', { codigo }),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (values) => ipcRenderer.invoke('settings:update', values),
   generarNotificaciones: () => ipcRenderer.invoke('notificaciones:generar'),
