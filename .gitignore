@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+*.log
+
+# Herramienta privada para generar claves de activacion: NUNCA debe subirse a un repositorio
+# publico. Si tu repositorio de GitHub es publico, esto NO es suficiente por si solo -tambien
+# necesitas que el repo sea privado, porque electron/licencia.js (que SI se necesita en el
+# proyecto) contiene el secreto usado para validar las licencias.
+herramientas-privadas/
