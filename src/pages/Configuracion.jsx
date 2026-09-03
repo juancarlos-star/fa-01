@@ -390,6 +390,7 @@ function SeccionDepositos() {
 // ---------------- 5) Bases de datos ----------------
 function SeccionBaseDatos() {
   const [mensajeBackup, setMensajeBackup] = useState('');
+  const [desactivando, setDesactivando] = useState(false);
 
   const handleBackup = async () => {
     setMensajeBackup('');
@@ -411,6 +412,17 @@ function SeccionBaseDatos() {
     setMensajeBackup(res.mensaje);
   };
 
+  const handleDesactivarLicencia = async () => {
+    if (!confirm('Esto vuelve a pedir la clave de activación la próxima vez que abras el programa. Úsalo solo para pruebas. ¿Continuar?')) return;
+    setDesactivando(true);
+    try {
+      await window.api.licenciaDesactivar();
+      alert('Listo. Cierra el programa por completo y vuelve a abrirlo: te va a pedir la clave de activación de nuevo.');
+    } finally {
+      setDesactivando(false);
+    }
+  };
+
   return (
     <div>
       <h1>Bases de datos</h1>
@@ -423,6 +435,19 @@ function SeccionBaseDatos() {
         <button type="button" onClick={handleBackup}>Crear respaldo</button>
         <button type="button" onClick={handleRestaurar} style={{ marginLeft: '8px' }}>Restaurar respaldo</button>
         {mensajeBackup && <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>{mensajeBackup}</p>}
+      </div>
+
+      <div className="form-box" style={{ maxWidth: '460px', marginTop: '1rem' }}>
+        <h3 style={{ marginTop: 0 }}>Herramienta de pruebas</h3>
+        <p style={{ fontSize: '0.85rem', color: '#666' }}>
+          La licencia se guarda dentro de esta misma base de datos, no en un archivo aparte — por
+          eso desinstalar y reinstalar el programa no la borra (la base de datos vive en la
+          carpeta de datos de Windows, que el instalador no toca). Usa este botón para volver a
+          dejar este equipo "sin activar" y poder probar esa pantalla otra vez.
+        </p>
+        <button type="button" onClick={handleDesactivarLicencia} disabled={desactivando}>
+          {desactivando ? 'Desactivando...' : 'Desactivar licencia (solo pruebas)'}
+        </button>
       </div>
     </div>
   );
