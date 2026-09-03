@@ -1532,6 +1532,17 @@ ipcMain.handle('licencia:activar', (event, { codigo }) => {
   return { ok: true };
 });
 
+// Solo para pruebas/desarrollo: vuelve a poner el equipo como "sin activar", sin tener que ir a
+// buscar y borrar el archivo de base de datos a mano. La licencia se guarda en la base de datos
+// (settings), no en un archivo aparte, por eso desinstalar/reinstalar el programa NO la borra:
+// la base de datos vive en la carpeta de datos de usuario de Windows, que los instaladores
+// normalmente no tocan al desinstalar.
+ipcMain.handle('licencia:desactivar', () => {
+  const db = getDb();
+  db.prepare("UPDATE settings SET value = '0' WHERE key = 'licencia_activada'").run();
+  return { ok: true };
+});
+
 ipcMain.handle('settings:get', () => {
   const db = getDb();
   const rows = db.prepare('SELECT key, value FROM settings').all();

@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('api', {
   // Configuracion
   licenciaEstado: () => ipcRenderer.invoke('licencia:estado'),
   licenciaActivar: (codigo) => ipcRenderer.invoke('licencia:activar', { codigo }),
+  licenciaDesactivar: () => ipcRenderer.invoke('licencia:desactivar'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (values) => ipcRenderer.invoke('settings:update', values),
   generarNotificaciones: () => ipcRenderer.invoke('notificaciones:generar'),
