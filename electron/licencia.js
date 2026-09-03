@@ -9,7 +9,7 @@
 //      pasalo a privado, o saca este archivo del control de versiones).
 //   3. El script para generar claves (herramientas-privadas/generar-clave.js) tampoco debe
 //      compartirse con nadie ni incluirse en el instalador que le das a tus clientes.
-const SECRETO_LICENCIA = 'CAMBIA-ESTE-SECRETO-POR-UNO-PROPIO-BIEN-LARGO-Y-UNICO-ANTES-DE-VENDER';
+const SECRETO_LICENCIA = 'Ashley-MoviSync-2026-PqaqyHmwKRHu1bRi_PHEno1T3MNfxoXlzF8U4MWFVQc';
 
 const crypto = require('crypto');
 const { execSync } = require('child_process');
