@@ -50,9 +50,21 @@ export default function Activacion({ machineId, onActivado }) {
 
         <div style={{ background: '#f2f4f7', borderRadius: '8px', padding: '12px', margin: '14px 0' }}>
           <label style={{ fontSize: '0.8rem', color: '#475467' }}>ID de este equipo</label>
+          {/* El input del ID venia con "flex: 1" pero el CSS global de .login-card input trae su
+              propio "width: 100%", y esos dos chocan dentro de un contenedor flex: el navegador
+              terminaba calculando un ancho casi nulo para el input (se veia vacio/angosto) en vez
+              de repartir el espacio con el boton "Copiar" como se esperaba. Se fuerza width:'0'
+              + minWidth:0 + flex:'1 1 0%' explicitamente, que es la combinacion que SI hace que
+              un input dentro de un flex row respete el flex-grow sin pelearse con un width:100%
+              heredado. */}
           <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-            <input readOnly value={machineId} style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.85rem' }} onFocus={(e) => e.target.select()} />
-            <button type="button" onClick={copiarId}>{copiado ? '✓ Copiado' : 'Copiar'}</button>
+            <input
+              readOnly
+              value={machineId}
+              onFocus={(e) => e.target.select()}
+              style={{ flex: '1 1 0%', width: '0', minWidth: 0, fontFamily: 'monospace', fontSize: '0.8rem' }}
+            />
+            <button type="button" onClick={copiarId} style={{ flexShrink: 0 }}>{copiado ? '✓ Copiado' : 'Copiar'}</button>
           </div>
           <p style={{ fontSize: '0.78rem', color: '#667085', marginTop: '8px', marginBottom: 0 }}>
             Envía este ID por WhatsApp o correo a quien te vendió el programa para que te dé tu
