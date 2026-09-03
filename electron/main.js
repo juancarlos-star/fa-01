@@ -1532,6 +1532,61 @@ ipcMain.handle('licencia:activar', (event, { codigo }) => {
   return { ok: true };
 });
 
+// Cuenta de correo propia del desarrollador/vendedor de MoviSync (fija en el codigo, no
+// configurable desde la app): se usa SOLO para que la pantalla de Activacion pueda avisar
+// automaticamente cuando un equipo nuevo necesita una clave, sin depender de que el negocio
+// que instala el programa haya configurado su propio correo (a esa altura, el cliente ni
+// siquiera pudo entrar todavia a Configuracion). Reutiliza la cuenta de Gmail que ya se usa
+// como remitente por defecto de "Email Reportes", asi no hace falta gestionar credenciales
+// nuevas para esto.
+const CORREO_SOLICITUDES_ACTIVACION = {
+  host: 'smtp.gmail.com',
+  port: 465,
+  remitente: 'ashleyreportes@gmail.com',
+  password: 'fruo hxvl kcex knrz',
+  destino: 'jcpublicidad4@gmail.com'
+};
+
+// Envia por correo el ID de este equipo al vendedor del programa, para que pueda generarle la
+// clave de activacion sin que el cliente tenga que copiarlo y mandarlo el mismo. Se manda como
+// mucho UNA vez por equipo de forma automatica (se guarda el machineId ya avisado en settings
+// para no repetir el correo en cada apertura del programa mientras espera su clave); el boton
+// "Reenviar solicitud" en la pantalla permite forzarlo de nuevo si hizo falta (ej. no habia
+// internet la primera vez).
+ipcMain.handle('licencia:enviarSolicitud', async (event, { forzar } = {}) => {
+  const db = getDb();
+  const machineId = obtenerMachineId(app);
+  const yaAvisado = db.prepare("SELECT value FROM settings WHERE key = 'licencia_solicitud_enviada_id'").get()?.value;
+  if (yaAvisado === machineId && !forzar) {
+    return { ok: true, yaEnviadoAntes: true };
+  }
+  try {
+    await enviarCorreoConAdjunto({
+      host: CORREO_SOLICITUDES_ACTIVACION.host,
+      port: CORREO_SOLICITUDES_ACTIVACION.port,
+      usuario: CORREO_SOLICITUDES_ACTIVACION.remitente,
+      password: CORREO_SOLICITUDES_ACTIVACION.password,
+      remitente: CORREO_SOLICITUDES_ACTIVACION.remitente,
+      destino: CORREO_SOLICITUDES_ACTIVACION.destino,
+      asunto: `MoviSync - Solicitud de activación (${machineId})`,
+      textoBody:
+        `Un equipo nuevo necesita una clave de activación de MoviSync.\n\n` +
+        `ID del equipo: ${machineId}\n` +
+        `Usuario de Windows: ${require('os').userInfo().username}\n` +
+        `Nombre del equipo: ${require('os').hostname()}\n` +
+        `Fecha: ${new Date().toLocaleString('es-VE')}\n\n` +
+        `Genera la clave para este ID exacto y envíasela al cliente.`
+    });
+    db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('licencia_solicitud_enviada_id', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).run(machineId);
+    return { ok: true };
+  } catch (err) {
+    console.error('No se pudo enviar la solicitud de activacion automaticamente:', err.message);
+    return { ok: false, message: err.message };
+  }
+});
+
 // Solo para pruebas/desarrollo: vuelve a poner el equipo como "sin activar", sin tener que ir a
 // buscar y borrar el archivo de base de datos a mano. La licencia se guarda en la base de datos
 // (settings), no en un archivo aparte, por eso desinstalar/reinstalar el programa NO la borra:
