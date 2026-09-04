@@ -1,56 +1,6 @@
 import React, { useState, useRef } from 'react';
 import LogoMoviSync from '../components/LogoMoviSync.jsx';
-
-// Ilustracion del panel izquierdo: en vez de una foto real de una tienda (que no podemos usar
-// aqui sin derechos sobre la imagen), se dibuja una escena sencilla en el mismo estilo/colores
-// del logo -telefono, tableta y accesorios-, para que la ventana se vea profesional sin
-// depender de un archivo de foto externo. Si mas adelante quieres una foto real de tu propia
-// tienda, se puede reemplazar facilmente por un <img> apuntando a esa foto.
-function IlustracionAcceso() {
-  return (
-    <svg viewBox="0 0 520 620" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
-      <defs>
-        <linearGradient id="fondoAcceso" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#eef4fb" />
-          <stop offset="100%" stopColor="#dbe8f5" />
-        </linearGradient>
-        <linearGradient id="telefonoAcceso" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#1c3f66" />
-          <stop offset="100%" stopColor="#0b2545" />
-        </linearGradient>
-      </defs>
-      <rect width="520" height="620" fill="url(#fondoAcceso)" />
-      <rect x="0" y="70" width="520" height="10" fill="#c9d9ea" />
-      <rect x="0" y="230" width="520" height="10" fill="#c9d9ea" />
-      {[40, 130, 220, 310, 400, 470].map((x, i) => (
-        <rect key={i} x={x} y={i % 2 === 0 ? 20 : 24} width="46" height="50" rx="6" fill="#ffffff" stroke="#c9d9ea" />
-      ))}
-      {[40, 130, 220, 310, 400, 470].map((x, i) => (
-        <rect key={'b' + i} x={x} y={i % 2 === 0 ? 178 : 182} width="46" height="52" rx="6" fill="#ffffff" stroke="#c9d9ea" />
-      ))}
-      <rect x="0" y="470" width="520" height="150" fill="#0b2545" opacity="0.06" />
-      <rect x="20" y="440" width="480" height="30" rx="4" fill="#ffffff" stroke="#c9d9ea" />
-      <rect x="150" y="330" width="180" height="120" rx="10" fill="url(#telefonoAcceso)" />
-      <rect x="162" y="342" width="156" height="80" rx="4" fill="#eaf3ff" opacity="0.85" />
-      <rect x="172" y="352" width="60" height="10" rx="2" fill="#0b2545" opacity="0.35" />
-      <rect x="172" y="368" width="90" height="8" rx="2" fill="#0b2545" opacity="0.25" />
-      <rect x="172" y="382" width="70" height="8" rx="2" fill="#0b2545" opacity="0.25" />
-      <rect x="205" y="455" width="20" height="18" fill="#0b2545" />
-      <rect x="90" y="300" width="46" height="150" rx="8" fill="url(#telefonoAcceso)" />
-      <rect x="96" y="312" width="34" height="112" rx="2" fill="#eaf3ff" opacity="0.85" />
-      <rect x="345" y="360" width="90" height="55" rx="6" fill="#e7edf5" stroke="#c9d9ea" />
-      <rect x="356" y="345" width="40" height="18" rx="2" fill="#c9d9ea" />
-      <rect x="360" y="405" width="6" height="40" fill="#ffffff" stroke="#c9d9ea" />
-      <rect x="360" y="470" width="40" height="30" fill="#ffffff" stroke="#c9d9ea" />
-      <rect x="405" y="465" width="40" height="35" fill="#ffffff" stroke="#c9d9ea" />
-      <rect x="382" y="440" width="40" height="30" fill="#ffffff" stroke="#c9d9ea" />
-      <g opacity="0.10" transform="translate(210,90) scale(0.7)">
-        <path d="M40 90 L100 30 L140 30 L80 90 Z" fill="#0057a3" />
-        <path d="M0 130 Q0 60 70 60 L110 60 Q40 60 40 130 Z" fill="#0057a3" />
-      </g>
-    </svg>
-  );
-}
+import fotoTienda from '../assets/login-tienda.jpg';
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -100,7 +50,7 @@ export default function Login({ onLogin }) {
     <div className="acceso-screen">
       <div className="acceso-ventana">
         <div className="acceso-izquierda">
-          <IlustracionAcceso />
+          <img src={fotoTienda} alt="Tienda MoviSync" />
         </div>
         <form className="acceso-derecha" onSubmit={handleSubmit}>
           <div className="acceso-logo">
