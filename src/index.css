@@ -84,10 +84,7 @@ body {
 }
 
 .acceso-izquierda {
-  /* Antes flex:1.05 vs flex:1 en la derecha -practicamente mitad y mitad-, lo que dejaba muy
-     poco espacio a la foto y el object-fit:cover terminaba recortando a la persona. Ahora el
-     panel azul es angosto (como en la referencia) y la foto tiene todo el espacio que le sobra. */
-  flex: 2.4;
+  flex: 1.05;
   min-width: 0;
   overflow: hidden;
   line-height: 0;
@@ -98,22 +95,28 @@ body {
   height: 100%;
   display: block;
   object-fit: cover;
-  /* La persona esta pegada al borde izquierdo de la foto original; con "center" el recorte
-     lateral (inevitable con object-fit:cover en un panel mas alto que ancho) la cortaba. Con
-     "left" se prioriza conservar ese lado completo. */
-  object-position: left center;
+  object-position: center;
 }
 
 .acceso-derecha {
   flex: 1;
-  min-width: 340px;
-  max-width: 480px;
+  min-width: 300px;
   background: #034895;
   color: #fff;
   padding: 28px 40px;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  /* Igual que en el menu lateral: se oculta la barra de scroll visualmente en pantallas de
+     menos resolucion (donde el formulario completo no entra en 100vh), sin perder la
+     posibilidad de scrolear con la rueda del mouse si hiciera falta. */
+  scrollbar-width: none;
+}
+
+.acceso-derecha::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
 }
 
 .acceso-logo {
@@ -273,6 +276,16 @@ body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Se oculta la barra de scroll visualmente (en computadoras con menos resolucion vertical el
+     menu no entra completo en 100vh y aparecia una barra fea al lado). El scroll con la rueda
+     del mouse sigue funcionando igual, solo que sin la barra dibujada. */
+  scrollbar-width: none; /* Firefox */
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
 }
 
 .sidebar h2 {
