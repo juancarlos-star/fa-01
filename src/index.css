@@ -101,7 +101,7 @@ body {
 .acceso-derecha {
   flex: 1;
   min-width: 300px;
-  background: linear-gradient(160deg, #0d5fa8 0%, #0b2f5c 100%);
+  background: #034895;
   color: #fff;
   padding: 28px 40px;
   display: flex;
