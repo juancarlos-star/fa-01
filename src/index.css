@@ -84,7 +84,10 @@ body {
 }
 
 .acceso-izquierda {
-  flex: 1.05;
+  /* Antes flex:1.05 vs flex:1 en la derecha -practicamente mitad y mitad-, lo que dejaba muy
+     poco espacio a la foto y el object-fit:cover terminaba recortando a la persona. Ahora el
+     panel azul es angosto (como en la referencia) y la foto tiene todo el espacio que le sobra. */
+  flex: 2.4;
   min-width: 0;
   overflow: hidden;
   line-height: 0;
@@ -95,12 +98,16 @@ body {
   height: 100%;
   display: block;
   object-fit: cover;
-  object-position: center;
+  /* La persona esta pegada al borde izquierdo de la foto original; con "center" el recorte
+     lateral (inevitable con object-fit:cover en un panel mas alto que ancho) la cortaba. Con
+     "left" se prioriza conservar ese lado completo. */
+  object-position: left center;
 }
 
 .acceso-derecha {
   flex: 1;
-  min-width: 300px;
+  min-width: 340px;
+  max-width: 480px;
   background: #034895;
   color: #fff;
   padding: 28px 40px;
