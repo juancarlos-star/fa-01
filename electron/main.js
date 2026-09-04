@@ -69,16 +69,27 @@ ipcMain.handle = (canal, listener) => {
 
 let mainWindow;
 
+// Tamano fijo de la ventana mientras se muestra Activacion/Login (antes de entrar al sistema):
+// una ventana chica y centrada, como en cualquier programa de escritorio con pantalla de
+// ingreso, en vez de arrancar ya maximizada. Una vez el usuario inicia sesion, la ventana pasa
+// a "modo app" (maximizada y redimensionable), que es como se ve el resto del programa.
+const ANCHO_VENTANA_ACCESO = 1000;
+const ALTO_VENTANA_ACCESO = 560;
+const TITULO_ACCESO = 'INGRESO AL SISTEMA - MOVISYNC Technologies';
+const TITULO_APP = 'MoviSync';
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    title: 'MoviSync',
+    width: ANCHO_VENTANA_ACCESO,
+    height: ALTO_VENTANA_ACCESO,
+    resizable: false,
+    center: true,
+    title: TITULO_ACCESO,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
-    // El programa abre maximizado (ocupa toda la pantalla) pero sigue siendo una ventana normal
-    // -con sus botones de minimizar/cerrar y sin tapar la barra de tareas de Windows-, que es
-    // lo esperado para un programa de escritorio. "show: false" + "ready-to-show" evita el
-    // parpadeo de ver la ventana chica un instante antes de maximizarse.
+    // El programa abre con el tamano chico de "Activacion/Login" (ver arriba) y, recien cuando
+    // el usuario entra al sistema, el renderer pide pasar a "modo app" (maximizada). "show:
+    // false" + "ready-to-show" evita el parpadeo de ver la ventana un instante antes de
+    // acomodarse en su tamano y posicion definitivos.
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -88,7 +99,6 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.maximize();
     mainWindow.show();
   });
 
@@ -175,6 +185,26 @@ ipcMain.handle('window:focus', () => {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+  return { ok: true };
+});
+
+// ---------- IPC: cambiar entre "modo acceso" (Activacion/Login: ventana chica, centrada, fija)
+// y "modo app" (una vez adentro: maximizada, redimensionable) ----------
+ipcMain.handle('window:modoAcceso', () => {
+  if (!mainWindow) return { ok: false };
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  mainWindow.setResizable(false);
+  mainWindow.setSize(ANCHO_VENTANA_ACCESO, ALTO_VENTANA_ACCESO);
+  mainWindow.center();
+  mainWindow.setTitle(TITULO_ACCESO);
+  return { ok: true };
+});
+
+ipcMain.handle('window:modoApp', () => {
+  if (!mainWindow) return { ok: false };
+  mainWindow.setResizable(true);
+  mainWindow.setTitle(TITULO_APP);
+  mainWindow.maximize();
   return { ok: true };
 });
 
