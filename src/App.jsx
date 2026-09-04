@@ -201,6 +201,20 @@ export default function App() {
   const refCompras = useRef(null);
   const refReportes = useRef(null);
   const refConfig = useRef(null);
+
+  // Mientras se muestra Activacion o Login, la ventana se ve chica y centrada (como cualquier
+  // pantalla de ingreso); apenas hay un usuario logueado, pasa a "modo app" (maximizada). Este
+  // efecto tiene que declararse ANTES de los "return" de abajo (Activacion/Login), porque los
+  // hooks de React siempre deben llamarse en el mismo orden en cada render.
+  useEffect(() => {
+    if (!licencia) return;
+    if (user && licencia.activada) {
+      window.api.modoVentanaApp();
+    } else {
+      window.api.modoVentanaAcceso();
+    }
+  }, [licencia, user]);
+
   if (!licencia) {
     return <div className="login-screen" />;
   }
