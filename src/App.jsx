@@ -233,7 +233,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div style={{ marginBottom: '4px' }}><LogoMoviSync /></div>
+        <div style={{ marginBottom: '10px' }}><LogoMoviSync onDark height={34} /></div>
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
