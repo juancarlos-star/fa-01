@@ -69,27 +69,15 @@ export default function Activacion({ machineId, onActivado }) {
   return (
     <div
       style={{
+        position: 'relative',
         height: '100vh',
         width: '100vw',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#e9edf2'
+        overflow: 'hidden',
+        backgroundImage: `url(${fondoActivacion})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
       }}
     >
-      <div
-        style={{
-          position: 'relative',
-          width: 'min(92vw, 940px)',
-          aspectRatio: '940 / 520',
-          backgroundImage: `url(${fondoActivacion})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          borderRadius: '10px',
-          overflow: 'hidden',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.25)'
-        }}
-      >
         {/* ---- Zona blanca (0% a 62%): mensaje + ID del equipo ---- */}
         <div
           style={{
@@ -209,7 +197,6 @@ export default function Activacion({ machineId, onActivado }) {
             {activando ? 'Activando...' : 'Activar'}
           </button>
         </form>
-      </div>
     </div>
   );
 }
