@@ -1,0 +1,1190 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #f2f4f7;
+  color: #1a1a2e;
+}
+
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #0057a3, #00a3e0);
+}
+
+.login-card {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  width: 320px;
+}
+
+.login-card h1 {
+  font-size: 1.3rem;
+  margin-bottom: 1.5rem;
+  color: #0057a3;
+  text-align: center;
+}
+
+.login-card input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.login-card button {
+  width: 100%;
+  padding: 10px;
+  background: #0057a3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.login-card button:hover {
+  background: #004380;
+}
+
+.error-text {
+  color: #d92d20;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+
+/* ===================== Ventana de acceso (Login) ===================== */
+/* Pantalla completa de fondo (detras de la "ventana" chica y centrada) -en Electron la ventana
+   del SO ya viene del tamano correcto (ver electron/main.js, modo "acceso"), asi que aqui solo
+   hace falta centrar el contenido dentro de esa ventana. */
+.acceso-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  width: 100vw;
+  background: #eef2f6;
+  overflow: hidden;
+}
+
+.acceso-ventana {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+}
+
+.acceso-izquierda {
+  flex: 1.05;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.acceso-izquierda img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+
+.acceso-derecha {
+  flex: 1;
+  min-width: 300px;
+  background: linear-gradient(160deg, #0d5fa8 0%, #0b2f5c 100%);
+  color: #fff;
+  padding: 28px 40px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.acceso-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.acceso-label {
+  font-size: 0.85rem;
+  color: #dbe8f7;
+  margin-bottom: 4px;
+}
+
+.acceso-campo {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 6px;
+  padding: 0 10px;
+  margin-bottom: 14px;
+}
+
+.acceso-icono {
+  color: #7a8aa0;
+  display: flex;
+  align-items: center;
+  margin-right: 6px;
+}
+
+.acceso-campo input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 10px 4px;
+  font-size: 0.95rem;
+  color: #1a1a2e;
+  background: transparent;
+  min-width: 0;
+}
+
+.acceso-toggle-clave {
+  background: none;
+  border: none;
+  padding: 4px;
+  margin: 0;
+  color: #7a8aa0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.acceso-toggle-clave:hover {
+  color: #0057a3;
+}
+
+.acceso-error {
+  background: rgba(217, 45, 32, 0.15);
+  border: 1px solid rgba(217, 45, 32, 0.4);
+  color: #ffd7d2;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+}
+
+.acceso-subtitulo {
+  text-align: center;
+  margin: 10px 0 0;
+  font-size: 0.95rem;
+}
+
+.acceso-version {
+  text-align: center;
+  margin: 2px 0 16px;
+  font-size: 0.82rem;
+  color: #bcd2ea;
+}
+
+.acceso-botones {
+  display: flex;
+  gap: 10px;
+  margin-bottom: auto;
+}
+
+.acceso-botones button {
+  flex: 1;
+  padding: 9px;
+  border-radius: 6px;
+  border: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.acceso-botones button[type='submit'] {
+  background: #ffffff;
+  color: #0b2f5c;
+  font-weight: 600;
+}
+
+.acceso-botones button[type='submit']:hover {
+  background: #dbe8f7;
+}
+
+.acceso-botones button[type='button'] {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.acceso-botones button[type='button']:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.acceso-footer {
+  text-align: center;
+  font-size: 0.78rem;
+  color: #a9c2df;
+  margin-top: 18px;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .acceso-izquierda {
+    display: none;
+  }
+}
+
+/* El "cascaron" de la app (sidebar + contenido) se fija al alto de la ventana (100vh) y cada
+   parte con overflow-y:auto propio, en vez de dejar que la pagina completa crezca y haya que
+   scrolear la ventana entera. Asi la barra lateral siempre queda visible, y el contenido de cada
+   pantalla scrolea por su cuenta cuando hace falta (sin alargar la ventana). */
+.app-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 220px;
+  background: #0057a3;
+  color: white;
+  padding: 1.5rem 1rem;
+  height: 100vh;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* El submenu (Facturar/Compras/Reportes) ya NO vive dentro de este div: se dibuja aparte con un
+   portal directo a document.body, posicionado con "position: fixed" (ver SidebarSubmenu en
+   App.jsx). Por eso aqui ya no hace falta el truco de "overflow-x: visible" -que ademas
+   generaba una barra de scroll horizontal fantasma-: ahora es un overflow normal, sin
+   consecuencias para el submenu porque este ya no esta adentro para que lo recorte. */
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar h2 {
+  font-size: 1.1rem;
+  margin-bottom: 2rem;
+}
+
+.sidebar nav a, .sidebar nav button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: white;
+  padding: 0.6rem;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.sidebar nav button:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+.sidebar nav button.active {
+  background: rgba(255,255,255,0.15);
+}
+
+/* Cuando el submenu de "Compras" esta abierto, el resto de los botones del menu principal
+   quedan sombreados (opacos) para que el submenu flotante sea lo unico que resalte. Solo
+   afecta a los <button> que son hijos DIRECTOS de <nav> (Inicio, Facturar, Inventario,
+   Categorias, etc.) — el boton "Compras" vive dentro de ".sidebar-submenu-wrap" (un <div>, no
+   un <button> directo de nav), asi que no se ve afectado por esta regla; ese caso se maneja
+   aparte con la clase ".dimmed" (ver App.jsx), que se agrega solo al wrap del submenu que NO
+   esta abierto. */
+.sidebar nav.submenu-open > button {
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* El boton con submenu que NO esta abierto (ej: "Facturar" mientras el submenu de "Compras"
+   esta abierto, o viceversa) tambien debe apagarse, para que solo quede resaltado el que
+   realmente tiene su submenu desplegado. */
+.sidebar-submenu-wrap.dimmed > button {
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* Submenu flotante de "Compras" (Generar Compras / Devolucion de Compras): aparece a la
+   derecha del boton, como un pequeno panel flotante, igual que un menu contextual.
+   IMPORTANTE: este submenu se dibuja con un portal directo a document.body (ver SidebarSubmenu
+   en App.jsx), NO dentro de ".sidebar"/"nav" -por eso ya no hace falta calificar estas reglas
+   con ".sidebar" adelante: al vivir afuera en el DOM, ninguna regla de ".sidebar nav button"
+   (texto blanco) le llega, asi que un simple ".sidebar-submenu button" alcanza y gana solo. */
+.sidebar-submenu-wrap {
+  position: relative;
+}
+
+.sidebar-section-divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 10px 4px;
+}
+
+
+.sidebar-submenu-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 500;
+}
+
+.sidebar-submenu {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  padding: 6px;
+  min-width: 210px;
+  z-index: 501;
+  /* Salvavidas para pantallas muy chicas: si aun asi el panel no entra completo en la altura
+     disponible, que se pueda hacer scroll adentro del propio panel en vez de recortarse. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+}
+
+.sidebar-submenu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #1d2939;
+  padding: 10px 12px;
+  margin-bottom: 2px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.sidebar-submenu button:hover {
+  background: #eef4ff;
+  color: #1d2939;
+}
+
+.sidebar-submenu button.active {
+  background: #dbeafe;
+  color: #0b4f9e;
+  font-weight: 600;
+}
+
+.content {
+  flex: 1;
+  padding: 2rem;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+th, td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #eaecf0;
+  font-size: 0.9rem;
+}
+
+th {
+  background: #f2f4f7;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+}
+
+.badge.active {
+  background: #d1fadf;
+  color: #027a48;
+}
+
+.badge.inactive {
+  background: #fee4e2;
+  color: #b42318;
+}
+
+.form-box {
+  background: white;
+  padding: 1.2rem;
+  border-radius: 8px;
+  max-width: 400px;
+  margin-bottom: 1.5rem;
+}
+
+.form-box input, .form-box select {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+}
+
+.form-box button {
+  padding: 8px 16px;
+  background: #0057a3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* ---------- Facturacion: layout tipo POS (estilo Saint) ---------- */
+.pos-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0b4f9e;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px 8px 0 0;
+  font-weight: 600;
+}
+
+.pos-topbar-center {
+  font-size: 1.05rem;
+  letter-spacing: 0.5px;
+}
+
+.pos-topbar-side {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+.pos-panels {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-top: none;
+  padding: 16px;
+}
+
+.pos-left {
+  flex: 0 0 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pos-field label {
+  display: block;
+  font-size: 0.78rem;
+  color: #475467;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.pos-field .required-mark {
+  color: #d92d20;
+}
+
+.pos-field input,
+.pos-field select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.pos-field input:disabled {
+  background: #f2f4f7;
+  color: #667085;
+}
+
+.pos-mid {
+  flex: 1 1 260px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pos-stripe {
+  background: #dbeafe;
+  color: #0b3a6b;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.pos-stripe.placeholder {
+  color: #7ea3cf;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+.pos-right {
+  flex: 0 0 280px;
+  background: #0b4f9e;
+  border-radius: 6px;
+  color: #fff;
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.pos-right-header {
+  background: #083b78;
+  padding: 9px 14px;
+  font-size: 0.85rem;
+  text-align: right;
+  font-weight: 600;
+}
+
+.pos-right-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 14px;
+  font-size: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.pos-right-row.total-final {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.pos-right-footer {
+  background: #083b78;
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+}
+
+.pos-error-banner {
+  background: #fee4e2;
+  color: #b42318;
+  padding: 8px 14px;
+  border-radius: 6px;
+  margin: 12px 0;
+  font-size: 0.85rem;
+}
+
+.pos-table-wrap {
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-top: none;
+  overflow-x: auto;
+  /* Alto maximo con scroll interno: para que la pantalla de venta no crezca sin limite
+     hacia abajo cuando hay muchos productos o codigos IMEI/ICCID listados. El encabezado
+     queda fijo (sticky) arriba del area con scroll, siempre alineado con su columna. */
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.pos-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 0;
+  /* Fijo (no automatico): el ancho de cada columna se toma SOLO de los porcentajes
+     declarados en los <th> de abajo y se mantiene igual sin importar que cambie el
+     contenido de las filas (por ejemplo al pasar de "escribiendo el codigo" a "producto
+     encontrado con su IMEI debajo"). Sin esto, el navegador recalculaba el ancho de cada
+     columna segun el contenido de cada fila, y como el encabezado esta "pegado" (sticky)
+     arriba, terminaba desalineado con las columnas de los datos. */
+  table-layout: fixed;
+}
+
+.pos-table th {
+  background: #0b4f9e;
+  color: #fff;
+  font-size: 0.78rem;
+  padding: 8px;
+  text-align: left;
+  border-bottom: none;
+  /* Encabezado fijo mientras se hace scroll dentro de .pos-table-wrap, para que cada
+     titulo (Codigo, Descripcion, Cantidad, Und, Precio, Total) se mantenga siempre
+     visible justo arriba de su columna. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+}
+
+.pos-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eaecf0;
+  font-size: 0.88rem;
+  /* Alineado arriba (no centrado) para que Cantidad/Und/Precio/Total queden a la altura
+     de la primera linea de la descripcion, aunque debajo se listen varios codigos
+     IMEI/ICCID que hagan la fila mas alta. */
+  vertical-align: top;
+}
+
+.pos-table td.text-right {
+  text-align: right;
+}
+
+.pos-table input {
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.pos-table tr.fila-entrada td {
+  background: #fffbe6;
+}
+
+.pos-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
+.pos-btn-totalizar {
+  background: #0b4f9e;
+  color: #fff;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pos-btn-totalizar:hover {
+  background: #083b78;
+}
+
+.pos-btn-totalizar:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Foco: resalta el campo activo con el mismo azul del resto del modulo, en vez del
+   contorno azul generico del navegador, para que se sienta parte del mismo diseno. */
+.pos-field input:focus,
+.pos-field select:focus,
+.pos-table input:focus {
+  outline: none;
+  border-color: #0b4f9e;
+  box-shadow: 0 0 0 3px rgba(11, 79, 158, 0.15);
+}
+
+.pos-field select:disabled {
+  background: #f2f4f7;
+  color: #667085;
+  cursor: not-allowed;
+}
+
+/* Botones secundarios de la franja de cliente ("Cambiar cliente" / "Editar datos") */
+.pos-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.pos-btn-link {
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  color: #344054;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.pos-btn-link:hover {
+  background: #f2f4f7;
+  border-color: #98a2b3;
+}
+
+/* Panel de edicion rapida de los datos del cliente, dentro de la misma franja izquierda */
+.pos-edit-box {
+  margin-top: 4px;
+  background: #f8fafc;
+  border: 1px solid #e4e7ec;
+  padding: 10px;
+  border-radius: 6px;
+}
+
+.pos-edit-box p {
+  font-size: 0.78rem;
+  color: #667085;
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.pos-edit-box input {
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.pos-edit-box input:focus {
+  outline: none;
+  border-color: #0b4f9e;
+  box-shadow: 0 0 0 3px rgba(11, 79, 158, 0.15);
+}
+
+.pos-edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pos-edit-actions .btn-primary {
+  background: #0b4f9e;
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.pos-edit-actions .btn-primary:hover {
+  background: #083b78;
+}
+
+.pos-edit-actions .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pos-edit-actions .btn-ghost {
+  background: #fff;
+  color: #344054;
+  border: 1px solid #d0d5dd;
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.pos-edit-actions .btn-ghost:hover {
+  background: #f2f4f7;
+}
+
+/* Filas de la tabla: resaltar la fila bajo el cursor y estilizar el boton "x" de quitar */
+.pos-table tbody tr:not(.fila-entrada):hover {
+  background: #f8fafc;
+}
+
+.pos-remove-btn {
+  width: 22px;
+  height: 22px;
+  line-height: 20px;
+  text-align: center;
+  padding: 0;
+  border: 1px solid #fda29b;
+  color: #b42318;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.pos-remove-btn:hover {
+  background: #fee4e2;
+}
+
+.pos-confirm-btn {
+  padding: 4px 9px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border: none;
+}
+
+.pos-confirm-btn.yes {
+  background: #b42318;
+  color: #fff;
+}
+
+.pos-confirm-btn.no {
+  background: #e4e7ec;
+  color: #344054;
+}
+
+/* Pantalla de "Factura emitida": estilo tipo recibo, en tonos del modulo de ventas */
+.pos-receipt {
+  max-width: 380px;
+  margin: 24px auto 0;
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(16, 24, 40, 0.08);
+}
+
+.pos-receipt-header {
+  background: #0b4f9e;
+  color: #fff;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.pos-receipt-header .check {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 8px;
+  font-size: 1.2rem;
+}
+
+.pos-receipt-header h1 {
+  font-size: 1.05rem;
+  margin: 0;
+  font-weight: 700;
+}
+
+.pos-receipt-body {
+  padding: 18px 20px;
+}
+
+.pos-receipt-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #eaecf0;
+  font-size: 0.92rem;
+  color: #344054;
+}
+
+.pos-receipt-row:last-of-type {
+  border-bottom: none;
+}
+
+.pos-receipt-row strong {
+  color: #0b3a6b;
+}
+
+.pos-receipt-note {
+  font-size: 0.78rem;
+  color: #667085;
+  margin: 10px 0 0;
+}
+
+.pos-receipt-actions {
+  display: flex;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid #eaecf0;
+}
+
+.pos-receipt-actions button {
+  flex: 1;
+  padding: 9px 0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: none;
+}
+
+.pos-receipt-actions .btn-primary {
+  background: #0b4f9e;
+  color: #fff;
+}
+
+.pos-receipt-actions .btn-primary:hover {
+  background: #083b78;
+}
+
+.pos-receipt-actions .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pos-receipt-actions .btn-ghost {
+  background: #f2f4f7;
+  color: #344054;
+}
+
+.pos-receipt-actions .btn-ghost:hover {
+  background: #e4e7ec;
+}
+
+/* ---------- Facturacion: acciones de la fila de entrada y boton "Ver todo" ---------- */
+.pos-entrada-acciones {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.pos-ver-todo-btn {
+  background: #fff;
+  border: 1px solid #0b4f9e;
+  color: #0b4f9e;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-ver-todo-btn:hover {
+  background: #eaf1fb;
+}
+
+/* Variante del boton "Ver todo" cuando va DENTRO de la franja azul del encabezado de la tabla
+   (en vez de en la fila de entrada), para que quede bien alineado verticalmente con el resto
+   de los titulos de columna. */
+.pos-ver-todo-btn-header {
+  vertical-align: middle;
+  margin: -2px 0;
+}
+
+/* Boton para confirmar/agregar la fila de entrada a la compra o factura actual. Se usa como
+   alternativa visible y explicita a tener que adivinar que hay que presionar Enter. */
+.pos-agregar-btn {
+  background: #0b8f4e;
+  border: 1px solid #0b8f4e;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-agregar-btn:hover {
+  background: #097a42;
+}
+
+/* ---------- Facturacion: ventana "Ver todo" (vista ampliada de la factura) ---------- */
+.pos-vertodo-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(16, 24, 40, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+  padding: 24px;
+}
+
+.pos-vertodo-box {
+  background: #fff;
+  border-radius: 10px;
+  width: 100%;
+  max-width: 1000px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.pos-vertodo-header {
+  background: #0b4f9e;
+  color: #fff;
+  padding: 14px 20px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pos-vertodo-cerrar {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.pos-vertodo-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.pos-vertodo-vacio {
+  color: #98a2b3;
+  text-align: center;
+  padding: 30px 0;
+}
+
+.pos-vertodo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1.02rem;
+}
+
+.pos-vertodo-table th {
+  background: #f2f4f7;
+  color: #344054;
+  text-align: left;
+  padding: 10px;
+  font-size: 0.85rem;
+  border-bottom: 2px solid #d0d5dd;
+}
+
+.pos-vertodo-table td {
+  padding: 10px;
+  border-bottom: 1px solid #eaecf0;
+  vertical-align: top;
+}
+
+.pos-vertodo-table td.text-right {
+  text-align: right;
+}
+
+.pos-vertodo-table th.text-right {
+  text-align: right;
+}
+
+.pos-vertodo-codigos {
+  margin-top: 6px;
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: #475467;
+  line-height: 1.6;
+}
+
+.pos-vertodo-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  padding: 14px 20px;
+  border-top: 1px solid #eaecf0;
+  font-size: 0.95rem;
+  color: #344054;
+}
+
+.pos-vertodo-footer .btn-primary {
+  background: #0b4f9e;
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.pos-vertodo-footer .btn-primary:hover {
+  background: #083b78;
+}
+
+/* Reportes: fila de categorias (Inventario, Vendedores, Ventas, Compras...) y, debajo, la fila
+   de sub-reportes de la categoria activa. La categoria activa usa el azul principal y algo mas
+   grande/en mayusculas para que se note que es "el nivel de arriba"; el sub-tab activo usa un
+   azul mas claro, para diferenciar los dos niveles a simple vista. */
+.reportes-categorias {
+  display: flex;
+  gap: 0.4rem;
+  margin: 1rem 0 0.6rem;
+  flex-wrap: wrap;
+  border-bottom: 2px solid #d0d5dd;
+  padding-bottom: 0.6rem;
+}
+
+.reportes-categorias button {
+  padding: 0.5rem 1.1rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: #e2e8f0;
+  color: #344054;
+}
+
+.reportes-categorias button:hover {
+  background: #d5dce6;
+}
+
+.reportes-categorias button.active {
+  background: #0b4f9e;
+  color: #fff;
+}
+
+.reportes-subtabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.reportes-subtabs button {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  background: #fff;
+  color: #344054;
+}
+
+.reportes-subtabs button:hover {
+  background: #eef4ff;
+}
+
+.reportes-subtabs button.active {
+  background: #dbeafe;
+  border-color: #0b4f9e;
+  color: #0b4f9e;
+  font-weight: 600;
+}
+
+/* Impresion: al imprimir una pantalla que contenga un elemento .print-area (ej: la factura
+   de una compra), se oculta todo lo demas (menu lateral, botones, filtros) y solo se imprime
+   ese contenido. Los elementos con .no-print (botones de accion) tampoco se imprimen. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area, .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
