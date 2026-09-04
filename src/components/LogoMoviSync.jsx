@@ -1,16 +1,27 @@
 import React from 'react';
 
-// Logo "MS" + celular. Se parametriza el color para poder usarlo tanto en blanco (sobre el
-// fondo azul oscuro del sidebar) como en el azul de marca (sobre el fondo blanco de la
-// pantalla de login), sin duplicar el SVG en los dos lugares.
-export default function LogoMoviSync({ color = '#fff', size = 30, fontSize = '2.1rem' }) {
+// Logo real de MoviSync (icono + texto), tal como en la imagen de referencia del negocio.
+// Vive como imagen estatica en /public/logo-movisync.png (fondo transparente) para que se use
+// exactamente igual en todos los sitios del sistema: sidebar, Login, pantalla de Activacion,
+// etc., sin duplicar el archivo.
+//
+// El logo original esta pensado para fondos claros (azul oscuro/teal sobre blanco). Sobre el
+// sidebar, que es azul oscuro, se pierde el contraste -por eso "onDark" lo envuelve en una
+// placa blanca redondeada en vez de intentar recolorearlo-.
+export default function LogoMoviSync({ height = 40, onDark = false, style = {} }) {
+  const imagen = (
+    <img
+      src="/logo-movisync.png"
+      alt="MoviSync"
+      style={{ height, display: 'block', ...style }}
+    />
+  );
+
+  if (!onDark) return imagen;
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-      <span style={{ fontSize, fontWeight: 800, color, lineHeight: 1, letterSpacing: '-0.02em' }}>MS</span>
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="7" y="2" width="10" height="20" rx="2.2" />
-        <line x1="11" y1="18.3" x2="13" y2="18.3" />
-      </svg>
+    <div style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', borderRadius: '8px', padding: '6px 10px' }}>
+      {imagen}
     </div>
   );
 }
