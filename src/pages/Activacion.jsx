@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import fondoActivacion from '../assets/activacion-fondo.jpg';
 
 // Pantalla de Activación: se muestra en vez del Login mientras el equipo no tenga una licencia
 // activada. El "ID de este equipo" lo genera electron/licencia.js (estable por instalación de
@@ -81,7 +82,7 @@ export default function Activacion({ machineId, onActivado }) {
           position: 'relative',
           width: 'min(92vw, 940px)',
           aspectRatio: '940 / 520',
-          backgroundImage: 'url(/activacion-fondo.jpg)',
+          backgroundImage: `url(${fondoActivacion})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           borderRadius: '10px',
