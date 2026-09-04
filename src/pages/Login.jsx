@@ -29,9 +29,8 @@ export default function Login({ onLogin }) {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={handleSubmit}>
-        <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-          <LogoMoviSync color="#0057a3" size={24} fontSize="1.4rem" />
-          MoviSync
+        <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <LogoMoviSync height={56} />
         </h1>
         {error && <div className="error-text">{error}</div>}
         <input

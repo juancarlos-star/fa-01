@@ -60,9 +60,8 @@ export default function Activacion({ machineId, onActivado }) {
   return (
     <div className="login-screen">
       <div className="login-card" style={{ maxWidth: '440px' }}>
-        <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-          <LogoMoviSync color="#0057a3" size={24} fontSize="1.4rem" />
-          MoviSync
+        <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <LogoMoviSync height={56} />
         </h1>
         <p style={{ textAlign: 'center', color: '#667085', marginTop: '-6px' }}>
           Este equipo todavía no tiene una licencia activada.
