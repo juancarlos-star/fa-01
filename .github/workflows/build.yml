@@ -21,6 +21,22 @@ jobs:
       - name: Compilar frontend (Vite)
         run: npm run build
 
+      - name: Crear archivo de credenciales privadas (correo de activacion)
+        shell: bash
+        env:
+          CORREO_ACTIVACION_PASSWORD: ${{ secrets.CORREO_ACTIVACION_PASSWORD }}
+        run: |
+          cat > electron/config-correo-privado.js << EOF
+          // Generado automaticamente por el workflow de GitHub Actions (build.yml) a partir del
+          // secreto CORREO_ACTIVACION_PASSWORD -- NUNCA se sube al repositorio, solo existe
+          // durante la compilacion en el servidor de GitHub y dentro del instalador ya compilado.
+          module.exports = {
+            remitente: 'movisync1@gmail.com',
+            password: '${CORREO_ACTIVACION_PASSWORD}',
+            destino: 'movisync1@gmail.com'
+          };
+          EOF
+
       - name: Generar instalador .exe
         run: npm run dist -- --publish=never
 
