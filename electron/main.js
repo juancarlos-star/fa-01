@@ -525,6 +525,41 @@ ipcMain.handle('categories:create', (event, { nombre }) => {
   return { ok: true };
 });
 
+// Marca/desmarca una categoria de accesorio para que se sugiera como venta cruzada al facturar
+// un equipo (telefono). Solo tiene sentido para categorias tipo 'accesorio'.
+ipcMain.handle('categories:toggleVentaCruzada', (event, { id }) => {
+  const db = getDb();
+  const cat = db.prepare('SELECT * FROM categorias WHERE id = ?').get(id);
+  if (!cat) return { ok: false, message: 'Categoria no encontrada' };
+  if (cat.tipo !== 'accesorio') return { ok: false, message: 'Solo aplica a categorias de accesorios' };
+  db.prepare('UPDATE categorias SET sugerir_venta_cruzada = ? WHERE id = ?').run(cat.sugerir_venta_cruzada ? 0 : 1, id);
+  return { ok: true };
+});
+
+// ---------- Facturacion: sugerencias de venta cruzada ----------
+// Regla simple: si el carrito tiene un producto tipo 'equipo' (telefono), se sugieren los
+// accesorios ACTIVOS (con stock disponible) que esten en una categoria marcada por el admin
+// como "sugerir_venta_cruzada" (ej. forros, vidrios templados, SIM). No sugiere nada si el
+// admin no marco ninguna categoria, para no inventar sugerencias que no aplican en la tienda.
+ipcMain.handle('facturacion:sugerenciasVentaCruzada', (event, { idsEnCarrito = [] } = {}) => {
+  const db = getDb();
+  const categoriasMarcadas = db.prepare(
+    "SELECT nombre FROM categorias WHERE tipo = 'accesorio' AND sugerir_venta_cruzada = 1"
+  ).all().map((c) => c.nombre);
+  if (categoriasMarcadas.length === 0) return { ok: true, sugerencias: [] };
+
+  const placeholders = categoriasMarcadas.map(() => '?').join(',');
+  const accesorios = db.prepare(
+    `SELECT id, nombre, categoria, precio2, stock_cantidad
+     FROM products
+     WHERE tipo = 'accesorio' AND stock_cantidad > 0 AND categoria IN (${placeholders})
+     ORDER BY categoria, nombre`
+  ).all(...categoriasMarcadas);
+
+  const sugerencias = accesorios.filter((a) => !idsEnCarrito.includes(a.id));
+  return { ok: true, sugerencias };
+});
+
 ipcMain.handle('categories:impacto', (event, { id }) => {
   const db = getDb();
   const cat = db.prepare('SELECT * FROM categorias WHERE id = ?').get(id);

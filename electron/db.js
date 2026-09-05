@@ -85,6 +85,13 @@ function migrarCategoriasSiHaceFalta(database) {
     const update = database.prepare('UPDATE categorias SET tipo = ? WHERE nombre = ?');
     Object.keys(mapa).forEach((nombre) => update.run(mapa[nombre], nombre));
   }
+  // Marca las categorias de accesorio que el administrador quiere sugerir como venta cruzada
+  // cuando se factura un equipo (ej. forros, vidrios templados, SIM). Por defecto ninguna
+  // categoria queda marcada -el admin la activa a mano en Categorias-, para no sugerir cosas
+  // que no aplican en cada tienda.
+  if (!tieneColumna(database, 'categorias', 'sugerir_venta_cruzada')) {
+    database.exec('ALTER TABLE categorias ADD COLUMN sugerir_venta_cruzada INTEGER NOT NULL DEFAULT 0');
+  }
 }
 
 // La tabla "users" es la unica tabla del sistema que nunca tuvo una funcion de migracion
@@ -580,6 +587,7 @@ function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nombre TEXT UNIQUE NOT NULL,
       tipo TEXT NOT NULL DEFAULT 'accesorio' CHECK(tipo IN ('equipo','simcard','usim','accesorio')),
+      sugerir_venta_cruzada INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS products (

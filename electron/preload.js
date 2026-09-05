@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('api', {
   updateCategory: (id, nombre) => ipcRenderer.invoke('categories:update', { id, nombre }),
   deleteCategory: (id) => ipcRenderer.invoke('categories:delete', { id }),
   getCategoryImpact: (id) => ipcRenderer.invoke('categories:impacto', { id }),
+  toggleCategoryVentaCruzada: (id) => ipcRenderer.invoke('categories:toggleVentaCruzada', { id }),
+  getSugerenciasVentaCruzada: (idsEnCarrito) => ipcRenderer.invoke('facturacion:sugerenciasVentaCruzada', { idsEnCarrito }),
   // Inventario - productos
   // depositoId es opcional en listProducts y buscarProductoPorCodigo: cuando se indica, el
   // stock_disponible que devuelven es SOLO el de ese deposito (usado en Facturacion, Compras
