@@ -69,7 +69,8 @@ const CATEGORIAS = [
       { key: 'facturas', label: 'Transacciones procesadas' },
       { key: 'ventasPorCliente', label: 'Visualizar transacciones' },
       { key: 'devolucionesFacturas', label: 'Devoluciones de Facturas' },
-      { key: 'clientes', label: 'Clientes' }
+      { key: 'clientes', label: 'Clientes' },
+      { key: 'clientesFrecuentes', label: 'Clientes frecuentes / recuperación' }
     ]
   },
   {
@@ -98,7 +99,7 @@ const CATEGORIAS = [
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
-const SIN_FILTRO_FECHA = ['clientes', 'historial', 'gestionProductos', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'stockMuerto', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
+const SIN_FILTRO_FECHA = ['clientes', 'clientesFrecuentes', 'historial', 'gestionProductos', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'stockMuerto', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
 
 // Hook compartido para traer la configuracion de la tienda (nombre, RIF, logo, etc.), usado por
 // las pestañas de Reportes que generan el PDF de una factura individual (necesitan pasarsela a
@@ -169,6 +170,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
       {tab === 'productosVendidos' && <ReporteProductosVendidos desde={desde} hasta={hasta} />}
       {tab === 'cargosDescargos' && <ReporteCargosDescargos desde={desde} hasta={hasta} />}
       {tab === 'clientes' && <ReporteClientes />}
+      {tab === 'clientesFrecuentes' && <ReporteClientesFrecuentes />}
       {tab === 'inventarioProductos' && <ReporteInventarioProductos />}
       {tab === 'inventarioFisico' && <ReporteInventarioFisico />}
       {tab === 'stockBajo' && <ReporteStockBajo />}
@@ -2526,6 +2528,185 @@ function ReporteClientes() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------- Ventas: Clientes frecuentes / historial de compras ----------------
+
+// Ranking de clientes (por monto gastado o por cantidad de compras) y aviso de clientes que
+// llevan mucho tiempo sin volver (umbral en meses, configurable en pantalla). Al hacer clic en
+// un cliente se abre su ficha completa con TODO su historial de facturas.
+function ReporteClientesFrecuentes() {
+  const [clientes, setClientes] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [orden, setOrden] = useState('monto'); // 'monto' o 'frecuencia'
+  const [umbralMeses, setUmbralMeses] = useState(3);
+  const [clienteSeleccionadoId, setClienteSeleccionadoId] = useState(null);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteClientesResumen();
+    setClientes(data.clientes || []);
+    setCargando(false);
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  if (cargando || !clientes) return <p>Cargando...</p>;
+
+  const conCompras = clientes.filter((c) => c.cantidadCompras > 0);
+  const ordenados = [...conCompras].sort((a, b) =>
+    orden === 'frecuencia' ? b.cantidadCompras - a.cantidadCompras : b.totalGastadoUsd - a.totalGastadoUsd
+  );
+  const umbralDias = umbralMeses * 30;
+  const paraRecuperar = conCompras
+    .filter((c) => c.diasSinComprar !== null && c.diasSinComprar >= umbralDias)
+    .sort((a, b) => b.diasSinComprar - a.diasSinComprar);
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '1rem' }}>
+        <div className="form-box" style={{ maxWidth: '220px' }}>
+          <label>Ordenar top clientes por</label>
+          <select value={orden} onChange={(e) => setOrden(e.target.value)}>
+            <option value="monto">Monto gastado</option>
+            <option value="frecuencia">Frecuencia de compra</option>
+          </select>
+        </div>
+        <div className="form-box" style={{ maxWidth: '220px' }}>
+          <label>Avisar si no compra hace (meses)</label>
+          <input
+            type="number"
+            min="1"
+            value={umbralMeses}
+            onChange={(e) => setUmbralMeses(Math.max(1, parseInt(e.target.value, 10) || 1))}
+          />
+        </div>
+      </div>
+
+      <h4 style={{ marginBottom: '6px' }}>Top clientes</h4>
+      {ordenados.length === 0 ? (
+        <p>Todavía no hay clientes con compras registradas.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1.2rem' }}>
+          {ordenados.slice(0, 20).map((c) => (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '8px 10px', borderRadius: '6px', background: '#f9fafb' }}>
+              <span style={{ fontSize: '0.85rem', color: '#344054' }}>
+                <strong>{c.nombre}</strong>
+                <span style={{ color: '#98a2b3' }}>{c.rif_cedula ? ` · ${c.rif_cedula}` : ''}{c.telefono ? ` · ${c.telefono}` : ''}</span>
+              </span>
+              <span style={{ fontSize: '0.78rem', color: '#667085', display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
+                <span>Compras: {c.cantidadCompras}</span>
+                <span style={{ fontWeight: 600, color: '#067647' }}>Gastado: ${fmt(c.totalGastadoUsd)}</span>
+                <button
+                  type="button"
+                  onClick={() => setClienteSeleccionadoId(c.id)}
+                  style={{ fontSize: '0.78rem', padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', cursor: 'pointer' }}
+                >
+                  Ver historial
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h4 style={{ marginBottom: '6px' }}>Clientes para recuperar (sin comprar hace {umbralMeses}+ meses)</h4>
+      {paraRecuperar.length === 0 ? (
+        <p>Ningún cliente con compras previas lleva tanto tiempo sin volver.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {paraRecuperar.map((c) => (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '8px 10px', borderRadius: '6px', background: '#fffaeb' }}>
+              <span style={{ fontSize: '0.85rem', color: '#344054' }}>
+                <strong>{c.nombre}</strong>
+                <span style={{ color: '#98a2b3' }}>{c.telefono ? ` · ${c.telefono}` : ''}</span>
+              </span>
+              <span style={{ fontSize: '0.78rem', color: '#b54708', display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
+                <span style={{ fontWeight: 600 }}>{c.diasSinComprar} días sin comprar</span>
+                <button
+                  type="button"
+                  onClick={() => setClienteSeleccionadoId(c.id)}
+                  style={{ fontSize: '0.78rem', padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', cursor: 'pointer' }}
+                >
+                  Ver historial
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {clienteSeleccionadoId && (
+        <ClienteFichaModal clienteId={clienteSeleccionadoId} onClose={() => setClienteSeleccionadoId(null)} />
+      )}
+    </div>
+  );
+}
+
+// Ficha de un solo cliente: TODO su historial de facturas (compras y devoluciones), con el
+// detalle de productos de cada una. Se muestra como modal simple (no un componente aparte en
+// archivo propio) para no multiplicar archivos por una sola pantalla de solo lectura.
+function ClienteFichaModal({ clienteId, onClose }) {
+  const [datos, setDatos] = useState(null);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    let activo = true;
+    setCargando(true);
+    window.api.getReporteClienteHistorial(clienteId).then((res) => {
+      if (activo) { setDatos(res); setCargando(false); }
+    });
+    return () => { activo = false; };
+  }, [clienteId]);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(16,24,40,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: '#fff', borderRadius: '10px', padding: '1.2rem', width: '640px', maxHeight: '80vh', overflowY: 'auto' }}>
+        {cargando || !datos ? (
+          <p>Cargando...</p>
+        ) : !datos.ok ? (
+          <p>{datos.message}</p>
+        ) : (
+          <>
+            <h3 style={{ marginTop: 0 }}>{datos.cliente.nombre}</h3>
+            <p style={{ fontSize: '0.85rem', color: '#667085' }}>
+              {datos.cliente.rif_cedula ? `${datos.cliente.rif_cedula} · ` : ''}{datos.cliente.telefono || 'Sin teléfono'}{datos.cliente.email ? ` · ${datos.cliente.email}` : ''}
+            </p>
+            <p>
+              Compras realizadas: <strong>{datos.totales.cantidadCompras}</strong>
+              {' '}— Total gastado: <strong style={{ color: '#067647' }}>${fmt(datos.totales.totalGastadoUsd)}</strong>
+            </p>
+
+            {datos.facturas.length === 0 ? (
+              <p>Este cliente no tiene facturas registradas todavía.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {datos.facturas.map((f) => (
+                  <div key={f.id} style={{ border: '1px solid #eaecf0', borderRadius: '8px', padding: '8px 10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                      <span>
+                        {f.es_devolucion ? '↩️ Devolución' : '🧾 Factura'} {f.numero_factura ? `#${f.numero_factura}` : ''}
+                        <span style={{ color: '#98a2b3' }}> — {f.created_at}</span>
+                      </span>
+                      <strong>${fmt(f.total_usd)}</strong>
+                    </div>
+                    <ul style={{ margin: '6px 0 0', paddingLeft: '18px', fontSize: '0.78rem', color: '#667085' }}>
+                      {f.items.map((it, i) => (
+                        <li key={i}>{it.cantidad}x {it.descripcion} — ${fmt(it.subtotal_usd)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        <div style={{ marginTop: '1rem', textAlign: 'right' }}>
+          <button type="button" onClick={onClose}>Cerrar</button>
+        </div>
+      </div>
     </div>
   );
 }
