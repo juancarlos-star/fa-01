@@ -1602,21 +1602,22 @@ try {
 }
 
 // Envia por correo el ID de este equipo al vendedor del programa, para que pueda generarle la
-// clave de activacion sin que el cliente tenga que copiarlo y mandarlo el mismo. Se manda como
-// mucho UNA vez por equipo de forma automatica (se guarda el machineId ya avisado en settings
-// para no repetir el correo en cada apertura del programa mientras espera su clave); el boton
-// "Reenviar solicitud" en la pantalla permite forzarlo de nuevo si hizo falta (ej. no habia
-// internet la primera vez).
+// clave de activacion sin que el cliente tenga que copiarlo y mandarlo el mismo.
+//
+// A proposito NO hay limite de "una sola vez por equipo": se manda cada vez que se abre la
+// pantalla de Activacion (es decir, cada vez que se abre el programa mientras el equipo siga sin
+// activar), para no depender de que el primer envio SMTP realmente haya llegado a la bandeja de
+// entrada -antes se guardaba el machineId como "ya avisado" apenas el servidor SMTP aceptaba el
+// mensaje, y eso hacia que, si ese primer correo se perdia (por ejemplo por temas de entrega de
+// Gmail), la pantalla nunca lo volviera a intentar solo, aunque el problema real siguiera sin
+// resolverse. El parametro "forzar" se deja aceptado por compatibilidad con quien llame a este
+// handler pasandolo, pero ya no cambia el comportamiento.
 ipcMain.handle('licencia:enviarSolicitud', async (event, { forzar } = {}) => {
   if (!CORREO_SOLICITUDES_ACTIVACION) {
     return { ok: false, message: MOTIVO_CORREO_SOLICITUDES_DESACTIVADO || 'El aviso automático por correo no está configurado en este equipo.' };
   }
   const db = getDb();
   const machineId = obtenerMachineId(app);
-  const yaAvisado = db.prepare("SELECT value FROM settings WHERE key = 'licencia_solicitud_enviada_id'").get()?.value;
-  if (yaAvisado === machineId && !forzar) {
-    return { ok: true, yaEnviadoAntes: true };
-  }
   try {
     await enviarCorreoConAdjunto({
       host: CORREO_SOLICITUDES_ACTIVACION.host,
