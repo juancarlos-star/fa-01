@@ -23,14 +23,22 @@ export default function Activacion({ machineId, onActivado }) {
   // por equipo) un correo al vendedor con el ID, para que no haga falta que el cliente se lo
   // tenga que enviar el mismo. "estadoSolicitud": 'enviando' | 'enviado' | 'error' | null.
   const [estadoSolicitud, setEstadoSolicitud] = useState(null);
+  // Motivo exacto del error (viene del backend: "no configurado", "contraseña incorrecta", "no
+  // hay internet", etc.) para poder mostrarlo tal cual en pantalla -antes se mostraba siempre el
+  // mismo mensaje generico sin importar la causa real, lo que hacia imposible saber que estaba
+  // pasando sin ir a revisar la consola de Electron a mano.
+  const [motivoError, setMotivoError] = useState('');
 
   const enviarSolicitud = async (forzar) => {
     setEstadoSolicitud('enviando');
+    setMotivoError('');
     try {
       const res = await window.api.licenciaEnviarSolicitud(forzar);
       setEstadoSolicitud(res.ok ? 'enviado' : 'error');
-    } catch {
+      if (!res.ok) setMotivoError(res.message || 'No se sabe el motivo exacto.');
+    } catch (err) {
       setEstadoSolicitud('error');
+      setMotivoError(err?.message || 'No se sabe el motivo exacto.');
     }
   };
 
@@ -137,6 +145,11 @@ export default function Activacion({ machineId, onActivado }) {
                     No se pudo avisar automáticamente. Copia el ID de arriba y envíalo tú mismo, o
                     intenta de nuevo:
                   </p>
+                  {motivoError && (
+                    <p style={{ fontSize: 'clamp(0.52rem, 0.95vw, 0.7rem)', color: '#98111d', margin: '1.5% 0 0', lineHeight: 1.35, fontFamily: 'monospace' }}>
+                      Motivo: {motivoError}
+                    </p>
+                  )}
                   <button
                     type="button"
                     onClick={() => enviarSolicitud(true)}
