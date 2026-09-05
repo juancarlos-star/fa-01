@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, session, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
@@ -153,6 +153,12 @@ if (!gotTheLock) {
       mainWindow.focus();
     }
   });
+
+  // Quita la barra de menu nativa de Electron (File / Edit / View / Window / Help) en TODAS las
+  // ventanas de la app (ventana principal, ventanas de impresion, etc.). Se pasa "null" en vez
+  // de un menu vacio para que tampoco quede una franja en blanco ocupando el espacio. Se hace
+  // antes de crear cualquier ventana para que ninguna llegue a mostrarla ni por un instante.
+  Menu.setApplicationMenu(null);
 
   app.whenReady().then(() => {
     initDb();
