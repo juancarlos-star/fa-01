@@ -55,6 +55,18 @@ function envolverBase64(base64) {
   return base64.match(/.{1,76}/g).join('\r\n');
 }
 
+// Genera un "Message-ID" unico para el encabezado del correo (formato estandar
+// "<algo-unico@dominio>"). Junto con el header "Date" de mas abajo, evita que Gmail (u otros
+// proveedores) traten el mensaje como sospechoso por parecer "incompleto" -sin estos dos
+// encabezados, es comun que un correo mandado por SMTP a mano (sin pasar por un cliente como
+// Outlook o Gmail) termine en Spam o ni siquiera se muestre en la bandeja, aunque el servidor
+// lo haya aceptado sin errores.
+function generarMessageId(remitente) {
+  const dominio = (remitente.split('@')[1] || 'movisync.local').trim();
+  const unico = `${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  return `<${unico}@${dominio}>`;
+}
+
 // Arma el correo en formato MIME: un cuerpo de texto plano y, si se indican, uno o varios
 // archivos adjuntos, cada uno como su propia parte separada por un "boundary" (delimitador)
 // unico compartido por todo el mensaje.
@@ -64,6 +76,8 @@ function construirMensajeMime({ remitente, destino, asunto, textoBody, adjuntos 
   partes.push(`From: ${remitente}`);
   partes.push(`To: ${destino}`);
   partes.push(`Subject: ${codificarAsunto(asunto)}`);
+  partes.push(`Date: ${new Date().toUTCString()}`);
+  partes.push(`Message-ID: ${generarMessageId(remitente)}`);
   partes.push('MIME-Version: 1.0');
   partes.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
   partes.push('');
