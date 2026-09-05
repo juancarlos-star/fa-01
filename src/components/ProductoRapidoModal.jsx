@@ -120,15 +120,13 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
 
   // Si el producto ya tiene movimientos, solo se puede elegir "sin categoria" o una categoria
   // que quede del MISMO lado (accesorio, o "por unidad") en el que ya estaba el producto.
-  // Cuando el modal se abre desde un modulo restringido (ej. "Compras" solo admite SIM/USIM),
-  // "tiposPermitidos" acota ademas la lista a solo esos tipos, y obliga a elegir categoria
-  // (no se puede dejar "sin categoria", porque ahi no habria forma de saber si es SIM o USIM).
-  let categoriasDisponibles = checkboxBloqueado
+  // "tiposPermitidos" (si el modulo que abre esta ventana lo pasa) ya NO acota la LISTA de
+  // categorias -se piden todas siempre, sin importar el modulo desde el que se cree el
+  // producto-, solo se sigue usando para decidir si la categoria es obligatoria o no (ver mas
+  // abajo), asi que un aviso claro en cada categoria concreta lo debe interpretar quien elige.
+  const categoriasDisponibles = checkboxBloqueado
     ? categorias.filter((c) => esIndividual(c.tipo) === esIndividual(productoEditar.tipo))
     : categorias;
-  if (tiposPermitidos) {
-    categoriasDisponibles = categoriasDisponibles.filter((c) => tiposPermitidos.includes(c.tipo));
-  }
 
   const set = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
 
@@ -275,7 +273,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
               </select>
               <p style={{ fontSize: '0.72rem', color: '#98a2b3', margin: '4px 0 0' }}>
                 {tiposPermitidos
-                  ? 'Este módulo solo admite estas categorías.'
+                  ? 'Elige la categoría del producto (obligatoria en este módulo).'
                   : 'El tipo del producto (equipo, SIM, USIM o accesorio) se toma de la categoría elegida. Si no eliges categoría, se usa el check de "Se vende por unidad" de abajo.'}
               </p>
             </Campo>
