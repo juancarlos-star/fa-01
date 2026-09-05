@@ -1569,20 +1569,36 @@ ipcMain.handle('licencia:activar', (event, { codigo }) => {
 //
 // Las credenciales viven en electron/config-correo-privado.js, un archivo que NO se sube a
 // GitHub (ver .gitignore) -antes estaban escritas directo aqui, lo cual las dejaba expuestas en
-// el codigo fuente. Si ese archivo no existe (por ejemplo, alguien clona el repositorio sin
-// copiarlo primero), esta funcion queda desactivada en vez de romper el resto de la app.
+// el codigo fuente. Si ese archivo no existe, tiene un error, o le falta reemplazar el texto de
+// ejemplo por la contraseña real, esta funcion queda desactivada en vez de romper el resto de la
+// app -pero se guarda el motivo EXACTO (no solo "no configurado") para poder mostrarlo despues
+// en la pantalla de Activacion, en vez de dejar a quien lo usa adivinando por que no funciona.
 let CORREO_SOLICITUDES_ACTIVACION = null;
+let MOTIVO_CORREO_SOLICITUDES_DESACTIVADO = '';
 try {
+  // El require() de Node cachea el archivo la PRIMERA vez que se pide dentro de todo el proceso
+  // de Electron: si edita config-correo-privado.js con el programa ya abierto, tiene que cerrar
+  // el programa por completo (no solo recargar la pantalla) para que el cambio se note.
+  delete require.cache[require.resolve('./config-correo-privado')];
   const credencialesPrivadas = require('./config-correo-privado');
-  CORREO_SOLICITUDES_ACTIVACION = {
-    host: 'smtp.gmail.com',
-    port: 465,
-    remitente: credencialesPrivadas.remitente,
-    password: credencialesPrivadas.password,
-    destino: credencialesPrivadas.destino
-  };
+  const remitente = (credencialesPrivadas.remitente || '').trim();
+  const password = (credencialesPrivadas.password || '').trim();
+  const destino = (credencialesPrivadas.destino || '').trim();
+  if (!remitente || !destino) {
+    MOTIVO_CORREO_SOLICITUDES_DESACTIVADO = 'El archivo config-correo-privado.js existe, pero le falta "remitente" o "destino".';
+  } else if (!password || password.toUpperCase().startsWith('PON-AQUI')) {
+    MOTIVO_CORREO_SOLICITUDES_DESACTIVADO = 'En config-correo-privado.js todavia esta el texto de ejemplo en "password" -falta pegar ahi la contraseña de aplicación real de Gmail.';
+  } else {
+    CORREO_SOLICITUDES_ACTIVACION = { host: 'smtp.gmail.com', port: 465, remitente, password, destino };
+  }
 } catch (err) {
-  console.warn('No se encontro electron/config-correo-privado.js: el aviso automatico de nuevas activaciones queda desactivado.');
+  // ENOENT = el archivo no existe en esa ruta; cualquier otro codigo/tipo casi siempre es un
+  // error de sintaxis dentro del archivo (por ejemplo, una comilla o un caracter suelto al
+  // pegar la contraseña de aplicación, que Google a veces muestra con espacios en el medio).
+  MOTIVO_CORREO_SOLICITUDES_DESACTIVADO = err.code === 'MODULE_NOT_FOUND'
+    ? 'No se encontro el archivo electron/config-correo-privado.js (revisa que el nombre y la carpeta sean exactos).'
+    : 'El archivo config-correo-privado.js tiene un error y no se pudo leer: ' + err.message;
+  console.warn('electron/config-correo-privado.js:', MOTIVO_CORREO_SOLICITUDES_DESACTIVADO);
 }
 
 // Envia por correo el ID de este equipo al vendedor del programa, para que pueda generarle la
@@ -1593,7 +1609,7 @@ try {
 // internet la primera vez).
 ipcMain.handle('licencia:enviarSolicitud', async (event, { forzar } = {}) => {
   if (!CORREO_SOLICITUDES_ACTIVACION) {
-    return { ok: false, message: 'El aviso automático por correo no está configurado en este equipo de desarrollo.' };
+    return { ok: false, message: MOTIVO_CORREO_SOLICITUDES_DESACTIVADO || 'El aviso automático por correo no está configurado en este equipo.' };
   }
   const db = getDb();
   const machineId = obtenerMachineId(app);
