@@ -27,7 +27,8 @@ import {
   generarPDFVentasRelacion,
   generarPDFVentasPorCliente,
   generarPDFLibroVentasIva,
-  generarPDFLibroComprasIva
+  generarPDFLibroComprasIva,
+  generarPDFCatalogo
 } from '../utils/generarReportesPDF.js';import { fmt } from '../utils/format.js';
 
 // Reportes organizados por categorias (Inventario, Vendedores, Ventas, Compras...), cada una
@@ -42,6 +43,7 @@ const CATEGORIAS = [
       { key: 'inventarioFisico', label: 'Inventario Físico' },
       { key: 'stockBajo', label: 'Stock Bajo' },
       { key: 'stockMuerto', label: 'Stock muerto' },
+      { key: 'catalogoWhatsapp', label: 'Catálogo para WhatsApp' },
       { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' }
     ]
   },
@@ -52,8 +54,10 @@ const CATEGORIAS = [
       { key: 'vendedoresEfectividad', label: 'Efectividad' },
       { key: 'vendedoresUltimasVentas', label: 'Últimas ventas a clientes' },
       { key: 'vendedoresPorCategoria', label: 'Ventas por categoría' },
+      { key: 'vendedoresPeriodo', label: 'Ventas por período (día/semana/mes)' },
       { key: 'productosVendidos', label: 'Ventas de productos' },
-      { key: 'vendedoresEstadisticas', label: 'Estadísticas' }
+      { key: 'vendedoresEstadisticas', label: 'Estadísticas' },
+      { key: 'metasComisiones', label: 'Metas y comisiones' }
     ]
   },
   {
@@ -99,7 +103,7 @@ const CATEGORIAS = [
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
-const SIN_FILTRO_FECHA = ['clientes', 'clientesFrecuentes', 'historial', 'gestionProductos', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'stockMuerto', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
+const SIN_FILTRO_FECHA = ['clientes', 'clientesFrecuentes', 'historial', 'gestionProductos', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'stockMuerto', 'catalogoWhatsapp', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas', 'metasComisiones'];
 
 // Hook compartido para traer la configuracion de la tienda (nombre, RIF, logo, etc.), usado por
 // las pestañas de Reportes que generan el PDF de una factura individual (necesitan pasarsela a
@@ -175,10 +179,13 @@ export default function Reportes({ currentUser, categoriaInicial }) {
       {tab === 'inventarioFisico' && <ReporteInventarioFisico />}
       {tab === 'stockBajo' && <ReporteStockBajo />}
       {tab === 'stockMuerto' && <ReporteStockMuerto />}
+      {tab === 'catalogoWhatsapp' && <ReporteCatalogoWhatsapp />}
       {tab === 'vendedoresEfectividad' && <ReporteVendedoresEfectividad desde={desde} hasta={hasta} />}
       {tab === 'vendedoresUltimasVentas' && <ReporteVendedoresUltimasVentas />}
       {tab === 'vendedoresPorCategoria' && <ReporteVendedoresPorCategoria desde={desde} hasta={hasta} />}
       {tab === 'vendedoresEstadisticas' && <ReporteVendedoresEstadisticas desde={desde} hasta={hasta} />}
+      {tab === 'vendedoresPeriodo' && <ReporteVendedoresPeriodo desde={desde} hasta={hasta} />}
+      {tab === 'metasComisiones' && <ReporteMetasComisiones esAdmin={esAdmin} />}
       {tab === 'ventasTransacciones' && <ReporteVentasTransacciones desde={desde} hasta={hasta} />}
       {tab === 'ventasCierreDiario' && <ReporteVentasCierreDiario />}
       {tab === 'ventasRelacion' && <ReporteVentasRelacion desde={desde} hasta={hasta} />}
@@ -1515,6 +1522,77 @@ function ReporteMargenProducto({ desde, hasta }) {
   );
 }
 
+// ---------------- Inventario: Catálogo para WhatsApp ----------------
+
+// Genera un PDF listo para compartir por WhatsApp/Estados con lo que hay disponible AHORA
+// (stock > 0), tomado directo del inventario real -nunca una lista aparte que se desactualice-,
+// con opcion de filtrar por tipo (ej. solo telefonos) antes de generar.
+function ReporteCatalogoWhatsapp() {
+  const [tipo, setTipo] = useState('');
+  const [productos, setProductos] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getCatalogoVigente(tipo || null);
+    setProductos(data.productos || []);
+    setCargando(false);
+  }, [tipo]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const generar = async (imprimir = false) => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFCatalogo(productos, { imprimir });
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  if (cargando || !productos) return <p>Cargando...</p>;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div className="form-box" style={{ maxWidth: '260px' }}>
+        <label>Filtrar por tipo</label>
+        <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+          <option value="">Todo lo disponible</option>
+          <option value="equipo">Solo teléfonos</option>
+          <option value="simcard">Solo SIM Cards</option>
+          <option value="usim">Solo USIM</option>
+          <option value="accesorio">Solo accesorios</option>
+        </select>
+      </div>
+
+      <p>Productos con stock disponible ahora: <strong>{productos.length}</strong></p>
+
+      <button
+        type="button"
+        onClick={() => generar(false)}
+        disabled={generandoPDF || productos.length === 0}
+        style={{ backgroundColor: '#0b4f9e', color: '#fff', border: 'none', borderRadius: '4px', padding: '0.6rem 1.2rem', cursor: generandoPDF ? 'default' : 'pointer', marginBottom: '1rem' }}
+      >
+        {generandoPDF ? 'Generando...' : '📄 Generar catálogo'}
+      </button>
+
+      {productos.length === 0 ? (
+        <p>No hay productos con stock disponible para este filtro.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {productos.map((p) => (
+            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#f9fafb', borderRadius: '6px', fontSize: '0.85rem' }}>
+              <span><strong>{p.nombre}</strong><span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_INV[p.tipo] || p.tipo}{p.categoria ? ` · ${p.categoria}` : ''}</span></span>
+              <span>${fmt(p.precioUsd)} · Stock: {p.stock}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReporteInventarioFisico() {
   const [depositos, setDepositos] = useState([]);
   const [depositoId, setDepositoId] = useState('');
@@ -1926,6 +2004,185 @@ function ReporteVendedoresEstadisticas({ desde, hasta }) {
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+// ---------------- Vendedores: Ventas por período (día/semana/mes) ----------------
+
+// Igual idea que "Relacion de ventas" pero desglosado ademas por vendedor: para cada periodo
+// (dia/semana/mes) dentro del rango, cuanto vendio cada quien. Se pivotea en el front (una fila
+// por vendedor dentro de cada periodo) porque el backend ya entrega los datos planos.
+function ReporteVendedoresPeriodo({ desde, hasta }) {
+  const [agrupacion, setAgrupacion] = useState('dia');
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteVendedoresPeriodo(desde, hasta, agrupacion);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta, agrupacion]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  if (cargando || !reporte) return <p>Cargando...</p>;
+
+  const periodos = [...new Set(reporte.filas.map((f) => f.periodo))];
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        {[{ key: 'dia', label: 'Por día' }, { key: 'semana', label: 'Por semana' }, { key: 'mes', label: 'Por mes' }].map((a) => (
+          <button
+            key={a.key}
+            onClick={() => setAgrupacion(a.key)}
+            style={{
+              padding: '0.4rem 0.9rem',
+              backgroundColor: agrupacion === a.key ? '#0b4f9e' : '#e2e8f0',
+              color: agrupacion === a.key ? '#fff' : '#111',
+              border: 'none', borderRadius: '4px', cursor: 'pointer'
+            }}
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
+
+      {periodos.length === 0 ? (
+        <p>No hay ventas registradas en este rango de fechas.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {periodos.map((periodo) => {
+            const filasPeriodo = reporte.filas.filter((f) => f.periodo === periodo).sort((a, b) => b.totalUsd - a.totalUsd);
+            const totalPeriodo = filasPeriodo.reduce((acc, f) => acc + f.totalUsd, 0);
+            return (
+              <div key={periodo}>
+                <p style={{ fontWeight: 600, marginBottom: '4px' }}>{periodo} — Total: ${fmt(totalPeriodo)}</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {filasPeriodo.map((f) => (
+                    <div key={f.usuario} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#f9fafb', borderRadius: '6px', fontSize: '0.85rem' }}>
+                      <span>{f.nombreVendedor}</span>
+                      <span>{f.cantidadFacturas} facturas — ${fmt(f.totalUsd)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Vendedores: Metas y comisiones ----------------
+
+// Meta mensual de venta y % de comision por vendedor, configurables por el administrador
+// (edicion inline), con barra de progreso del mes actual y comision calculada automaticamente
+// (ventas del mes x % de comision). El vendedor (no admin) solo puede ver, no editar.
+function ReporteMetasComisiones({ esAdmin }) {
+  const [progreso, setProgreso] = useState(null);
+  const [metas, setMetas] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [edicion, setEdicion] = useState({}); // { usuario: { meta_mensual_usd, comision_pct } }
+  const [guardandoUsuario, setGuardandoUsuario] = useState(null);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const [dataProgreso, dataMetas] = await Promise.all([
+      window.api.getProgresoMetas(),
+      esAdmin ? window.api.getMetasVendedores() : Promise.resolve(null)
+    ]);
+    setProgreso(dataProgreso);
+    setMetas(dataMetas);
+    setCargando(false);
+  }, [esAdmin]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  if (cargando || !progreso) return <p>Cargando...</p>;
+
+  const guardar = async (usuario) => {
+    const cambios = edicion[usuario];
+    if (!cambios) return;
+    setGuardandoUsuario(usuario);
+    try {
+      const res = await window.api.actualizarMetaVendedor(usuario, cambios.meta_mensual_usd, cambios.comision_pct);
+      if (!res.ok) { alert(res.message || 'No se pudo guardar'); return; }
+      await cargar();
+      setEdicion((prev) => { const copia = { ...prev }; delete copia[usuario]; return copia; });
+    } finally {
+      setGuardandoUsuario(null);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <p style={{ fontSize: '0.85rem', color: '#667085' }}>Mes: <strong>{progreso.mes}</strong></p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {progreso.vendedores.length === 0 ? (
+          <p>No hay vendedores activos registrados.</p>
+        ) : progreso.vendedores.map((v) => {
+          const enEdicion = edicion[v.usuario];
+          const metaActual = enEdicion?.meta_mensual_usd ?? v.metaMensualUsd;
+          const comisionActual = enEdicion?.comision_pct ?? v.comisionPct;
+          return (
+            <div key={v.usuario} style={{ border: '1px solid #eaecf0', borderRadius: '8px', padding: '10px 14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <strong>{v.nombreVendedor}</strong>
+                <span style={{ fontSize: '0.85rem' }}>
+                  Ventas del mes: <strong>${fmt(v.ventasMesUsd)}</strong>
+                  {' '}— Comisión calculada: <strong style={{ color: '#067647' }}>${fmt(v.comisionCalculadaUsd)}</strong>
+                </span>
+              </div>
+
+              {v.metaMensualUsd > 0 && (
+                <div style={{ background: '#eaecf0', borderRadius: '6px', height: '10px', overflow: 'hidden', marginBottom: '6px' }}>
+                  <div style={{
+                    width: `${v.progresoPct}%`, height: '100%',
+                    background: v.progresoPct >= 100 ? '#067647' : '#0b4f9e'
+                  }} />
+                </div>
+              )}
+              <p style={{ fontSize: '0.78rem', color: '#667085', margin: '0 0 8px' }}>
+                {v.metaMensualUsd > 0
+                  ? `${fmt(v.progresoPct)}% de la meta ($${fmt(v.metaMensualUsd)})`
+                  : 'Sin meta mensual configurada'}
+              </p>
+
+              {esAdmin && (
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div className="form-box" style={{ maxWidth: '160px', margin: 0 }}>
+                    <label>Meta mensual (USD)</label>
+                    <input
+                      type="number" min="0" value={metaActual}
+                      onChange={(e) => setEdicion((prev) => ({ ...prev, [v.usuario]: { meta_mensual_usd: e.target.value, comision_pct: comisionActual } }))}
+                    />
+                  </div>
+                  <div className="form-box" style={{ maxWidth: '140px', margin: 0 }}>
+                    <label>% Comisión</label>
+                    <input
+                      type="number" min="0" max="100" value={comisionActual}
+                      onChange={(e) => setEdicion((prev) => ({ ...prev, [v.usuario]: { meta_mensual_usd: metaActual, comision_pct: e.target.value } }))}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!enEdicion || guardandoUsuario === v.usuario}
+                    onClick={() => guardar(v.usuario)}
+                    style={{ padding: '6px 14px' }}
+                  >
+                    {guardandoUsuario === v.usuario ? 'Guardando...' : 'Guardar'}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
