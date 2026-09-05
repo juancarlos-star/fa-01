@@ -3904,6 +3904,59 @@ ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
   return obtenerReporteInventarioProductos(db, depositoId);
 });
 
+// "Stock muerto": productos que TIENEN existencia ahora mismo pero llevan mucho tiempo sin
+// venderse (o nunca se han vendido). Para cada producto con stock > 0 se busca la fecha de su
+// ultima venta (la factura mas reciente que NO sea devolucion donde aparecio ese product_id);
+// si nunca se vendio, se usa la fecha en que se dio de alta el producto como referencia, y se
+// marca aparte con "nuncaVendido: true" para no confundirlo con "se vendio hace mucho".
+function obtenerReporteStockMuerto(db) {
+  const productos = db.prepare('SELECT * FROM products ORDER BY tipo, nombre').all();
+  const ultimaVentaPorProducto = new Map(
+    db.prepare(
+      `SELECT fi.product_id AS product_id, MAX(f.created_at) AS ultima_venta
+       FROM factura_items fi
+       JOIN facturas f ON f.id = fi.factura_id
+       WHERE f.es_devolucion = 0 AND fi.product_id IS NOT NULL
+       GROUP BY fi.product_id`
+    ).all().map((r) => [r.product_id, r.ultima_venta])
+  );
+
+  const filas = productos
+    .map((p) => {
+      const stock = obtenerStockPorDepositoDeProducto(db, p).reduce((acc, d) => acc + d.cantidad, 0);
+      if (stock <= 0) return null; // sin existencia no hay nada que liquidar
+      const ultimaVenta = ultimaVentaPorProducto.get(p.id) || null;
+      const fechaReferencia = ultimaVenta || p.created_at;
+      const dias = Math.max(0, Math.floor(
+        (Date.now() - new Date((fechaReferencia || '').replace(' ', 'T')).getTime()) / (1000 * 60 * 60 * 24)
+      ));
+      return {
+        id: p.id,
+        tipo: p.tipo,
+        nombre: p.nombre,
+        categoria: p.categoria,
+        codigo_producto: p.codigo_producto,
+        stock,
+        costo_promedio_usd: p.costo_promedio_usd || 0,
+        capitalInmovilizadoUsd: stock * (p.costo_promedio_usd || 0),
+        ultimaVenta,
+        nuncaVendido: !ultimaVenta,
+        diasSinMoverse: dias
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.diasSinMoverse - a.diasSinMoverse);
+
+  const capitalTotalInmovilizado = filas.reduce((acc, f) => acc + f.capitalInmovilizadoUsd, 0);
+
+  return { ok: true, productos: filas, capitalTotalInmovilizado };
+}
+
+ipcMain.handle('reportes:stockMuerto', () => {
+  const db = getDb();
+  return obtenerReporteStockMuerto(db);
+});
+
 // "Inventario Fisico": hoja de conteo por deposito -- para accesorios muestra la cantidad que
 // dice el sistema (para comparar contra el conteo real); para equipo/simcard/usim lista cada
 // unidad individual (IMEI/codigo) porque el conteo fisico de esos se hace unidad por unidad.
