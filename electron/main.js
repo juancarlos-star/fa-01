@@ -3849,6 +3849,70 @@ ipcMain.handle('reportes:margenPorProducto', (event, { desde, hasta }) => {
   return { ok: true, desde, hasta, productos, porTipo, totales };
 });
 
+// ---------------- Ventas: Clientes frecuentes / historial de compras ----------------
+
+// Resumen por cliente: cuanto ha comprado en total, cuantas veces, y hace cuanto fue su
+// ultima compra -para poder ordenar por "mas frecuente"/"mas dinero dejado" y para detectar
+// a los que llevan mucho tiempo sin volver (candidatos a "recuperar" con una llamada/oferta).
+// Las devoluciones (es_devolucion = 1) no cuentan como compra ni suman al total gastado.
+ipcMain.handle('reportes:clientesResumen', () => {
+  const db = getDb();
+  const clientes = db.prepare('SELECT * FROM clientes ORDER BY nombre').all();
+  const comprasPorCliente = new Map(
+    db.prepare(
+      `SELECT cliente_id, COUNT(*) AS cantidadCompras, SUM(total_usd) AS totalGastadoUsd, MAX(created_at) AS ultimaCompra
+       FROM facturas
+       WHERE es_devolucion = 0 AND cliente_id IS NOT NULL
+       GROUP BY cliente_id`
+    ).all().map((r) => [r.cliente_id, r])
+  );
+
+  const filas = clientes.map((c) => {
+    const resumen = comprasPorCliente.get(c.id);
+    const ultimaCompra = resumen?.ultimaCompra || null;
+    const diasSinComprar = ultimaCompra
+      ? Math.max(0, Math.floor((Date.now() - new Date(ultimaCompra.replace(' ', 'T')).getTime()) / (1000 * 60 * 60 * 24)))
+      : null; // null = nunca ha comprado (distinto de "0 dias")
+    return {
+      id: c.id,
+      nombre: c.nombre,
+      rif_cedula: c.rif_cedula,
+      telefono: c.telefono,
+      cantidadCompras: resumen?.cantidadCompras || 0,
+      totalGastadoUsd: resumen?.totalGastadoUsd || 0,
+      ultimaCompra,
+      diasSinComprar
+    };
+  });
+
+  return { ok: true, clientes: filas };
+});
+
+// Ficha completa de un cliente: todas sus facturas (compras y devoluciones) con el detalle de
+// productos de cada una, para ver su historial completo (ej. "que tanto compra", "que le
+// ofrecemos despues"). Se separa en su propia funcion para poder reusarla si en el futuro se
+// quiere mandar por correo o exportar a PDF.
+ipcMain.handle('reportes:clienteHistorial', (event, { clienteId }) => {
+  const db = getDb();
+  const cliente = db.prepare('SELECT * FROM clientes WHERE id = ?').get(clienteId);
+  if (!cliente) return { ok: false, message: 'Cliente no encontrado' };
+
+  const facturas = db.prepare(
+    'SELECT * FROM facturas WHERE cliente_id = ? ORDER BY created_at DESC'
+  ).all(clienteId);
+
+  const getItems = db.prepare('SELECT descripcion, tipo, cantidad, precio_unitario_usd, subtotal_usd FROM factura_items WHERE factura_id = ?');
+  const facturasConItems = facturas.map((f) => ({ ...f, items: getItems.all(f.id) }));
+
+  const compras = facturasConItems.filter((f) => !f.es_devolucion);
+  const totales = {
+    cantidadCompras: compras.length,
+    totalGastadoUsd: compras.reduce((acc, f) => acc + f.total_usd, 0)
+  };
+
+  return { ok: true, cliente, facturas: facturasConItems, totales };
+});
+
 ipcMain.handle('reportes:productosVendidos', (event, { desde, hasta, tipo, product_id }) => {
   const db = getDb();
   let query = `SELECT fi.*, f.created_at AS fecha, f.numero_factura, f.cliente_nombre
