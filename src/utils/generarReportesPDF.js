@@ -314,6 +314,63 @@ export async function generarPDFClientes(clientes, opciones = {}) {
   }
 }
 
+// ---------------- Catálogo/vitrina para WhatsApp ----------------
+
+const TIPO_LABEL_CATALOGO = { equipo: 'Teléfonos', simcard: 'SIM Cards', usim: 'USIM', accesorio: 'Accesorios' };
+
+// Catalogo simple (texto, sin fotos) agrupado por tipo y categoria, pensado para compartir por
+// WhatsApp: nombre y precio de cada producto CON stock disponible ahora mismo. No incluye costo
+// ni ningun dato interno del negocio.
+export async function generarPDFCatalogo(productos, opciones = {}) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text(opciones.tituloTienda || 'Catálogo disponible', 10, 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(`Actualizado: ${new Date().toLocaleDateString('es-VE')}`, 10, 21);
+  doc.setDrawColor(200);
+  doc.line(10, 25, 200, 25);
+
+  const porTipo = new Map();
+  productos.forEach((p) => {
+    if (!porTipo.has(p.tipo)) porTipo.set(p.tipo, []);
+    porTipo.get(p.tipo).push(p);
+  });
+
+  let y = 32;
+  for (const [tipo, lista] of porTipo.entries()) {
+    if (y > 260) { doc.addPage(); y = 15; }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(TIPO_LABEL_CATALOGO[tipo] || tipo, 10, y);
+    y += 4;
+
+    const filas = lista.map((p) => [
+      p.categoria || '—',
+      p.nombre,
+      `$${fmt(p.precioUsd)}`
+    ]);
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Categoría', 'Producto', 'Precio']],
+      body: filas,
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 2.2 },
+      headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+      margin: { left: 10, right: 10 }
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, `Catalogo_${fechaParaNombreArchivo()}`, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, `Catalogo_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
+}
+
 // ---------------- Inventario: Productos (valorizado) ----------------
 
 const TIPO_LABEL = { equipo: 'Teléfono', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
