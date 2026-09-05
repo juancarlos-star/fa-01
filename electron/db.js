@@ -554,6 +554,25 @@ function migrarDevolucionesFacturaSiHaceFalta(database) {
   }
 }
 
+// Si la tabla "apartados" ya se habia creado (por ejemplo, con una version de este archivo
+// entregada antes de agregar el filtro por deposito), se agrega la columna aqui en vez de
+// depender solo del CREATE TABLE IF NOT EXISTS (que no modifica una tabla que ya existe).
+// Los apartados viejos que queden con deposito_id NULL se asignan al deposito principal para
+// no perder la reserva de stock que ya tenian.
+function migrarApartadosSiHaceFalta(database) {
+  const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='apartados'").get();
+  if (!existe) return;
+  if (!tieneColumna(database, 'apartados', 'deposito_id')) {
+    database.exec('ALTER TABLE apartados ADD COLUMN deposito_id INTEGER');
+    const principal =
+      database.prepare('SELECT id FROM depositos WHERE predeterminado = 1 LIMIT 1').get() ||
+      database.prepare('SELECT id FROM depositos ORDER BY id ASC LIMIT 1').get();
+    if (principal) {
+      database.prepare('UPDATE apartados SET deposito_id = ? WHERE deposito_id IS NULL').run(principal.id);
+    }
+  }
+}
+
 function initDb() {
   const database = getDb();
   database.exec(`
@@ -723,6 +742,7 @@ function initDb() {
       cliente_id INTEGER,
       cliente_nombre TEXT NOT NULL,
       cliente_telefono TEXT,
+      deposito_id INTEGER NOT NULL,
       estado TEXT NOT NULL DEFAULT 'activo' CHECK(estado IN ('activo','listo_para_entregar','completado','cancelado')),
       total_usd REAL NOT NULL DEFAULT 0,
       abonado_usd REAL NOT NULL DEFAULT 0,
@@ -733,6 +753,7 @@ function initDb() {
       created_at TEXT NOT NULL,
       actualizado_at TEXT,
       FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+      FOREIGN KEY (deposito_id) REFERENCES depositos(id),
       FOREIGN KEY (factura_id) REFERENCES facturas(id)
     );
     CREATE TABLE IF NOT EXISTS apartado_items (
@@ -774,6 +795,7 @@ function initDb() {
   migrarDevolucionesFacturaSiHaceFalta(database);
   migrarTasaCambioComprasSiHaceFalta(database);
   migrarNotaVentaSiHaceFalta(database);
+  migrarApartadosSiHaceFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');

@@ -55,8 +55,20 @@ function depositoValido(db, depositoId) {
 // valor se resta del stock_disponible que ya calculaba products:list / buscarPorCodigo, para
 // que un producto apartado no se pueda vender a otro cliente por Facturacion sin bloquear una
 // unidad especifica (asi lo definio el dueño del negocio: la reserva es por CANTIDAD, no por
-// IMEI puntual).
-function obtenerCantidadApartada(db, productId) {
+// IMEI puntual). Es POR DEPOSITO: un apartado hecho en el deposito "Tienda" solo resta stock
+// disponible de "Tienda", no del deposito "Almacen". Si no se pasa depositoId (pantallas que
+// muestran el total general, como Inventario/Reportes), se suma la reserva de TODOS los
+// depositos.
+function obtenerCantidadApartada(db, productId, depositoId) {
+  if (depositoId) {
+    const row = db.prepare(
+      `SELECT COALESCE(SUM(ai.cantidad), 0) AS c
+       FROM apartado_items ai
+       JOIN apartados a ON a.id = ai.apartado_id
+       WHERE ai.product_id = ? AND a.estado IN ('activo', 'listo_para_entregar') AND a.deposito_id = ?`
+    ).get(productId, depositoId);
+    return row.c || 0;
+  }
   const row = db.prepare(
     `SELECT COALESCE(SUM(ai.cantidad), 0) AS c
      FROM apartado_items ai
@@ -700,7 +712,7 @@ ipcMain.handle('products:list', (event, { tipo, categoria, depositoId } = {}) =>
     "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
   );
   return rows.map((p) => {
-    const apartado = obtenerCantidadApartada(db, p.id);
+    const apartado = obtenerCantidadApartada(db, p.id, depositoId);
     if (p.tipo === 'accesorio') {
       const stock = depositoId ? (obtenerStockDeposito(db, p.id, depositoId) || 0) : p.stock_cantidad;
       return { ...p, stock_disponible: Math.max(0, stock - apartado), stock_apartado: apartado };
@@ -723,7 +735,7 @@ ipcMain.handle('products:buscarPorCodigo', (event, { codigo, depositoId }) => {
   if (!c) return null;
 
   const calcularStock = (p) => {
-    const apartado = obtenerCantidadApartada(db, p.id);
+    const apartado = obtenerCantidadApartada(db, p.id, depositoId);
     if (p.tipo === 'accesorio') {
       const stock = depositoId ? (obtenerStockDeposito(db, p.id, depositoId) || 0) : p.stock_cantidad;
       return Math.max(0, stock - apartado);
@@ -4628,21 +4640,22 @@ ipcMain.handle('apartados:crear', (event, payload) => {
   if (!items || items.length === 0) {
     return { ok: false, message: 'El apartado debe tener al menos un producto' };
   }
+  if (!depositoId) return { ok: false, message: 'Selecciona el deposito del cual se aparta' };
+  const deposito = depositoValido(db, depositoId);
+  if (!deposito) return { ok: false, message: 'El deposito seleccionado no es valido o esta inactivo' };
 
   for (const item of items) {
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId);
     if (!product) return { ok: false, message: `Producto no encontrado (id ${item.productId})` };
     const cantidad = parseInt(item.cantidad, 10) || 0;
     if (cantidad < 1) return { ok: false, message: `Cantidad invalida para "${product.nombre}"` };
-    const apartadoActual = obtenerCantidadApartada(db, product.id);
+    const apartadoActual = obtenerCantidadApartada(db, product.id, depositoId);
     const stockTotal = product.tipo === 'accesorio'
-      ? (depositoId ? (obtenerStockDeposito(db, product.id, depositoId) || 0) : product.stock_cantidad)
-      : (depositoId
-          ? db.prepare("SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?").get(product.id, depositoId).c
-          : db.prepare("SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'").get(product.id).c);
+      ? (obtenerStockDeposito(db, product.id, depositoId) || 0)
+      : db.prepare("SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?").get(product.id, depositoId).c;
     const disponible = Math.max(0, stockTotal - apartadoActual);
     if (cantidad > disponible) {
-      return { ok: false, message: `Stock insuficiente de "${product.nombre}" para apartar (disponible: ${disponible})` };
+      return { ok: false, message: `Stock insuficiente de "${product.nombre}" en el deposito "${deposito.nombre}" para apartar (disponible: ${disponible})` };
     }
   }
 
@@ -4662,9 +4675,9 @@ ipcMain.handle('apartados:crear', (event, payload) => {
   let apartadoId;
   const transaccion = db.transaction(() => {
     const info = db.prepare(
-      `INSERT INTO apartados (numero, cliente_id, cliente_nombre, cliente_telefono, estado, total_usd, abonado_usd, notas, usuario, created_at)
-       VALUES (?, ?, ?, ?, 'activo', ?, ?, ?, ?, datetime('now','localtime'))`
-    ).run(siguienteNumero, clienteId || null, clienteNombre.trim(), (clienteTelefono || '').trim(), totalUsd, abono, (notas || '').trim(), usuario || null);
+      `INSERT INTO apartados (numero, cliente_id, cliente_nombre, cliente_telefono, deposito_id, estado, total_usd, abonado_usd, notas, usuario, created_at)
+       VALUES (?, ?, ?, ?, ?, 'activo', ?, ?, ?, ?, datetime('now','localtime'))`
+    ).run(siguienteNumero, clienteId || null, clienteNombre.trim(), (clienteTelefono || '').trim(), depositoId, totalUsd, abono, (notas || '').trim(), usuario || null);
     apartadoId = info.lastInsertRowid;
 
     const insertItem = db.prepare(
@@ -4690,15 +4703,22 @@ ipcMain.handle('apartados:crear', (event, payload) => {
 
 ipcMain.handle('apartados:listar', (event, { estado } = {}) => {
   const db = getDb();
+  const base = `
+    SELECT a.*, d.nombre AS deposito_nombre
+    FROM apartados a
+    LEFT JOIN depositos d ON d.id = a.deposito_id
+  `;
   const rows = estado
-    ? db.prepare('SELECT * FROM apartados WHERE estado = ? ORDER BY created_at DESC').all(estado)
-    : db.prepare('SELECT * FROM apartados ORDER BY created_at DESC').all();
+    ? db.prepare(`${base} WHERE a.estado = ? ORDER BY a.created_at DESC`).all(estado)
+    : db.prepare(`${base} ORDER BY a.created_at DESC`).all();
   return rows.map((a) => ({ ...a, saldo_usd: Math.round((a.total_usd - a.abonado_usd) * 100) / 100 }));
 });
 
 ipcMain.handle('apartados:detalle', (event, { id }) => {
   const db = getDb();
-  const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
+  const apartado = db.prepare(
+    `SELECT a.*, d.nombre AS deposito_nombre FROM apartados a LEFT JOIN depositos d ON d.id = a.deposito_id WHERE a.id = ?`
+  ).get(id);
   if (!apartado) return { ok: false, message: 'Apartado no encontrado' };
   const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(id);
   const abonos = db.prepare('SELECT * FROM apartado_abonos WHERE apartado_id = ? ORDER BY created_at ASC').all(id);
