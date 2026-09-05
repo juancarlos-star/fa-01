@@ -120,13 +120,18 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
 
   // Si el producto ya tiene movimientos, solo se puede elegir "sin categoria" o una categoria
   // que quede del MISMO lado (accesorio, o "por unidad") en el que ya estaba el producto.
-  // "tiposPermitidos" (si el modulo que abre esta ventana lo pasa) ya NO acota la LISTA de
-  // categorias -se piden todas siempre, sin importar el modulo desde el que se cree el
-  // producto-, solo se sigue usando para decidir si la categoria es obligatoria o no (ver mas
-  // abajo), asi que un aviso claro en cada categoria concreta lo debe interpretar quien elige.
+  // "tiposPermitidos" (si el modulo que abre esta ventana lo pasa) SI acota la lista de
+  // categorias a elegir -cada modulo de Compras (Generar Compras: SIM/USIM: Compras Telf/
+  // Acces: Equipo/Accesorio) debe manejar solo sus propias categorias, para no mezclar en el
+  // carrito de una compra productos que no le corresponden a ese modulo. Cargos y Descargos, en
+  // cambio, pasa los 4 tipos a la vez (ver CargosDescargos.jsx), asi que en la practica no
+  // queda restringido ahi -puede elegir cualquier categoria- pero SI sigue exigiendo elegir una
+  // (ver mas abajo, en handleSubmit).
   const categoriasDisponibles = checkboxBloqueado
     ? categorias.filter((c) => esIndividual(c.tipo) === esIndividual(productoEditar.tipo))
-    : categorias;
+    : tiposPermitidos
+      ? categorias.filter((c) => tiposPermitidos.includes(c.tipo))
+      : categorias;
 
   const set = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
 
