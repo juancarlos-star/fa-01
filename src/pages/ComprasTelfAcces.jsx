@@ -3,6 +3,7 @@ import { generarCompraFacturaPDF } from '../utils/generarCompraFacturaPDF.js';
 import { fmt } from '../utils/format.js';
 import ProveedorNuevoModal from '../components/ProveedorNuevoModal.jsx';
 import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
+import BuscadorProductoInput from '../components/BuscadorProductoInput.jsx';
 import CodigosNuevosModal from '../components/CodigosNuevosModal.jsx';
 
 // Modulo de compras para Telefonos y Accesorios (proveedores que venden sin IVA). Es un
@@ -45,6 +46,23 @@ export default function ComprasTelfAcces({ currentUser }) {
   const [mostrarModalCodigosNuevos, setMostrarModalCodigosNuevos] = useState(false);
 
   const [mostrarModalEditarProducto, setMostrarModalEditarProducto] = useState(false);
+
+  // Lista de productos Equipo/Accesorio ya existentes, cargada una sola vez (y cuando cambia el
+  // deposito), para alimentar el desplegable de sugerencias de BuscadorProductoInput mientras
+  // se escribe -no reemplaza la busqueda exacta por codigo, que sigue yendo contra la base de
+  // datos al presionar Enter (buscarProductoPorCodigoEnter, mas abajo).
+  const [productosParaSugerencias, setProductosParaSugerencias] = useState([]);
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const [equipo, accesorio] = await Promise.all([
+        window.api.listProducts('equipo'),
+        window.api.listProducts('accesorio')
+      ]);
+      if (!cancelado) setProductosParaSugerencias([...equipo, ...accesorio]);
+    })();
+    return () => { cancelado = true; };
+  }, [depositoId]);
 
   const codigoRef = useRef(null);
   const cantidadRef = useRef(null);
@@ -207,6 +225,7 @@ export default function ComprasTelfAcces({ currentUser }) {
 
   const handleProductoNuevoCreado = (producto) => {
     setMostrarModalProductoNuevo(false);
+    setProductosParaSugerencias((prev) => [...prev, producto]);
     seleccionarProductoEnFila(producto);
   };
 
@@ -562,13 +581,14 @@ export default function ComprasTelfAcces({ currentUser }) {
             <tr className="fila-entrada">
               <td>
                 {!filaProducto ? (
-                  <input
-                    ref={codigoRef}
-                    type="text"
+                  <BuscadorProductoInput
+                    inputRef={codigoRef}
                     placeholder="Código + Enter"
                     value={filaCodigo}
-                    onChange={(e) => setFilaCodigo(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarProductoPorCodigoEnter(); } }}
+                    onChangeValue={setFilaCodigo}
+                    productos={productosParaSugerencias}
+                    onSeleccionar={(p) => { setFilaCodigo(''); seleccionarProductoEnFila(p); }}
+                    onEnterSinSeleccion={buscarProductoPorCodigoEnter}
                     disabled={buscandoCodigo}
                   />
                 ) : (
