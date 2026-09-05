@@ -12,11 +12,12 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   // leyendo la estructura interna que generaban las versiones viejas de jsPDF).
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
 
-  // Logo + nombre + RIF + direccion + telefono de la tienda, arriba a la izquierda. Antes esta
-  // esquina quedaba vacia (la factura no mostraba ningun dato de la propia tienda). El bloque
-  // de datos del CLIENTE se corre hacia abajo dinamicamente segun cuanto espacio ocupe esto,
-  // para no superponerse si se usan las 4 lineas completas.
-  const yEncabezadoEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88 });
+  // Nombre + RIF + direccion + telefono de la tienda, arriba a la izquierda (SIN logo a
+  // proposito: el logo configurado en Datos de Tienda ahora se muestra solo en la pantalla de
+  // Inicio, no en la Factura/Nota de Venta). El bloque de datos del CLIENTE se corre hacia
+  // abajo dinamicamente segun cuanto espacio ocupe esto, para no superponerse si se usan las 4
+  // lineas completas.
+  const yEncabezadoEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88, sinLogo: true });
   const yCliente = Math.max(35, yEncabezadoEmpresa + 6);
 
   doc.setFont('helvetica', 'bold');

@@ -98,7 +98,10 @@ export function dibujarEncabezadoEmpresa(doc, settings, opciones = {}) {
   const maxWidth = opciones.maxWidth ?? 90;
   let xTexto = x;
 
-  if (settings?.logo_base64) {
+  // "sinLogo": la Factura / Nota de Venta a proposito NO lleva el logo configurado en Datos de
+  // Tienda (ese logo ahora se usa solo en la pantalla de Inicio) -- los demas documentos
+  // (Compras, Cargos/Descargos, Reportes) siguen dibujandolo normalmente.
+  if (!opciones.sinLogo && settings?.logo_base64) {
     try {
       const formato = settings.logo_base64.includes('image/png') ? 'PNG' : 'JPEG';
       doc.addImage(settings.logo_base64, formato, x, yInicial - 9, 16, 16);
