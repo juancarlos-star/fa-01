@@ -10,6 +10,7 @@ import Facturacion from './pages/Facturacion.jsx';
 import DevolucionFacturas from './pages/DevolucionFacturas.jsx';
 import Compras from './pages/Compras.jsx';
 import Traslados from './pages/Traslados.jsx';
+import Apartados from './pages/Apartados.jsx';
 import ComprasTelfAcces from './pages/ComprasTelfAcces.jsx';
 import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
@@ -95,6 +96,11 @@ const MIcon = {
   Gastos: () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
       <rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /><path d="M6 15h4" />
+    </svg>
+  ),
+  Apartados: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
     </svg>
   ),
   Reportes: () => (
@@ -329,6 +335,7 @@ export default function App() {
           <hr className="sidebar-section-divider" />
           <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}><MIcon.Categorias />Categorias</button>
           <button className={view === 'cargosDescargos' ? 'active' : ''} onClick={() => setView('cargosDescargos')}><MIcon.CargosDescargos />Cargos y Descargos</button>
+          <button className={view === 'apartados' ? 'active' : ''} onClick={() => setView('apartados')}><MIcon.Apartados />Apartados</button>
           {user.role === 'administrador' && (
             <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}><MIcon.Gastos />Gastos</button>
           )}
@@ -419,6 +426,7 @@ export default function App() {
         {view === 'comprasTelfAcces' && <ComprasTelfAcces currentUser={user} />}
         {view === 'devolucionCompras' && <DevolucionCompras currentUser={user} />}
         {view === 'traslados' && <Traslados currentUser={user} />}
+        {view === 'apartados' && <Apartados currentUser={user} />}
         {view === 'categorias' && <CategoriasAdmin />}
         {view === 'cargosDescargos' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
