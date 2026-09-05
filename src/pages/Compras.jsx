@@ -3,6 +3,7 @@ import { generarCompraFacturaPDF } from '../utils/generarCompraFacturaPDF.js';
 import { fmt } from '../utils/format.js';
 import ProveedorNuevoModal from '../components/ProveedorNuevoModal.jsx';
 import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
+import BuscadorProductoInput from '../components/BuscadorProductoInput.jsx';
 import CodigosNuevosModal from '../components/CodigosNuevosModal.jsx';
 
 // Modulo de Compras, con el mismo diseno y forma de trabajar que Facturacion: un renglon de
@@ -63,6 +64,23 @@ export default function Compras({ currentUser }) {
   // unidad (en Bs.) para completar el renglon. Mientras esto tenga un valor, el Enter en el
   // campo Costo agrega la fila al carrito en vez de volver a abrir la ventana de codigos.
   const [codigosPendientes, setCodigosPendientes] = useState(null);
+
+  // Lista de productos SIM/USIM ya existentes, cargada una sola vez (y cuando cambia el
+  // deposito), para alimentar el desplegable de sugerencias de BuscadorProductoInput mientras
+  // se escribe -no reemplaza la busqueda exacta por codigo, que sigue yendo contra la base de
+  // datos al presionar Enter (buscarProductoPorCodigoEnter, mas abajo).
+  const [productosParaSugerencias, setProductosParaSugerencias] = useState([]);
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const [sim, usim] = await Promise.all([
+        window.api.listProducts('simcard'),
+        window.api.listProducts('usim')
+      ]);
+      if (!cancelado) setProductosParaSugerencias([...sim, ...usim]);
+    })();
+    return () => { cancelado = true; };
+  }, [depositoId]);
 
   // ---- Editar el producto que esta actualmente en la fila de entrada ----
   // Reutiliza la misma ventana "PRODUCTO NUEVO" (ProductoRapidoModal) que crea productos al
@@ -252,6 +270,7 @@ export default function Compras({ currentUser }) {
     }
   };  const handleProductoNuevoCreado = (producto) => {
     setMostrarModalProductoNuevo(false);
+    setProductosParaSugerencias((prev) => [...prev, producto]);
     seleccionarProductoEnFila(producto);
   };
 
@@ -670,13 +689,14 @@ export default function Compras({ currentUser }) {
             <tr className="fila-entrada">
               <td>
                 {!filaProducto ? (
-                  <input
-                    ref={codigoRef}
-                    type="text"
+                  <BuscadorProductoInput
+                    inputRef={codigoRef}
                     placeholder="Código + Enter"
                     value={filaCodigo}
-                    onChange={(e) => setFilaCodigo(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarProductoPorCodigoEnter(); } }}
+                    onChangeValue={setFilaCodigo}
+                    productos={productosParaSugerencias}
+                    onSeleccionar={(p) => { setFilaCodigo(''); seleccionarProductoEnFila(p); }}
+                    onEnterSinSeleccion={buscarProductoPorCodigoEnter}
                     disabled={buscandoCodigo}
                   />
                 ) : (
