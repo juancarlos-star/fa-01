@@ -3785,6 +3785,70 @@ ipcMain.handle('reportes:libroComprasIva', (event, { desde, hasta }) => {
   };
 });
 
+ipcMain.handle('reportes:margenPorProducto', (event, { desde, hasta }) => {
+  const db = getDb();
+  // Se excluyen devoluciones (f.es_devolucion = 0) para no restar ganancia que ya se descontó
+  // aparte en el reporte de devoluciones. La ganancia de cada linea es precio de venta menos
+  // costo unitario AL MOMENTO DE VENDER (costo_unitario_usd, guardado en cada factura_items),
+  // no el costo actual del producto -asi el margen historico no cambia si el costo sube despues.
+  const items = db.prepare(
+    `SELECT fi.product_id, fi.descripcion, fi.tipo, fi.cantidad,
+            fi.precio_unitario_usd, fi.costo_unitario_usd, fi.subtotal_usd
+     FROM factura_items fi
+     JOIN facturas f ON f.id = fi.factura_id
+     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)`
+  ).all(desde, hasta);
+
+  const porProducto = new Map();
+  for (const it of items) {
+    const key = it.product_id ?? `sin-producto-${it.descripcion}`;
+    let r = porProducto.get(key);
+    if (!r) {
+      r = {
+        product_id: it.product_id, descripcion: it.descripcion, tipo: it.tipo,
+        cantidad: 0, ventasUsd: 0, costoUsd: 0, gananciaUsd: 0
+      };
+      porProducto.set(key, r);
+    }
+    const costoLinea = (it.costo_unitario_usd || 0) * it.cantidad;
+    r.cantidad += it.cantidad;
+    r.ventasUsd += it.subtotal_usd;
+    r.costoUsd += costoLinea;
+    r.gananciaUsd += (it.subtotal_usd - costoLinea);
+  }
+
+  const productos = Array.from(porProducto.values()).map((r) => ({
+    ...r,
+    margenPct: r.ventasUsd > 0 ? (r.gananciaUsd / r.ventasUsd) * 100 : 0
+  })).sort((a, b) => b.gananciaUsd - a.gananciaUsd);
+
+  // Comparativo por categoria/tipo (SIM vs Telefonos vs Accesorios): mismos totales, agrupados
+  // por "tipo" (equipo/simcard/usim/accesorio) en vez de por producto individual.
+  const porTipoMap = new Map();
+  for (const p of productos) {
+    let t = porTipoMap.get(p.tipo);
+    if (!t) {
+      t = { tipo: p.tipo, cantidad: 0, ventasUsd: 0, costoUsd: 0, gananciaUsd: 0 };
+      porTipoMap.set(p.tipo, t);
+    }
+    t.cantidad += p.cantidad;
+    t.ventasUsd += p.ventasUsd;
+    t.costoUsd += p.costoUsd;
+    t.gananciaUsd += p.gananciaUsd;
+  }
+  const porTipo = Array.from(porTipoMap.values()).map((t) => ({
+    ...t,
+    margenPct: t.ventasUsd > 0 ? (t.gananciaUsd / t.ventasUsd) * 100 : 0
+  })).sort((a, b) => b.gananciaUsd - a.gananciaUsd);
+
+  const totales = productos.reduce(
+    (acc, p) => ({ ventasUsd: acc.ventasUsd + p.ventasUsd, costoUsd: acc.costoUsd + p.costoUsd, gananciaUsd: acc.gananciaUsd + p.gananciaUsd }),
+    { ventasUsd: 0, costoUsd: 0, gananciaUsd: 0 }
+  );
+
+  return { ok: true, desde, hasta, productos, porTipo, totales };
+});
+
 ipcMain.handle('reportes:productosVendidos', (event, { desde, hasta, tipo, product_id }) => {
   const db = getDb();
   let query = `SELECT fi.*, f.created_at AS fecha, f.numero_factura, f.cliente_nombre

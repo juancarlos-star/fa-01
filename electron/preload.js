@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld('api', {
   getDashboardInicio: () => ipcRenderer.invoke('reportes:dashboardInicio'),
   getReporteProductosVendidos: (desde, hasta, tipo, productId) =>
     ipcRenderer.invoke('reportes:productosVendidos', { desde, hasta, tipo, product_id: productId }),
+  getReporteMargenPorProducto: (desde, hasta) => ipcRenderer.invoke('reportes:margenPorProducto', { desde, hasta }),
   // Respaldo
   crearBackup: () => ipcRenderer.invoke('backup:crear'),
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar'),
