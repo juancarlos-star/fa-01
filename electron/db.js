@@ -708,6 +708,51 @@ function initDb() {
       usuario TEXT,
       created_at TEXT NOT NULL
     );
+    -- Apartados / reservas con abono (feature #8): el producto NO se descuenta del stock real
+    -- (products.stock_cantidad / inventory_units) mientras el apartado esta activo -eso lo
+    -- decide obtenerCantidadApartada() en main.js, restandolo del "stock_disponible" que ya
+    -- calculaba products:list-. Solo cuando el apartado termina en una FACTURA real (generada
+    -- ahi mismo o vinculada despues manualmente) el stock real se mueve, exactamente igual que
+    -- cualquier otra venta -asi nunca se descuenta dos veces-.
+    -- Estados: activo (reservando stock) -> listo_para_entregar (ya pago todo, sigue
+    -- reservando, esperando que se genere/vincule la factura) -> completado (factura ya
+    -- generada o vinculada, deja de reservar). O activo -> cancelado (libera la reserva).
+    CREATE TABLE IF NOT EXISTS apartados (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      numero INTEGER,
+      cliente_id INTEGER,
+      cliente_nombre TEXT NOT NULL,
+      cliente_telefono TEXT,
+      estado TEXT NOT NULL DEFAULT 'activo' CHECK(estado IN ('activo','listo_para_entregar','completado','cancelado')),
+      total_usd REAL NOT NULL DEFAULT 0,
+      abonado_usd REAL NOT NULL DEFAULT 0,
+      notas TEXT,
+      usuario TEXT,
+      factura_id INTEGER,
+      motivo_cancelacion TEXT,
+      created_at TEXT NOT NULL,
+      actualizado_at TEXT,
+      FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+      FOREIGN KEY (factura_id) REFERENCES facturas(id)
+    );
+    CREATE TABLE IF NOT EXISTS apartado_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      apartado_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      descripcion TEXT NOT NULL,
+      cantidad INTEGER NOT NULL DEFAULT 1,
+      precio_unitario_usd REAL NOT NULL,
+      FOREIGN KEY (apartado_id) REFERENCES apartados(id),
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    );
+    CREATE TABLE IF NOT EXISTS apartado_abonos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      apartado_id INTEGER NOT NULL,
+      monto_usd REAL NOT NULL,
+      usuario TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (apartado_id) REFERENCES apartados(id)
+    );
   `);
 
   migrarProductsSiHaceFalta(database);
@@ -738,6 +783,7 @@ function initDb() {
   insertSetting.run('iva_porcentaje', '16');
   insertSetting.run('numero_factura_siguiente', '1');
   insertSetting.run('numero_nota_venta_siguiente', '1');
+  insertSetting.run('numero_apartado_siguiente', '1');
   // Copia de seguridad automatica por correo (Configuracion > Email Reportes): queda
   // DESACTIVADA por defecto y sin credenciales cargadas. Antes este archivo traia una cuenta de
   // Gmail y su contraseña de aplicacion puestas como valor por defecto -eso significaba que:

@@ -48,6 +48,24 @@ function depositoValido(db, depositoId) {
   return db.prepare('SELECT * FROM depositos WHERE id = ? AND activo = 1').get(depositoId);
 }
 
+// Cuanto de un producto esta "reservado" ahora mismo por Apartados (feature #8), sin haber
+// tocado el stock real todavia. Se cuenta mientras el apartado sigue 'activo' o
+// 'listo_para_entregar' (ya pago todo pero la factura real aun no se genera/vincula) -en
+// cuanto pasa a 'completado' (factura real generada) o 'cancelado', deja de reservar. Este
+// valor se resta del stock_disponible que ya calculaba products:list / buscarPorCodigo, para
+// que un producto apartado no se pueda vender a otro cliente por Facturacion sin bloquear una
+// unidad especifica (asi lo definio el dueño del negocio: la reserva es por CANTIDAD, no por
+// IMEI puntual).
+function obtenerCantidadApartada(db, productId) {
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(ai.cantidad), 0) AS c
+     FROM apartado_items ai
+     JOIN apartados a ON a.id = ai.apartado_id
+     WHERE ai.product_id = ? AND a.estado IN ('activo', 'listo_para_entregar')`
+  ).get(productId);
+  return row.c || 0;
+}
+
 // Envoltorio de seguridad para TODOS los canales IPC: si un handler lanza una excepcion no
 // controlada (por ejemplo, por un desajuste de esquema en la base de datos), electron rechaza
 // la promesa en el renderer. Cuando esa promesa no tiene un .catch(), el error se pierde en
@@ -682,12 +700,13 @@ ipcMain.handle('products:list', (event, { tipo, categoria, depositoId } = {}) =>
     "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
   );
   return rows.map((p) => {
+    const apartado = obtenerCantidadApartada(db, p.id);
     if (p.tipo === 'accesorio') {
       const stock = depositoId ? (obtenerStockDeposito(db, p.id, depositoId) || 0) : p.stock_cantidad;
-      return { ...p, stock_disponible: stock };
+      return { ...p, stock_disponible: Math.max(0, stock - apartado), stock_apartado: apartado };
     }
     const c = depositoId ? countStmtDeposito.get(p.id, depositoId).c : countStmt.get(p.id).c;
-    return { ...p, stock_disponible: c };
+    return { ...p, stock_disponible: Math.max(0, c - apartado), stock_apartado: apartado };
   });
 });
 
@@ -704,17 +723,19 @@ ipcMain.handle('products:buscarPorCodigo', (event, { codigo, depositoId }) => {
   if (!c) return null;
 
   const calcularStock = (p) => {
+    const apartado = obtenerCantidadApartada(db, p.id);
     if (p.tipo === 'accesorio') {
-      return depositoId ? (obtenerStockDeposito(db, p.id, depositoId) || 0) : p.stock_cantidad;
+      const stock = depositoId ? (obtenerStockDeposito(db, p.id, depositoId) || 0) : p.stock_cantidad;
+      return Math.max(0, stock - apartado);
     }
-    if (depositoId) {
-      return db.prepare(
-        "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
-      ).get(p.id, depositoId).c;
-    }
-    return db.prepare(
-      "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'"
-    ).get(p.id).c;
+    const total = depositoId
+      ? db.prepare(
+          "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
+        ).get(p.id, depositoId).c
+      : db.prepare(
+          "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'"
+        ).get(p.id).c;
+    return Math.max(0, total - apartado);
   };
 
   // 1) Codigo corto del producto
@@ -4585,4 +4606,180 @@ ipcMain.handle('reportes:dashboardInicio', () => {
     tendenciaTotalPct,
     tendenciaPorCategoria
   };
+});
+
+// ---------- IPC: Apartados / reservas con abono (feature #8) ----------
+// Diseño acordado: el apartado NO bloquea una unidad especifica (IMEI/ICCID) -solo resta la
+// CANTIDAD del "stock_disponible" que ya ve Facturacion/Inventario (ver obtenerCantidadApartada
+// arriba)-. El stock real (products.stock_cantidad / inventory_units) recien se mueve cuando el
+// apartado termina en una factura real, exactamente por el mismo camino que cualquier venta
+// normal (facturas:crear), evitando cualquier descuento doble.
+//
+// Flujo de estados: activo -> listo_para_entregar (ya pago todo, sigue reservando, a la espera
+// de que se genere/vincule la factura) -> completado (factura generada o vinculada, deja de
+// reservar). O activo -> cancelado en cualquier momento antes de completarse.
+ipcMain.handle('apartados:crear', (event, payload) => {
+  const db = getDb();
+  const { clienteId, clienteNombre, clienteTelefono, items, abonoInicial, notas, usuario, depositoId } = payload || {};
+
+  if (!clienteNombre || !clienteNombre.trim()) {
+    return { ok: false, message: 'El nombre del cliente es obligatorio' };
+  }
+  if (!items || items.length === 0) {
+    return { ok: false, message: 'El apartado debe tener al menos un producto' };
+  }
+
+  for (const item of items) {
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId);
+    if (!product) return { ok: false, message: `Producto no encontrado (id ${item.productId})` };
+    const cantidad = parseInt(item.cantidad, 10) || 0;
+    if (cantidad < 1) return { ok: false, message: `Cantidad invalida para "${product.nombre}"` };
+    const apartadoActual = obtenerCantidadApartada(db, product.id);
+    const stockTotal = product.tipo === 'accesorio'
+      ? (depositoId ? (obtenerStockDeposito(db, product.id, depositoId) || 0) : product.stock_cantidad)
+      : (depositoId
+          ? db.prepare("SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?").get(product.id, depositoId).c
+          : db.prepare("SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible'").get(product.id).c);
+    const disponible = Math.max(0, stockTotal - apartadoActual);
+    if (cantidad > disponible) {
+      return { ok: false, message: `Stock insuficiente de "${product.nombre}" para apartar (disponible: ${disponible})` };
+    }
+  }
+
+  const abono = Math.max(0, parseFloat(abonoInicial) || 0);
+  const totalUsd = items.reduce(
+    (acc, it) => acc + (parseFloat(it.precioUnitarioUsd) || 0) * (parseInt(it.cantidad, 10) || 0),
+    0
+  );
+  if (abono > totalUsd + 0.005) {
+    return { ok: false, message: 'El abono inicial no puede ser mayor al total del apartado' };
+  }
+
+  const settingsRow = db.prepare("SELECT value FROM settings WHERE key = 'numero_apartado_siguiente'").get();
+  let siguienteNumero = parseInt(settingsRow ? settingsRow.value : '1', 10);
+  if (!siguienteNumero || siguienteNumero < 1) siguienteNumero = 1;
+
+  let apartadoId;
+  const transaccion = db.transaction(() => {
+    const info = db.prepare(
+      `INSERT INTO apartados (numero, cliente_id, cliente_nombre, cliente_telefono, estado, total_usd, abonado_usd, notas, usuario, created_at)
+       VALUES (?, ?, ?, ?, 'activo', ?, ?, ?, ?, datetime('now','localtime'))`
+    ).run(siguienteNumero, clienteId || null, clienteNombre.trim(), (clienteTelefono || '').trim(), totalUsd, abono, (notas || '').trim(), usuario || null);
+    apartadoId = info.lastInsertRowid;
+
+    const insertItem = db.prepare(
+      `INSERT INTO apartado_items (apartado_id, product_id, descripcion, cantidad, precio_unitario_usd) VALUES (?, ?, ?, ?, ?)`
+    );
+    items.forEach((it) => {
+      insertItem.run(apartadoId, it.productId, it.descripcion || '', parseInt(it.cantidad, 10) || 0, parseFloat(it.precioUnitarioUsd) || 0);
+    });
+
+    if (abono > 0) {
+      db.prepare(
+        `INSERT INTO apartado_abonos (apartado_id, monto_usd, usuario, created_at) VALUES (?, ?, ?, datetime('now','localtime'))`
+      ).run(apartadoId, abono, usuario || null);
+    }
+
+    db.prepare("UPDATE settings SET value = ? WHERE key = 'numero_apartado_siguiente'").run(String(siguienteNumero + 1));
+  });
+  transaccion();
+
+  const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(apartadoId);
+  return { ok: true, apartado };
+});
+
+ipcMain.handle('apartados:listar', (event, { estado } = {}) => {
+  const db = getDb();
+  const rows = estado
+    ? db.prepare('SELECT * FROM apartados WHERE estado = ? ORDER BY created_at DESC').all(estado)
+    : db.prepare('SELECT * FROM apartados ORDER BY created_at DESC').all();
+  return rows.map((a) => ({ ...a, saldo_usd: Math.round((a.total_usd - a.abonado_usd) * 100) / 100 }));
+});
+
+ipcMain.handle('apartados:detalle', (event, { id }) => {
+  const db = getDb();
+  const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
+  if (!apartado) return { ok: false, message: 'Apartado no encontrado' };
+  const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(id);
+  const abonos = db.prepare('SELECT * FROM apartado_abonos WHERE apartado_id = ? ORDER BY created_at ASC').all(id);
+  const saldo = Math.round((apartado.total_usd - apartado.abonado_usd) * 100) / 100;
+  return { ok: true, apartado: { ...apartado, saldo_usd: saldo }, items, abonos };
+});
+
+ipcMain.handle('apartados:abonar', (event, { id, monto, usuario }) => {
+  const db = getDb();
+  const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
+  if (!apartado) return { ok: false, message: 'Apartado no encontrado' };
+  if (apartado.estado !== 'activo') return { ok: false, message: 'Este apartado ya no admite abonos' };
+  const m = parseFloat(monto);
+  if (!m || m <= 0) return { ok: false, message: 'Monto invalido' };
+  const saldoActual = Math.round((apartado.total_usd - apartado.abonado_usd) * 100) / 100;
+  if (m > saldoActual + 0.005) {
+    return { ok: false, message: `El abono no puede superar el saldo pendiente ($${saldoActual.toFixed(2)})` };
+  }
+  const transaccion = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO apartado_abonos (apartado_id, monto_usd, usuario, created_at) VALUES (?, ?, ?, datetime('now','localtime'))`
+    ).run(id, m, usuario || null);
+    db.prepare(
+      `UPDATE apartados SET abonado_usd = abonado_usd + ?, actualizado_at = datetime('now','localtime') WHERE id = ?`
+    ).run(m, id);
+  });
+  transaccion();
+  const actualizado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
+  const saldoPendiente = Math.round((actualizado.total_usd - actualizado.abonado_usd) * 100) / 100;
+  return { ok: true, apartado: actualizado, saldoPendiente, puedeEntregar: saldoPendiente <= 0.005 };
+});
+
+ipcMain.handle('apartados:cancelar', (event, { id, usuario, motivo }) => {
+  const db = getDb();
+  const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
+  if (!apartado) return { ok: false, message: 'Apartado no encontrado' };
+  if (apartado.estado === 'completado' || apartado.estado === 'cancelado') {
+    return { ok: false, message: 'Este apartado ya esta cerrado' };
+  }
+  db.prepare(
+    `UPDATE apartados SET estado = 'cancelado', motivo_cancelacion = ?, actualizado_at = datetime('now','localtime') WHERE id = ?`
+  ).run((motivo || '').trim(), id);
+  return { ok: true };
+});
+
+// El vendedor eligio "marcar listo para entregar (yo facturo manual)" en vez de generar la
+// factura ahi mismo: el apartado sigue reservando el stock (no se puede vender a otro cliente)
+// hasta que alguien lo cierre con apartados:completar, ya sea vinculando la factura que se haga
+// despues en Facturacion o cerrandolo sin factura si asi se decidio.
+ipcMain.handle('apartados:marcarListoParaEntregar', (event, { id, usuario }) => {
+  const db = getDb();
+  const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
+  if (!apartado) return { ok: false, message: 'Apartado no encontrado' };
+  if (apartado.estado !== 'activo') return { ok: false, message: 'Este apartado no esta activo' };
+  const saldo = Math.round((apartado.total_usd - apartado.abonado_usd) * 100) / 100;
+  if (saldo > 0.005) return { ok: false, message: `Todavia tiene saldo pendiente ($${saldo.toFixed(2)})` };
+  db.prepare(
+    `UPDATE apartados SET estado = 'listo_para_entregar', actualizado_at = datetime('now','localtime') WHERE id = ?`
+  ).run(id);
+  return { ok: true };
+});
+
+// Cierra el apartado definitivamente. facturaId es OPCIONAL: se manda cuando la factura se
+// genero automaticamente desde el propio flujo de apartados (o se vincula despues una hecha a
+// mano); si se omite, el apartado se cierra igual (el negocio decidio no dejarlo enlazado a
+// ninguna factura puntual). En ambos casos deja de reservar stock desde este momento.
+ipcMain.handle('apartados:completar', (event, { id, facturaId, usuario }) => {
+  const db = getDb();
+  const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
+  if (!apartado) return { ok: false, message: 'Apartado no encontrado' };
+  if (apartado.estado !== 'activo' && apartado.estado !== 'listo_para_entregar') {
+    return { ok: false, message: 'Este apartado ya esta cerrado' };
+  }
+  const saldo = Math.round((apartado.total_usd - apartado.abonado_usd) * 100) / 100;
+  if (saldo > 0.005) return { ok: false, message: `Todavia tiene saldo pendiente ($${saldo.toFixed(2)})` };
+  if (facturaId) {
+    const factura = db.prepare('SELECT id FROM facturas WHERE id = ?').get(facturaId);
+    if (!factura) return { ok: false, message: 'La factura indicada no existe' };
+  }
+  db.prepare(
+    `UPDATE apartados SET estado = 'completado', factura_id = ?, actualizado_at = datetime('now','localtime') WHERE id = ?`
+  ).run(facturaId || null, id);
+  return { ok: true };
 });
