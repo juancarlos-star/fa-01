@@ -471,8 +471,9 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
 
   // Igual que en Compras: si el producto que se quiere cargar todavia no existe en el sistema,
   // se puede crear "al vuelo" sin salir de esta pantalla, con la misma ventana (ProductoRapidoModal).
-  // Se restringe al tipo de la pestana activa (equipo/simcard/usim/accesorio) para que el producto
-  // creado quede disponible de inmediato en el selector de abajo.
+  // A diferencia de Compras (que si limita a categorias propias de ese modulo), aqui se deja
+  // elegir CUALQUIER categoria -Telefono (IMEI), SIM, USIM, Accesorios, o cualquier otra que se
+  // cree despues- sin importar la pestana activa en este momento.
   const [mostrarModalProductoNuevo, setMostrarModalProductoNuevo] = useState(false);
 
   const codigoInputRef = useRef(null);
@@ -480,10 +481,22 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
   const permiteRango = tipoActivo === 'simcard' || tipoActivo === 'usim';
   const producto = productos.find((p) => p.id === Number(productoId));
 
+  // Cuando se crea un producto de OTRA categoria a la de la pestana activa (ver
+  // handleProductoNuevoCreado mas abajo), se cambia de pestana y eso dispara este mismo
+  // cargarProductos por el efecto de abajo (ligado a tipoActivo) -que por defecto siempre limpia
+  // la seleccion (setProductoId(''))-. Este ref le avisa "la proxima carga debe dejar
+  // seleccionado este producto en vez de limpiar", para no competir entre dos cargas a la vez.
+  const productoIdAConservarRef = useRef(null);
+
   const cargarProductos = useCallback(async () => {
     const data = await window.api.listProducts(tipoActivo, undefined, depositoId ? Number(depositoId) : undefined);
     setProductos(data);
-    setProductoId('');
+    if (productoIdAConservarRef.current) {
+      setProductoId(String(productoIdAConservarRef.current));
+      productoIdAConservarRef.current = null;
+    } else {
+      setProductoId('');
+    }
   }, [tipoActivo, depositoId]);
 
   useEffect(() => { cargarProductos(); }, [cargarProductos]);
@@ -494,10 +507,17 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
     setMostrarRango(false);
   };
 
-  const handleProductoNuevoCreado = async (productoCreado) => {
+  const handleProductoNuevoCreado = (productoCreado) => {
     setMostrarModalProductoNuevo(false);
-    await cargarProductos();
-    setProductoId(String(productoCreado.id));
+    productoIdAConservarRef.current = productoCreado.id;
+    if (productoCreado.tipo !== tipoActivo) {
+      // Cambia de pestana al tipo del producto recien creado (ej. se creo un Accesorio estando
+      // en la pestana de Telefonos); el cambio de tipoActivo dispara el efecto de arriba, que
+      // recarga la lista de ESE tipo y deja seleccionado el producto gracias al ref de arriba.
+      setTipoActivo(productoCreado.tipo);
+    } else {
+      cargarProductos();
+    }
   };
 
   // El input de codigo/IMEI se enfoca de nuevo automaticamente, tanto al elegir producto como
@@ -623,7 +643,7 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
 
       {mostrarModalProductoNuevo && (
         <ProductoRapidoModal
-          tiposPermitidos={[tipoActivo]}
+          tiposPermitidos={['equipo', 'simcard', 'usim', 'accesorio']}
           onConfirm={handleProductoNuevoCreado}
           onCancel={() => setMostrarModalProductoNuevo(false)}
         />
