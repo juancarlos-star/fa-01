@@ -41,6 +41,7 @@ const CATEGORIAS = [
       { key: 'inventarioProductos', label: 'Productos' },
       { key: 'inventarioFisico', label: 'Inventario Físico' },
       { key: 'stockBajo', label: 'Stock Bajo' },
+      { key: 'stockMuerto', label: 'Stock muerto' },
       { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' }
     ]
   },
@@ -96,7 +97,7 @@ const CATEGORIAS = [
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
-const SIN_FILTRO_FECHA = ['clientes', 'historial', 'gestionProductos', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
+const SIN_FILTRO_FECHA = ['clientes', 'historial', 'gestionProductos', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'stockMuerto', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas'];
 
 // Hook compartido para traer la configuracion de la tienda (nombre, RIF, logo, etc.), usado por
 // las pestañas de Reportes que generan el PDF de una factura individual (necesitan pasarsela a
@@ -169,6 +170,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
       {tab === 'inventarioProductos' && <ReporteInventarioProductos />}
       {tab === 'inventarioFisico' && <ReporteInventarioFisico />}
       {tab === 'stockBajo' && <ReporteStockBajo />}
+      {tab === 'stockMuerto' && <ReporteStockMuerto />}
       {tab === 'vendedoresEfectividad' && <ReporteVendedoresEfectividad desde={desde} hasta={hasta} />}
       {tab === 'vendedoresUltimasVentas' && <ReporteVendedoresUltimasVentas />}
       {tab === 'vendedoresPorCategoria' && <ReporteVendedoresPorCategoria desde={desde} hasta={hasta} />}
@@ -1325,6 +1327,98 @@ function ReporteStockBajo() {
           onConfirm={() => { setProductoEnEdicion(null); cargar(); }}
           onCancel={() => setProductoEnEdicion(null)}
         />
+      )}
+    </div>
+  );
+}
+
+// ---------------- Inventario: Stock muerto ----------------
+
+// Productos con existencia ACTUAL que llevan mucho tiempo sin venderse (o nunca se han
+// vendido). El umbral de "dias sin moverse" es configurable en pantalla (no hay una regla
+// fija de negocio: 30/60/90 dias significan cosas distintas segun el tipo de producto), con
+// 60 dias como punto de partida razonable.
+function ReporteStockMuerto() {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
+  const [umbralDias, setUmbralDias] = useState(60);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteStockMuerto();
+    setReporte(data);
+    setCargando(false);
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  if (cargando || !reporte) return <p>Cargando...</p>;
+
+  const busquedaLower = busqueda.trim().toLowerCase();
+  const coincide = (p) =>
+    (p.nombre || '').toLowerCase().includes(busquedaLower) ||
+    (p.codigo_producto || '').toLowerCase().includes(busquedaLower);
+
+  const paraLiquidar = reporte.productos.filter((p) => p.diasSinMoverse >= umbralDias);
+  const listaFiltrada = (busquedaLower ? paraLiquidar.filter(coincide) : paraLiquidar);
+  const capitalEnUmbral = paraLiquidar.reduce((acc, p) => acc + p.capitalInmovilizadoUsd, 0);
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+        <div className="form-box" style={{ maxWidth: '360px' }}>
+          <label>Buscar producto (nombre o código)</label>
+          <input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Escribe para filtrar..."
+          />
+        </div>
+        <div className="form-box" style={{ maxWidth: '220px' }}>
+          <label>Considerar "sin moverse" desde (días)</label>
+          <input
+            type="number"
+            min="1"
+            value={umbralDias}
+            onChange={(e) => setUmbralDias(Math.max(1, parseInt(e.target.value, 10) || 1))}
+          />
+        </div>
+      </div>
+
+      <p>
+        Productos con {umbralDias}+ días sin venderse: <strong>{paraLiquidar.length}</strong>
+        {' '}— Capital inmovilizado en esos productos: <strong>${fmt(capitalEnUmbral)}</strong>
+        {' '}— Capital inmovilizado en TODO el stock (sin filtrar por días): <strong>${fmt(reporte.capitalTotalInmovilizado)}</strong>
+      </p>
+
+      {listaFiltrada.length === 0 ? (
+        <p>{paraLiquidar.length === 0 ? 'Ningún producto lleva tanto tiempo sin venderse.' : 'Ningún producto coincide con la búsqueda.'}</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {listaFiltrada.map((p) => (
+            <div
+              key={p.id}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                padding: '8px 10px', borderRadius: '6px', background: '#fffaeb'
+              }}
+            >
+              <span style={{ fontSize: '0.85rem', color: '#344054' }}>
+                🐌 <strong>{p.nombre}</strong>
+                <span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_INV[p.tipo] || p.tipo}{p.codigo_producto ? ` · ${p.codigo_producto}` : ''}</span>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
+                <span style={{ fontSize: '0.78rem', color: '#667085' }}>
+                  Stock: {p.stock} · Costo: ${fmt(p.costo_promedio_usd)} · Capital: ${fmt(p.capitalInmovilizadoUsd)}
+                </span>
+                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#b54708' }}>
+                  {p.nuncaVendido ? `Nunca vendido (${p.diasSinMoverse} días en inventario)` : `${p.diasSinMoverse} días sin venderse`}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
