@@ -1,0 +1,592 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { fmt } from '../utils/format.js';
+import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
+import SelectorProducto from '../components/SelectorProducto.jsx';
+
+// Apartados / reservas con abono (feature #8). Diseño acordado con el dueño del negocio:
+//   - Menu propio (este archivo), no un submenu de Reportes.
+//   - No bloquea un IMEI/serial puntual: solo resta la CANTIDAD del stock disponible que ya ve
+//     Facturacion (electron/main.js ya lo hace en products:list / buscarPorCodigo).
+//   - Es POR DEPOSITO: un apartado hecho en un deposito no afecta el stock de otro.
+//   - Cuando el saldo llega a $0 se pregunta cada vez que pasa: generar la factura ya mismo (se
+//     va a Facturacion a hacerla, sin duplicar aqui todo ese flujo de IMEI/IVA/tasa de cambio),
+//     o marcarlo "listo para entregar" para facturarlo despues -en ambos casos el stock sigue
+//     reservado hasta que el apartado se cierre vinculando (o no) la factura real-.
+const ESTADO_LABEL = {
+  activo: 'Activo',
+  listo_para_entregar: 'Listo para entregar',
+  completado: 'Completado',
+  cancelado: 'Cancelado'
+};
+const ESTADO_COLOR = {
+  activo: '#b54708',
+  listo_para_entregar: '#175cd3',
+  completado: '#067647',
+  cancelado: '#98a2b3'
+};
+
+function Badge({ estado }) {
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        padding: '2px 10px',
+        borderRadius: 12,
+        fontSize: '0.8rem',
+        fontWeight: 600,
+        color: '#fff',
+        background: ESTADO_COLOR[estado] || '#667085'
+      }}
+    >
+      {ESTADO_LABEL[estado] || estado}
+    </span>
+  );
+}
+
+export default function Apartados({ currentUser }) {
+  const [vista, setVista] = useState('lista'); // 'lista' | 'nuevo' | 'detalle'
+  const [filtroEstado, setFiltroEstado] = useState('activo');
+  const [apartados, setApartados] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [apartadoActivoId, setApartadoActivoId] = useState(null);
+
+  const cargarLista = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.listarApartados(filtroEstado === 'todos' ? null : filtroEstado);
+    setApartados(data);
+    setCargando(false);
+  }, [filtroEstado]);
+
+  useEffect(() => {
+    if (vista === 'lista') cargarLista();
+  }, [vista, cargarLista]);
+
+  const abrirDetalle = (id) => {
+    setApartadoActivoId(id);
+    setVista('detalle');
+  };
+
+  if (vista === 'nuevo') {
+    return (
+      <ApartadoNuevo
+        currentUser={currentUser}
+        onCancelar={() => setVista('lista')}
+        onCreado={(id) => abrirDetalle(id)}
+      />
+    );
+  }
+
+  if (vista === 'detalle' && apartadoActivoId) {
+    return (
+      <ApartadoDetalle
+        id={apartadoActivoId}
+        currentUser={currentUser}
+        onVolver={() => setVista('lista')}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <h1>Apartados</h1>
+      <p style={{ color: '#667085', marginTop: '-0.5rem' }}>
+        Reservas de productos con abono: el cliente separa el producto y lo va pagando poco a poco.
+      </p>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '1rem 0' }}>
+        <div className="reportes-subtabs" style={{ marginBottom: 0 }}>
+          {['activo', 'listo_para_entregar', 'completado', 'cancelado', 'todos'].map((e) => (
+            <button
+              key={e}
+              className={filtroEstado === e ? 'active' : ''}
+              onClick={() => setFiltroEstado(e)}
+            >
+              {e === 'todos' ? 'Todos' : ESTADO_LABEL[e]}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setVista('nuevo')}>+ Nuevo apartado</button>
+      </div>
+
+      {cargando ? (
+        <p>Cargando...</p>
+      ) : apartados.length === 0 ? (
+        <p>No hay apartados en este estado.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>N°</th>
+              <th>Cliente</th>
+              <th>Depósito</th>
+              <th>Estado</th>
+              <th>Total</th>
+              <th>Abonado</th>
+              <th>Saldo</th>
+              <th>Fecha</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {apartados.map((a) => (
+              <tr key={a.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{a.numero}</td>
+                <td>{a.cliente_nombre}</td>
+                <td>{a.deposito_nombre || '—'}</td>
+                <td><Badge estado={a.estado} /></td>
+                <td>${fmt(a.total_usd)}</td>
+                <td>${fmt(a.abonado_usd)}</td>
+                <td style={{ color: a.saldo_usd > 0 ? '#b42318' : '#0b8f4e', fontWeight: 600 }}>
+                  ${fmt(a.saldo_usd)}
+                </td>
+                <td>{a.created_at}</td>
+                <td>
+                  <button onClick={() => abrirDetalle(a.id)}>Ver</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Nuevo apartado ----------------
+function ApartadoNuevo({ currentUser, onCancelar, onCreado }) {
+  const [depositos, setDepositos] = useState([]);
+  const [depositoId, setDepositoId] = useState('');
+  const [productos, setProductos] = useState([]);
+
+  // Cliente: mismo patron de busqueda por cedula/RIF que Facturacion.
+  const [cedula, setCedula] = useState('');
+  const [buscandoCliente, setBuscandoCliente] = useState(false);
+  const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
+  const [mostrarModalClienteNuevo, setMostrarModalClienteNuevo] = useState(false);
+
+  const [productoIdFila, setProductoIdFila] = useState('');
+  const [cantidadFila, setCantidadFila] = useState(1);
+  const [precioFila, setPrecioFila] = useState('');
+  const [carrito, setCarrito] = useState([]);
+  const [abonoInicial, setAbonoInicial] = useState('');
+  const [notas, setNotas] = useState('');
+  const [error, setError] = useState('');
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    window.api.listDepositos(true).then((data) => {
+      setDepositos(data);
+      if (data.length > 0) setDepositoId(String(data[0].id));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!depositoId) return;
+    window.api.listProducts(null, null, Number(depositoId)).then(setProductos);
+  }, [depositoId]);
+
+  // Al elegir un producto en el combobox, se sugiere su precio en USD (precio2) para no tener
+  // que escribirlo a mano, pero se puede cambiar libremente antes de agregarlo.
+  useEffect(() => {
+    if (!productoIdFila) { setPrecioFila(''); return; }
+    const p = productos.find((x) => String(x.id) === String(productoIdFila));
+    if (p) setPrecioFila(String(p.precio2 || p.precio || ''));
+  }, [productoIdFila, productos]);
+
+  const buscarClientePorEnter = async () => {
+    const texto = cedula.trim();
+    if (!texto) return;
+    setBuscandoCliente(true);
+    try {
+      const encontrado = await window.api.buscarClientePorCedula(texto);
+      if (encontrado) {
+        setClienteSeleccionado(encontrado);
+        setCedula(encontrado.rif_cedula || texto);
+      } else {
+        setMostrarModalClienteNuevo(true);
+      }
+    } finally {
+      setBuscandoCliente(false);
+    }
+  };
+
+  const handleClienteCreado = (cliente) => {
+    setClienteSeleccionado(cliente);
+    setCedula(cliente.rif_cedula || '');
+    setMostrarModalClienteNuevo(false);
+  };
+
+  const quitarCliente = () => {
+    setClienteSeleccionado(null);
+    setCedula('');
+  };
+
+  const productoSeleccionado = productos.find((p) => String(p.id) === String(productoIdFila));
+
+  const agregarAlCarrito = () => {
+    setError('');
+    if (!productoSeleccionado) { setError('Selecciona un producto'); return; }
+    const cant = parseInt(cantidadFila, 10) || 0;
+    if (cant < 1) { setError('La cantidad debe ser al menos 1'); return; }
+    const yaEnCarrito = carrito.filter((c) => c.productId === productoSeleccionado.id).reduce((a, c) => a + c.cantidad, 0);
+    if (cant + yaEnCarrito > (productoSeleccionado.stock_disponible || 0)) {
+      setError(`Solo hay ${productoSeleccionado.stock_disponible || 0} disponibles de "${productoSeleccionado.nombre}"`);
+      return;
+    }
+    const precio = parseFloat(precioFila) || 0;
+    setCarrito([
+      ...carrito,
+      { key: `${productoSeleccionado.id}-${Date.now()}`, productId: productoSeleccionado.id, nombre: productoSeleccionado.nombre, cantidad: cant, precioUnitarioUsd: precio }
+    ]);
+    setProductoIdFila('');
+    setCantidadFila(1);
+    setPrecioFila('');
+  };
+
+  const quitarDelCarrito = (key) => setCarrito(carrito.filter((c) => c.key !== key));
+
+  const totalUsd = carrito.reduce((acc, c) => acc + c.cantidad * c.precioUnitarioUsd, 0);
+
+  const handleGuardar = async () => {
+    setError('');
+    if (!clienteSeleccionado && !cedula.trim()) { setError('Indica el cliente que aparta'); return; }
+    if (carrito.length === 0) { setError('Agrega al menos un producto al apartado'); return; }
+    const abono = parseFloat(abonoInicial) || 0;
+    if (abono > totalUsd + 0.005) { setError('El abono inicial no puede ser mayor al total'); return; }
+
+    setGuardando(true);
+    try {
+      const res = await window.api.crearApartado({
+        clienteId: clienteSeleccionado?.id || null,
+        clienteNombre: clienteSeleccionado?.nombre || cedula.trim(),
+        clienteTelefono: clienteSeleccionado?.telefono || '',
+        depositoId: Number(depositoId),
+        items: carrito.map((c) => ({
+          productId: c.productId,
+          descripcion: c.nombre,
+          cantidad: c.cantidad,
+          precioUnitarioUsd: c.precioUnitarioUsd
+        })),
+        abonoInicial: abono,
+        notas,
+        usuario: currentUser?.username
+      });
+      if (!res.ok) { setError(res.message || 'No se pudo crear el apartado'); return; }
+      onCreado(res.apartado.id);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div>
+      <h1>Nuevo apartado</h1>
+
+      <div className="form-box" style={{ maxWidth: 560 }}>
+        <label>Depósito</label>
+        <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
+          {depositos.map((d) => (
+            <option key={d.id} value={d.id}>{d.nombre}</option>
+          ))}
+        </select>
+
+        <label style={{ marginTop: '0.75rem' }}>Cliente (Cédula / RIF)</label>
+        {clienteSeleccionado ? (
+          <div className="pos-stripe" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>{clienteSeleccionado.nombre} — {clienteSeleccionado.rif_cedula}</span>
+            <button onClick={quitarCliente}>Cambiar</button>
+          </div>
+        ) : (
+          <input
+            value={cedula}
+            onChange={(e) => setCedula(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarClientePorEnter(); } }}
+            placeholder="Cédula/RIF y Enter para buscar o crear"
+            disabled={buscandoCliente}
+          />
+        )}
+      </div>
+
+      <h3 style={{ marginTop: '1.5rem' }}>Productos a apartar</h3>
+      <div className="form-box" style={{ maxWidth: 720, display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ flex: 2, minWidth: 220 }}>
+          <label>Producto</label>
+          <SelectorProducto productos={productos} value={productoIdFila} onChange={setProductoIdFila} />
+        </div>
+        <div style={{ width: 90 }}>
+          <label>Cantidad</label>
+          <input type="number" min="1" value={cantidadFila} onChange={(e) => setCantidadFila(e.target.value)} />
+        </div>
+        <div style={{ width: 120 }}>
+          <label>Precio (USD)</label>
+          <input type="number" step="0.01" value={precioFila} onChange={(e) => setPrecioFila(e.target.value)} />
+        </div>
+        <button onClick={agregarAlCarrito}>Agregar</button>
+      </div>
+
+      {carrito.length > 0 && (
+        <table style={{ width: '100%', maxWidth: 720, borderCollapse: 'collapse', background: '#fff', marginTop: '0.75rem' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Producto</th>
+              <th>Cantidad</th>
+              <th>Precio</th>
+              <th>Subtotal</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {carrito.map((c) => (
+              <tr key={c.key} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{c.nombre}</td>
+                <td>{c.cantidad}</td>
+                <td>${fmt(c.precioUnitarioUsd)}</td>
+                <td>${fmt(c.cantidad * c.precioUnitarioUsd)}</td>
+                <td><button onClick={() => quitarDelCarrito(c.key)}>Quitar</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="form-box" style={{ maxWidth: 420, marginTop: '1rem' }}>
+        <p style={{ fontSize: '1.1rem' }}>Total del apartado: <strong>${fmt(totalUsd)}</strong></p>
+        <label>Abono inicial (USD, opcional)</label>
+        <input type="number" step="0.01" value={abonoInicial} onChange={(e) => setAbonoInicial(e.target.value)} />
+        <label style={{ marginTop: '0.5rem' }}>Notas (opcional)</label>
+        <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} />
+      </div>
+
+      {error && <p style={{ color: 'red' }}>{error}</p>}
+
+      <div style={{ marginTop: '1rem' }}>
+        <button onClick={handleGuardar} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar apartado'}</button>{' '}
+        <button onClick={onCancelar}>Cancelar</button>
+      </div>
+
+      {mostrarModalClienteNuevo && (
+        <ClienteNuevoModal
+          cedulaInicial={cedula}
+          onConfirm={handleClienteCreado}
+          onCancel={() => setMostrarModalClienteNuevo(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------- Detalle de un apartado ----------------
+function ApartadoDetalle({ id, currentUser, onVolver }) {
+  const [datos, setDatos] = useState(null);
+  const [montoAbono, setMontoAbono] = useState('');
+  const [error, setError] = useState('');
+  const [procesando, setProcesando] = useState(false);
+  const [mostrarCancelar, setMostrarCancelar] = useState(false);
+  const [motivoCancelar, setMotivoCancelar] = useState('');
+  const [facturasCliente, setFacturasCliente] = useState([]);
+  const [facturaElegida, setFacturaElegida] = useState('');
+
+  const cargar = useCallback(async () => {
+    const res = await window.api.detalleApartado(id);
+    if (res.ok) setDatos(res);
+  }, [id]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  // Para la pantalla de "listo para entregar": trae las facturas mas recientes del mismo
+  // cliente, para que sea facil elegir cual es la que ya se hizo a mano en Facturacion (en vez
+  // de tener que copiar el numero a mano). Siempre se puede cerrar sin elegir ninguna.
+  useEffect(() => {
+    if (datos?.apartado?.estado !== 'listo_para_entregar') return;
+    window.api.listFacturas().then((todas) => {
+      const nombre = (datos.apartado.cliente_nombre || '').trim().toLowerCase();
+      setFacturasCliente(todas.filter((f) => (f.cliente_nombre || '').trim().toLowerCase() === nombre).slice(0, 15));
+    });
+  }, [datos]);
+
+  if (!datos) return <div><button onClick={onVolver}>← Volver</button><p>Cargando...</p></div>;
+
+  const { apartado, items, abonos } = datos;
+
+  const handleAbonar = async () => {
+    setError('');
+    const m = parseFloat(montoAbono);
+    if (!m || m <= 0) { setError('Monto invalido'); return; }
+    setProcesando(true);
+    try {
+      const res = await window.api.abonarApartado(id, m, currentUser?.username);
+      if (!res.ok) { setError(res.message || 'No se pudo registrar el abono'); return; }
+      setMontoAbono('');
+      cargar();
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const handleCancelar = async () => {
+    setProcesando(true);
+    try {
+      const res = await window.api.cancelarApartado(id, currentUser?.username, motivoCancelar);
+      if (!res.ok) { setError(res.message || 'No se pudo cancelar'); return; }
+      setMostrarCancelar(false);
+      cargar();
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const handleMarcarListo = async () => {
+    setProcesando(true);
+    try {
+      const res = await window.api.marcarApartadoListoParaEntregar(id, currentUser?.username);
+      if (!res.ok) { setError(res.message || 'No se pudo actualizar'); return; }
+      cargar();
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const handleCerrarApartado = async () => {
+    setProcesando(true);
+    try {
+      const res = await window.api.completarApartado(id, facturaElegida ? Number(facturaElegida) : null, currentUser?.username);
+      if (!res.ok) { setError(res.message || 'No se pudo cerrar el apartado'); return; }
+      cargar();
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const puedeEntregar = apartado.saldo_usd <= 0.005;
+
+  return (
+    <div>
+      <button onClick={onVolver}>← Volver a la lista</button>
+      <h1>Apartado N° {apartado.numero} <Badge estado={apartado.estado} /></h1>
+
+      <div className="form-box" style={{ maxWidth: 560 }}>
+        <p><strong>Cliente:</strong> {apartado.cliente_nombre} {apartado.cliente_telefono ? `— ${apartado.cliente_telefono}` : ''}</p>
+        <p><strong>Depósito:</strong> {apartado.deposito_nombre || '—'}</p>
+        <p><strong>Fecha:</strong> {apartado.created_at}</p>
+        {apartado.notas && <p><strong>Notas:</strong> {apartado.notas}</p>}
+        {apartado.estado === 'cancelado' && apartado.motivo_cancelacion && (
+          <p style={{ color: '#b42318' }}><strong>Motivo de cancelación:</strong> {apartado.motivo_cancelacion}</p>
+        )}
+        {apartado.factura_id && <p><strong>Factura vinculada:</strong> #{apartado.factura_id}</p>}
+      </div>
+
+      <h3 style={{ marginTop: '1.25rem' }}>Productos</h3>
+      <table style={{ width: '100%', maxWidth: 640, borderCollapse: 'collapse', background: '#fff' }}>
+        <thead>
+          <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+            <th style={{ padding: '0.5rem' }}>Producto</th>
+            <th>Cantidad</th>
+            <th>Precio</th>
+            <th>Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it) => (
+            <tr key={it.id} style={{ borderBottom: '1px solid #eee' }}>
+              <td style={{ padding: '0.5rem' }}>{it.descripcion}</td>
+              <td>{it.cantidad}</td>
+              <td>${fmt(it.precio_unitario_usd)}</td>
+              <td>${fmt(it.cantidad * it.precio_unitario_usd)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="form-box" style={{ maxWidth: 420, marginTop: '1rem' }}>
+        <p>Total: <strong>${fmt(apartado.total_usd)}</strong></p>
+        <p>Abonado: <strong style={{ color: '#0b8f4e' }}>${fmt(apartado.abonado_usd)}</strong></p>
+        <p style={{ fontSize: '1.1rem' }}>
+          Saldo pendiente: <strong style={{ color: apartado.saldo_usd > 0 ? '#b42318' : '#0b8f4e' }}>${fmt(apartado.saldo_usd)}</strong>
+        </p>
+      </div>
+
+      <h3 style={{ marginTop: '1.25rem' }}>Abonos</h3>
+      {abonos.length === 0 ? <p>Todavía no hay abonos registrados.</p> : (
+        <table style={{ width: '100%', maxWidth: 480, borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Fecha</th>
+              <th>Monto</th>
+              <th>Usuario</th>
+            </tr>
+          </thead>
+          <tbody>
+            {abonos.map((ab) => (
+              <tr key={ab.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{ab.created_at}</td>
+                <td>${fmt(ab.monto_usd)}</td>
+                <td>{ab.usuario || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {error && <p style={{ color: 'red' }}>{error}</p>}
+
+      {apartado.estado === 'activo' && !puedeEntregar && (
+        <div className="form-box" style={{ maxWidth: 360, marginTop: '1rem' }}>
+          <h4>Registrar abono</h4>
+          <input type="number" step="0.01" value={montoAbono} onChange={(e) => setMontoAbono(e.target.value)} placeholder="Monto en USD" />
+          <button onClick={handleAbonar} disabled={procesando} style={{ marginTop: 6 }}>Abonar</button>
+        </div>
+      )}
+
+      {apartado.estado === 'activo' && puedeEntregar && (
+        <div className="form-box" style={{ maxWidth: 420, marginTop: '1rem', background: '#f0fdf4' }}>
+          <h4>Ya está pagado por completo — ¿qué hacemos?</h4>
+          <p style={{ fontSize: '0.9rem', color: '#475467' }}>
+            El producto sigue reservado en cualquiera de los dos casos, hasta que cierres el apartado.
+          </p>
+          <button onClick={handleMarcarListo} disabled={procesando}>
+            Marcar listo para entregar (lo facturo en Facturación)
+          </button>
+        </div>
+      )}
+
+      {apartado.estado === 'listo_para_entregar' && (
+        <div className="form-box" style={{ maxWidth: 420, marginTop: '1rem', background: '#eff8ff' }}>
+          <h4>Cerrar apartado</h4>
+          <p style={{ fontSize: '0.9rem', color: '#475467' }}>
+            Ve a Facturación y genera la factura normal para este cliente. Cuando la tengas, elígela
+            aquí para vincularla (o cierra sin vincular si prefieres no hacerlo).
+          </p>
+          <label>Factura de este cliente (opcional)</label>
+          <select value={facturaElegida} onChange={(e) => setFacturaElegida(e.target.value)}>
+            <option value="">— Sin vincular factura —</option>
+            {facturasCliente.map((f) => (
+              <option key={f.id} value={f.id}>
+                #{f.numero_factura || f.id} — ${fmt(f.total_usd)} — {f.created_at}
+              </option>
+            ))}
+          </select>
+          <button onClick={handleCerrarApartado} disabled={procesando} style={{ marginTop: 6 }}>
+            Cerrar apartado
+          </button>
+        </div>
+      )}
+
+      {(apartado.estado === 'activo' || apartado.estado === 'listo_para_entregar') && (
+        <div style={{ marginTop: '1rem' }}>
+          {!mostrarCancelar ? (
+            <button onClick={() => setMostrarCancelar(true)}>Cancelar apartado</button>
+          ) : (
+            <div className="form-box" style={{ maxWidth: 420 }}>
+              <label>Motivo de la cancelación (opcional)</label>
+              <input value={motivoCancelar} onChange={(e) => setMotivoCancelar(e.target.value)} />
+              <div style={{ marginTop: 6 }}>
+                <button onClick={handleCancelar} disabled={procesando}>Confirmar cancelación</button>{' '}
+                <button onClick={() => setMostrarCancelar(false)}>Volver</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
