@@ -62,6 +62,7 @@ const CATEGORIAS = [
     items: [
       { key: 'historial', label: 'Historial de facturas' },
       { key: 'ganancias', label: 'Ventas y ganancias' },
+      { key: 'margenProducto', label: 'Margen real por producto' },
       { key: 'ventasTransacciones', label: 'Transacciones' },
       { key: 'ventasCierreDiario', label: 'Cierre de ventas diario' },
       { key: 'ventasRelacion', label: 'Relación de ventas' },
@@ -160,6 +161,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
       {tab === 'gestionProductos' && <Inventario currentUser={currentUser} />}
       {tab === 'historial' && <Facturas currentUser={currentUser} />}
       {tab === 'ganancias' && <ReporteGanancias desde={desde} hasta={hasta} />}
+      {tab === 'margenProducto' && <ReporteMargenProducto desde={desde} hasta={hasta} />}
       {tab === 'compras' && <ReporteCompras desde={desde} hasta={hasta} />}
       {tab === 'devolucionesCompras' && <ReporteDevolucionesCompras desde={desde} hasta={hasta} />}
       {tab === 'facturas' && <ReporteFacturas desde={desde} hasta={hasta} />}
@@ -1415,6 +1417,93 @@ function ReporteStockMuerto() {
                 <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#b54708' }}>
                   {p.nuncaVendido ? `Nunca vendido (${p.diasSinMoverse} días en inventario)` : `${p.diasSinMoverse} días sin venderse`}
                 </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Ventas: Análisis de margen real por producto ----------------
+
+// A diferencia de "Ventas y ganancias" (que da el total del negocio), aqui se desglosa la
+// ganancia POR PRODUCTO usando el costo que tenia cada unidad al momento de venderse (no el
+// costo actual), para responder "que producto deja mas ganancia de verdad" y no solo "que
+// producto se vende mas". Se ordena por defecto por ganancia total; el % de margen se muestra
+// aparte porque un producto puede vender poco pero con margen altisimo, o mucho con margen bajo.
+function ReporteMargenProducto({ desde, hasta }) {
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [orden, setOrden] = useState('ganancia'); // 'ganancia' o 'margen'
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.getReporteMargenPorProducto(desde, hasta);
+    setReporte(data);
+    setCargando(false);
+  }, [desde, hasta]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  if (cargando || !reporte) return <p>Cargando...</p>;
+
+  const productosOrdenados = [...reporte.productos].sort((a, b) =>
+    orden === 'margen' ? b.margenPct - a.margenPct : b.gananciaUsd - a.gananciaUsd
+  );
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <p>
+        Ventas totales: <strong>${fmt(reporte.totales.ventasUsd)}</strong>
+        {' '}— Costo total: <strong>${fmt(reporte.totales.costoUsd)}</strong>
+        {' '}— Ganancia total: <strong style={{ color: '#067647' }}>${fmt(reporte.totales.gananciaUsd)}</strong>
+      </p>
+
+      <h4 style={{ marginBottom: '6px' }}>Comparativo por tipo de producto</h4>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1.2rem' }}>
+        {reporte.porTipo.length === 0 ? (
+          <p>No hay ventas en este rango de fechas.</p>
+        ) : reporte.porTipo.map((t) => (
+          <div key={t.tipo} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '6px', background: '#f9fafb' }}>
+            <span style={{ fontSize: '0.85rem' }}><strong>{TIPO_LABEL_INV[t.tipo] || t.tipo || 'Sin tipo'}</strong></span>
+            <span style={{ fontSize: '0.78rem', color: '#667085', display: 'flex', gap: '14px' }}>
+              <span>Vendido: {t.cantidad}</span>
+              <span>Ventas: ${fmt(t.ventasUsd)}</span>
+              <span style={{ fontWeight: 600, color: '#067647' }}>Ganancia: ${fmt(t.gananciaUsd)}</span>
+              <span style={{ fontWeight: 600 }}>Margen: {fmt(t.margenPct)}%</span>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+        <h4 style={{ margin: 0 }}>Ranking de productos</h4>
+        <div className="form-box" style={{ maxWidth: '220px', margin: 0 }}>
+          <label>Ordenar por</label>
+          <select value={orden} onChange={(e) => setOrden(e.target.value)}>
+            <option value="ganancia">Ganancia total</option>
+            <option value="margen">% de margen</option>
+          </select>
+        </div>
+      </div>
+
+      {productosOrdenados.length === 0 ? (
+        <p>No hay ventas en este rango de fechas.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {productosOrdenados.map((p) => (
+            <div key={p.product_id ?? p.descripcion} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '8px 10px', borderRadius: '6px', background: '#f9fafb' }}>
+              <span style={{ fontSize: '0.85rem', color: '#344054' }}>
+                <strong>{p.descripcion}</strong>
+                <span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_INV[p.tipo] || p.tipo || 'Sin tipo'}</span>
+              </span>
+              <span style={{ fontSize: '0.78rem', color: '#667085', display: 'flex', gap: '14px', flexShrink: 0 }}>
+                <span>Vendido: {p.cantidad}</span>
+                <span>Ventas: ${fmt(p.ventasUsd)}</span>
+                <span style={{ fontWeight: 600, color: '#067647' }}>Ganancia: ${fmt(p.gananciaUsd)}</span>
+                <span style={{ fontWeight: 600 }}>Margen: {fmt(p.margenPct)}%</span>
               </span>
             </div>
           ))}
