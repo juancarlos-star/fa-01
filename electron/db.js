@@ -559,6 +559,11 @@ function initDb() {
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS metas_vendedores (
+      usuario TEXT PRIMARY KEY,
+      meta_mensual_usd REAL NOT NULL DEFAULT 0,
+      comision_pct REAL NOT NULL DEFAULT 0
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL

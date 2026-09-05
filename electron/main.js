@@ -4176,7 +4176,7 @@ function mapaUsuarios(db) {
   return mapa;
 }
 
-const FORMATO_PERIODO = { dia: '%Y-%m-%d', mes: '%Y-%m', anio: '%Y' };
+const FORMATO_PERIODO = { dia: '%Y-%m-%d', semana: '%Y-%W', mes: '%Y-%m', anio: '%Y' };
 
 // "Efectividad": ventas por vendedor agrupadas por dia, mes o año dentro del rango de fechas.
 ipcMain.handle('reportes:vendedoresEfectividad', (event, { desde, hasta, agrupacion }) => {
@@ -4270,6 +4270,105 @@ ipcMain.handle('reportes:vendedoresEstadisticas', (event, { desde, hasta }) => {
   }));
 
   return { ok: true, desde, hasta, filas: conDetalle, totalGeneral };
+});
+
+// Ventas por vendedor desglosadas por dia, semana o mes dentro del rango elegido (a diferencia
+// de "Estadisticas", que da un solo total por vendedor para todo el rango). Cada fila es un
+// (periodo, vendedor); el front arma la tabla/pivote como le convenga.
+ipcMain.handle('reportes:vendedoresPeriodo', (event, { desde, hasta, agrupacion }) => {
+  const db = getDb();
+  const formato = FORMATO_PERIODO[agrupacion] || FORMATO_PERIODO.dia;
+  const filas = db.prepare(
+    `SELECT strftime(?, f.created_at) AS periodo, f.usuario, COUNT(*) AS cantidadFacturas, SUM(f.total_usd) AS totalUsd
+     FROM facturas f
+     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)
+     GROUP BY periodo, f.usuario
+     ORDER BY periodo ASC`
+  ).all(formato, desde, hasta);
+
+  const nombres = mapaUsuarios(db);
+  const conNombre = filas.map((f) => ({ ...f, nombreVendedor: nombres[f.usuario] || f.usuario || 'Sin asignar' }));
+
+  return { ok: true, desde, hasta, agrupacion: agrupacion || 'dia', filas: conNombre };
+});
+
+// ---------------- Metas de venta y comisiones por vendedor ----------------
+
+// Meta mensual y % de comision configurados por el administrador para cada vendedor (guardados
+// aparte de "users" para no mezclar datos de autenticacion con configuracion de negocio). Un
+// vendedor sin fila en metas_vendedores simplemente no tiene meta/comision configurada (0).
+ipcMain.handle('metas:list', () => {
+  const db = getDb();
+  const usuarios = db.prepare(
+    "SELECT username, full_name FROM users WHERE role = 'vendedor' AND active = 1 ORDER BY full_name"
+  ).all();
+  const metas = new Map(db.prepare('SELECT * FROM metas_vendedores').all().map((m) => [m.usuario, m]));
+  const filas = usuarios.map((u) => ({
+    usuario: u.username,
+    nombreVendedor: u.full_name,
+    meta_mensual_usd: metas.get(u.username)?.meta_mensual_usd || 0,
+    comision_pct: metas.get(u.username)?.comision_pct || 0
+  }));
+  return { ok: true, vendedores: filas };
+});
+
+ipcMain.handle('metas:actualizar', (event, { usuario, meta_mensual_usd, comision_pct }) => {
+  const db = getDb();
+  const metaNum = parseFloat(meta_mensual_usd);
+  const comisionNum = parseFloat(comision_pct);
+  if (!usuario) return { ok: false, message: 'Falta el usuario' };
+  if (isNaN(metaNum) || metaNum < 0) return { ok: false, message: 'Meta mensual invalida' };
+  if (isNaN(comisionNum) || comisionNum < 0 || comisionNum > 100) return { ok: false, message: 'Comision invalida (0 a 100)' };
+
+  db.prepare(
+    `INSERT INTO metas_vendedores (usuario, meta_mensual_usd, comision_pct) VALUES (?, ?, ?)
+     ON CONFLICT(usuario) DO UPDATE SET meta_mensual_usd = excluded.meta_mensual_usd, comision_pct = excluded.comision_pct`
+  ).run(usuario, metaNum, comisionNum);
+
+  return { ok: true };
+});
+
+// Progreso del mes elegido (por defecto el mes actual) contra la meta configurada, mas la
+// comision calculada automaticamente (ventas del mes x % de comision). Se separa en su propia
+// funcion para poder reusarla desde el reporte de Vendedores y desde el widget de Inicio.
+function obtenerProgresoMetas(db, mesStr) {
+  const mes = mesStr || new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+  const ventasPorUsuario = new Map(
+    db.prepare(
+      `SELECT usuario, SUM(total_usd) AS totalUsd
+       FROM facturas
+       WHERE es_devolucion = 0 AND strftime('%Y-%m', created_at) = ?
+       GROUP BY usuario`
+    ).all(mes).map((r) => [r.usuario, r.totalUsd])
+  );
+
+  const usuarios = db.prepare(
+    "SELECT username, full_name FROM users WHERE role = 'vendedor' AND active = 1 ORDER BY full_name"
+  ).all();
+  const metas = new Map(db.prepare('SELECT * FROM metas_vendedores').all().map((m) => [m.usuario, m]));
+
+  const vendedores = usuarios.map((u) => {
+    const ventasMesUsd = ventasPorUsuario.get(u.username) || 0;
+    const meta = metas.get(u.username);
+    const metaMensualUsd = meta?.meta_mensual_usd || 0;
+    const comisionPct = meta?.comision_pct || 0;
+    return {
+      usuario: u.username,
+      nombreVendedor: u.full_name,
+      ventasMesUsd,
+      metaMensualUsd,
+      progresoPct: metaMensualUsd > 0 ? Math.min(100, (ventasMesUsd / metaMensualUsd) * 100) : null,
+      comisionPct,
+      comisionCalculadaUsd: ventasMesUsd * (comisionPct / 100)
+    };
+  });
+
+  return { ok: true, mes, vendedores };
+}
+
+ipcMain.handle('reportes:progresoMetas', (event, { mes } = {}) => {
+  const db = getDb();
+  return obtenerProgresoMetas(db, mes);
 });
 
 // ---------------- Reportes de Ventas (Parte 4) ----------------

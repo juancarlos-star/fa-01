@@ -137,6 +137,11 @@ contextBridge.exposeInMainWorld('api', {
   getReporteMargenPorProducto: (desde, hasta) => ipcRenderer.invoke('reportes:margenPorProducto', { desde, hasta }),
   getReporteClientesResumen: () => ipcRenderer.invoke('reportes:clientesResumen'),
   getReporteClienteHistorial: (clienteId) => ipcRenderer.invoke('reportes:clienteHistorial', { clienteId }),
+  getReporteVendedoresPeriodo: (desde, hasta, agrupacion) => ipcRenderer.invoke('reportes:vendedoresPeriodo', { desde, hasta, agrupacion }),
+  getMetasVendedores: () => ipcRenderer.invoke('metas:list'),
+  actualizarMetaVendedor: (usuario, meta_mensual_usd, comision_pct) =>
+    ipcRenderer.invoke('metas:actualizar', { usuario, meta_mensual_usd, comision_pct }),
+  getProgresoMetas: (mes) => ipcRenderer.invoke('reportes:progresoMetas', { mes }),
   // Respaldo
   crearBackup: () => ipcRenderer.invoke('backup:crear'),
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar'),
