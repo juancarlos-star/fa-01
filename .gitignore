@@ -8,3 +8,7 @@ release/
 # necesitas que el repo sea privado, porque electron/licencia.js (que SI se necesita en el
 # proyecto) contiene el secreto usado para validar las licencias.
 herramientas-privadas/
+
+# Credenciales del correo que avisa cuando un cliente necesita una clave de activacion. Sin este
+# archivo, esa funcion queda desactivada (no rompe nada), asi que es seguro que no este en git.
+electron/config-correo-privado.js
