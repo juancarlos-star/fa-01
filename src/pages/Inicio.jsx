@@ -136,6 +136,7 @@ const cardStyle = {
 export default function Inicio({ user }) {
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [settings, setSettings] = useState(null);
 
   useEffect(() => {
     window.api.getDashboardInicio().then((res) => {
@@ -144,11 +145,25 @@ export default function Inicio({ user }) {
     });
   }, []);
 
+  // El logo configurado en Configuracion > Datos de Tienda ya NO se imprime en la Factura/Nota
+  // de Venta (se quito de ahi a proposito); en su lugar se muestra aqui, en la esquina superior
+  // derecha de Inicio, al otro extremo de "Bienvenido".
+  useEffect(() => { window.api.getSettings().then(setSettings); }, []);
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
-        <NotificacionesBell />
-        <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Bienvenido, {user.full_name}</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <NotificacionesBell />
+          <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Bienvenido, {user.full_name}</h1>
+        </div>
+        {settings?.logo_base64 && (
+          <img
+            src={settings.logo_base64}
+            alt="Logo de la tienda"
+            style={{ maxHeight: '48px', maxWidth: '160px', objectFit: 'contain' }}
+          />
+        )}
       </div>
       <p style={{ color: '#667085', marginTop: 0, marginBottom: '0.6rem', fontSize: '0.82rem' }}>
         Resumen de actividad de ventas de los últimos 30 días. Usa el menú para facturar, ver el
