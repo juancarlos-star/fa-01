@@ -261,6 +261,25 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
       : filaUnidadesDisponibles.length;
   };
 
+  // Agrega una sugerencia de venta cruzada (accesorio) al carrito con cantidad 1 y su precio
+  // de venta configurado (precio2, en USD). Reutiliza la misma forma de item que un accesorio
+  // agregado manualmente, para que se comporte igual en el resto de la pantalla.
+  const agregarSugerenciaAlCarrito = (accesorio) => {
+    setCarrito((prev) => [
+      ...prev,
+      {
+        key: `${accesorio.id}-${Date.now()}`,
+        product_id: accesorio.id,
+        tipo: 'accesorio',
+        descripcion: accesorio.nombre,
+        producto_codigo: null,
+        codigo: null,
+        cantidad: 1,
+        precio_unitario: accesorio.precio2 || 0
+      }
+    ]);
+  };
+
   // Confirma la cantidad (Enter en Cantidad). Para accesorios se agrega directo a la factura
   // (se descuenta del stock general del deposito). Para equipos/SIM/USIM se abre el selector de
   // unidades para escoger cuales IMEI/codigos puntuales se van a facturar.
@@ -787,6 +806,8 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
         </table>
       </div>
 
+      <SugerenciaVentaCruzada carrito={carrito} onAgregar={agregarSugerenciaAlCarrito} />
+
       <div className="pos-footer-actions">
         <span style={{ marginRight: '16px', color: '#667085', fontSize: '0.85rem', alignSelf: 'center' }}>
           Tasa: {tasaCambio} Bs/USD — Total en Bs: <strong>Bs {fmt(totalBs)}</strong>
@@ -888,3 +909,52 @@ const codigoLineStyle = {
   color: '#475467',
   lineHeight: '1.5'
 };
+
+// ---------------- Cartelito de venta cruzada ----------------
+
+// Cartelito chico que aparece solo cuando el carrito tiene al menos un equipo (telefono), con
+// hasta 3 accesorios sugeridos (de las categorias que el admin marco en Categorias). Se vuelve
+// a consultar cada vez que cambia el carrito, para no seguir sugiriendo un accesorio que ya se
+// agrego o que se quedo sin stock mientras se factura.
+function SugerenciaVentaCruzada({ carrito, onAgregar }) {
+  const [sugerencias, setSugerencias] = useState([]);
+  const hayEquipoEnCarrito = carrito.some((i) => i.tipo === 'equipo');
+  const idsEnCarrito = carrito.map((i) => i.product_id).filter(Boolean);
+
+  useEffect(() => {
+    if (!hayEquipoEnCarrito) { setSugerencias([]); return; }
+    let activo = true;
+    window.api.getSugerenciasVentaCruzada(idsEnCarrito).then((res) => {
+      if (activo && res.ok) setSugerencias(res.sugerencias.slice(0, 3));
+    });
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hayEquipoEnCarrito, JSON.stringify(idsEnCarrito)]);
+
+  if (!hayEquipoEnCarrito || sugerencias.length === 0) return null;
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+      background: '#fff8e6', border: '1px solid #fde68a', borderRadius: '8px',
+      padding: '8px 12px', margin: '8px 0', fontSize: '0.82rem'
+    }}>
+      <span style={{ fontWeight: 600, color: '#92610a' }}>💡 ¿Le ofrecemos también?</span>
+      {sugerencias.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          onClick={() => onAgregar(s)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px',
+            border: '1px solid #f0c14b', borderRadius: '999px', background: '#fff', cursor: 'pointer'
+          }}
+        >
+          <span>{s.nombre}</span>
+          <span style={{ color: '#667085' }}>${fmt(s.precio2)}</span>
+          <span style={{ fontWeight: 700, color: '#0b4f9e' }}>+</span>
+        </button>
+      ))}
+    </div>
+  );
+}

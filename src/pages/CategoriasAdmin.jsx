@@ -77,6 +77,12 @@ export default function CategoriasAdmin() {
     cargar();
   };
 
+  const handleToggleVentaCruzada = async (c) => {
+    const res = await window.api.toggleCategoryVentaCruzada(c.id);
+    if (!res.ok) { alert(res.message); return; }
+    cargar();
+  };
+
   return (
     <div>
       <h1>Gestion de categorias</h1>
@@ -109,7 +115,13 @@ export default function CategoriasAdmin() {
               </span>
             ) : (
               <>
-                <span>{c.nombre}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  {c.nombre}
+                  <label style={{ fontSize: '0.72rem', color: '#667085', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 400 }}>
+                    <input type="checkbox" checked={!!c.sugerir_venta_cruzada} onChange={() => handleToggleVentaCruzada(c)} />
+                    Sugerir al facturar un equipo
+                  </label>
+                </span>
                 <span style={{ display: 'flex', gap: '0.4rem' }}>
                   <button onClick={() => abrirEdicion(c)}>Editar</button>
                   <button onClick={() => handleEliminar(c)}>Eliminar</button>
