@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
+import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
 import { generarCargoDescargoDocumentoPDF } from '../utils/generarCargoDescargoPDF.js';
 import { fmt } from '../utils/format.js';
 
@@ -468,6 +469,12 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
   const [cantidadRango, setCantidadRango] = useState('');
   const [procesandoRango, setProcesandoRango] = useState(false);
 
+  // Igual que en Compras: si el producto que se quiere cargar todavia no existe en el sistema,
+  // se puede crear "al vuelo" sin salir de esta pantalla, con la misma ventana (ProductoRapidoModal).
+  // Se restringe al tipo de la pestana activa (equipo/simcard/usim/accesorio) para que el producto
+  // creado quede disponible de inmediato en el selector de abajo.
+  const [mostrarModalProductoNuevo, setMostrarModalProductoNuevo] = useState(false);
+
   const codigoInputRef = useRef(null);
   const esAccesorio = tipoActivo === 'accesorio';
   const permiteRango = tipoActivo === 'simcard' || tipoActivo === 'usim';
@@ -485,6 +492,12 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
     setTipoActivo(key);
     setErrorLocal('');
     setMostrarRango(false);
+  };
+
+  const handleProductoNuevoCreado = async (productoCreado) => {
+    setMostrarModalProductoNuevo(false);
+    await cargarProductos();
+    setProductoId(String(productoCreado.id));
   };
 
   // El input de codigo/IMEI se enfoca de nuevo automaticamente, tanto al elegir producto como
@@ -593,12 +606,28 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
       </div>
 
       <label>Producto</label>
-      <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
-        <option value="">-- Selecciona --</option>
-        {productos.map((p) => (
-          <option key={p.id} value={p.id}>{p.nombre} (stock: {p.stock_disponible})</option>
-        ))}
-      </select>
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <select value={productoId} onChange={(e) => setProductoId(e.target.value)} style={{ flex: 1 }}>
+          <option value="">-- Selecciona --</option>
+          {productos.map((p) => (
+            <option key={p.id} value={p.id}>{p.nombre} (stock: {p.stock_disponible})</option>
+          ))}
+        </select>
+        <button type="button" onClick={() => setMostrarModalProductoNuevo(true)} style={{ whiteSpace: 'nowrap' }}>
+          + Crear producto nuevo
+        </button>
+      </div>
+      <p style={{ fontSize: '0.78rem', color: '#667085', margin: '0.3rem 0 0' }}>
+        ¿El producto que vas a cargar todavía no existe? Créalo aquí mismo, sin salir de esta pantalla.
+      </p>
+
+      {mostrarModalProductoNuevo && (
+        <ProductoRapidoModal
+          tiposPermitidos={[tipoActivo]}
+          onConfirm={handleProductoNuevoCreado}
+          onCancel={() => setMostrarModalProductoNuevo(false)}
+        />
+      )}
 
       {productoId && esAccesorio && (
         <form onSubmit={handleAgregarAccesorio} style={{ marginTop: '0.6rem' }}>
