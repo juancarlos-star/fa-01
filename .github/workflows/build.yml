@@ -33,7 +33,7 @@ jobs:
           module.exports = {
             remitente: 'movisync1@gmail.com',
             password: '${CORREO_ACTIVACION_PASSWORD}',
-            destino: 'movisync1@gmail.com'
+            destino: 'jctecnologia.sys@gmail.com'
           };
           EOF
 
