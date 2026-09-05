@@ -3,6 +3,7 @@ import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { fmt } from '../utils/format.js';
 import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
 import SeleccionUnidadesModal from '../components/SeleccionUnidadesModal.jsx';
+import BuscadorProductoInput from '../components/BuscadorProductoInput.jsx';
 
 export default function Facturacion({ currentUser, modo = 'factura' }) {
   // modo='notaVenta': mismo modulo, pero IVA siempre 0%, numeracion propia (separada de
@@ -56,6 +57,28 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
   const codigoRef = useRef(null);
   const cantidadRef = useRef(null);
   const cedulaRef = useRef(null);
+
+  // Lista de TODOS los productos (los 4 tipos), cargada una sola vez y cuando cambia el
+  // deposito, para alimentar el desplegable de sugerencias de BuscadorProductoInput mientras se
+  // escribe. Aqui SOLO es una ayuda visual para encontrar el nombre mas rapido -no reemplaza la
+  // busqueda exacta contra la base de datos (buscarProductoPorCodigoEnter, mas abajo), que sigue
+  // siendo la unica que valida stock, deposito y disponibilidad real antes de agregar a la
+  // factura. A diferencia de Compras/Cargos, aqui NO se puede crear un producto nuevo si no
+  // aparece en las sugerencias (no tendria sentido vender algo que no existe en el inventario).
+  const [productosParaSugerencias, setProductosParaSugerencias] = useState([]);
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const [equipo, simcard, usim, accesorio] = await Promise.all([
+        window.api.listProducts('equipo', undefined, depositoId ? Number(depositoId) : undefined),
+        window.api.listProducts('simcard', undefined, depositoId ? Number(depositoId) : undefined),
+        window.api.listProducts('usim', undefined, depositoId ? Number(depositoId) : undefined),
+        window.api.listProducts('accesorio', undefined, depositoId ? Number(depositoId) : undefined)
+      ]);
+      if (!cancelado) setProductosParaSugerencias([...equipo, ...simcard, ...usim, ...accesorio]);
+    })();
+    return () => { cancelado = true; };
+  }, [depositoId]);
 
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
@@ -178,9 +201,9 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
   const codigosEnCarritoSet = () =>
     new Set(carrito.filter((i) => i.codigo).map((i) => i.codigo.toLowerCase()));
 
-  const buscarProductoPorCodigoEnter = async () => {
+  const buscarProductoPorCodigoEnter = async (textoOverride) => {
     setErrorFila('');
-    const texto = filaCodigo.trim();
+    const texto = (textoOverride ?? filaCodigo).trim();
     if (!texto) return;
     if (!depositoId) {
       setErrorFila('Selecciona primero el deposito');
@@ -702,13 +725,18 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
             <tr className="fila-entrada">
               <td>
                 {!filaProducto ? (
-                  <input
-                    ref={codigoRef}
-                    type="text"
+                  <BuscadorProductoInput
+                    inputRef={codigoRef}
                     placeholder="Código + Enter"
                     value={filaCodigo}
-                    onChange={(e) => setFilaCodigo(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarProductoPorCodigoEnter(); } }}
+                    onChangeValue={setFilaCodigo}
+                    productos={productosParaSugerencias}
+                    onSeleccionar={(p) => {
+                      const texto = p.codigo_producto || p.nombre;
+                      setFilaCodigo(texto);
+                      buscarProductoPorCodigoEnter(texto);
+                    }}
+                    onEnterSinSeleccion={() => buscarProductoPorCodigoEnter()}
                     disabled={buscandoCodigo}
                   />
                 ) : (

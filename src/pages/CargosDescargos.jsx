@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
 import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
+import BuscadorProductoInput from '../components/BuscadorProductoInput.jsx';
 import { generarCargoDescargoDocumentoPDF } from '../utils/generarCargoDescargoPDF.js';
 import { fmt } from '../utils/format.js';
 
@@ -457,6 +458,7 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
   const [tipoActivo, setTipoActivo] = useState('equipo');
   const [productos, setProductos] = useState([]);
   const [productoId, setProductoId] = useState('');
+  const [busquedaProducto, setBusquedaProducto] = useState('');
   const [costo, setCosto] = useState('');
   const [codigo, setCodigo] = useState('');
   const [cantidad, setCantidad] = useState('');
@@ -497,6 +499,7 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
     } else {
       setProductoId('');
     }
+    setBusquedaProducto('');
   }, [tipoActivo, depositoId]);
 
   useEffect(() => { cargarProductos(); }, [cargarProductos]);
@@ -509,6 +512,7 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
 
   const handleProductoNuevoCreado = (productoCreado) => {
     setMostrarModalProductoNuevo(false);
+    setBusquedaProducto('');
     productoIdAConservarRef.current = productoCreado.id;
     if (productoCreado.tipo !== tipoActivo) {
       // Cambia de pestana al tipo del producto recien creado (ej. se creo un Accesorio estando
@@ -517,6 +521,24 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
       setTipoActivo(productoCreado.tipo);
     } else {
       cargarProductos();
+    }
+  };
+
+  // Enter en el buscador de producto SIN ninguna sugerencia resaltada en el desplegable: busca
+  // una coincidencia EXACTA (nombre o codigo) dentro de la lista ya cargada de este tipo; si no
+  // hay ninguna, abre "Crear producto nuevo" con lo que se escribio precargado.
+  const buscarProductoPorNombreEnter = () => {
+    setErrorLocal('');
+    const texto = busquedaProducto.trim().toLowerCase();
+    if (!texto) return;
+    const encontrado = productos.find(
+      (p) => p.nombre.toLowerCase() === texto || (p.codigo_producto || '').toLowerCase() === texto
+    );
+    if (encontrado) {
+      setProductoId(String(encontrado.id));
+      setBusquedaProducto('');
+    } else {
+      setMostrarModalProductoNuevo(true);
     }
   };
 
@@ -627,12 +649,28 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
 
       <label>Producto</label>
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-        <select value={productoId} onChange={(e) => setProductoId(e.target.value)} style={{ flex: 1 }}>
-          <option value="">-- Selecciona --</option>
-          {productos.map((p) => (
-            <option key={p.id} value={p.id}>{p.nombre} (stock: {p.stock_disponible})</option>
-          ))}
-        </select>
+        {producto ? (
+          <div style={{
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: '0.5rem', padding: '0.4rem 0.6rem', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#f9fafb'
+          }}>
+            <span>{producto.nombre} <span style={{ color: '#667085', fontSize: '0.85rem' }}>(stock: {producto.stock_disponible})</span></span>
+            <button type="button" onClick={() => setProductoId('')} style={{ fontSize: '0.78rem', padding: '2px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', cursor: 'pointer' }}>
+              Cambiar
+            </button>
+          </div>
+        ) : (
+          <div style={{ flex: 1 }}>
+            <BuscadorProductoInput
+              placeholder="Nombre o código del producto + Enter"
+              value={busquedaProducto}
+              onChangeValue={setBusquedaProducto}
+              productos={productos}
+              onSeleccionar={(p) => { setProductoId(String(p.id)); setBusquedaProducto(''); }}
+              onEnterSinSeleccion={buscarProductoPorNombreEnter}
+            />
+          </div>
+        )}
         <button type="button" onClick={() => setMostrarModalProductoNuevo(true)} style={{ whiteSpace: 'nowrap' }}>
           + Crear producto nuevo
         </button>
@@ -643,6 +681,7 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
 
       {mostrarModalProductoNuevo && (
         <ProductoRapidoModal
+          codigoInicial={busquedaProducto}
           tiposPermitidos={['equipo', 'simcard', 'usim', 'accesorio']}
           onConfirm={handleProductoNuevoCreado}
           onCancel={() => setMostrarModalProductoNuevo(false)}
