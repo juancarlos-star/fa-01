@@ -4067,6 +4067,37 @@ ipcMain.handle('reportes:inventarioProductos', (event, { depositoId } = {}) => {
   return obtenerReporteInventarioProductos(db, depositoId);
 });
 
+// ---------------- Catálogo/vitrina para WhatsApp ----------------
+
+// Lista SOLO lo que hay disponible ahora mismo (stock > 0), tomado del inventario real -nunca
+// una lista aparte que se pueda desactualizar-, opcionalmente filtrada por tipo (ej. solo
+// telefonos). Sin datos de dinero interno (costo) porque esto se comparte con clientes.
+ipcMain.handle('reportes:catalogo', (event, { tipo } = {}) => {
+  const db = getDb();
+  const tasaCambio = parseFloat(db.prepare("SELECT value FROM settings WHERE key = 'tasa_cambio'").get()?.value) || 1;
+  const productos = tipo
+    ? db.prepare('SELECT * FROM products WHERE tipo = ? ORDER BY categoria, nombre').all(tipo)
+    : db.prepare('SELECT * FROM products ORDER BY tipo, categoria, nombre').all();
+
+  const disponibles = productos
+    .map((p) => {
+      const stock = obtenerStockPorDepositoDeProducto(db, p).reduce((acc, d) => acc + d.cantidad, 0);
+      const precioUsd = p.precio2 || 0;
+      return {
+        id: p.id,
+        tipo: p.tipo,
+        nombre: p.nombre,
+        categoria: p.categoria,
+        stock,
+        precioUsd,
+        precioBs: precioUsd * tasaCambio
+      };
+    })
+    .filter((p) => p.stock > 0);
+
+  return { ok: true, productos: disponibles, tasaCambio };
+});
+
 // "Stock muerto": productos que TIENEN existencia ahora mismo pero llevan mucho tiempo sin
 // venderse (o nunca se han vendido). Para cada producto con stock > 0 se busca la fecha de su
 // ultima venta (la factura mas reciente que NO sea devolucion donde aparecio ese product_id);

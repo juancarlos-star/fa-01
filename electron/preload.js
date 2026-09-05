@@ -137,6 +137,7 @@ contextBridge.exposeInMainWorld('api', {
   getReporteProductosVendidos: (desde, hasta, tipo, productId) =>
     ipcRenderer.invoke('reportes:productosVendidos', { desde, hasta, tipo, product_id: productId }),
   getReporteMargenPorProducto: (desde, hasta) => ipcRenderer.invoke('reportes:margenPorProducto', { desde, hasta }),
+  getCatalogoVigente: (tipo) => ipcRenderer.invoke('reportes:catalogo', { tipo }),
   getReporteClientesResumen: () => ipcRenderer.invoke('reportes:clientesResumen'),
   getReporteClienteHistorial: (clienteId) => ipcRenderer.invoke('reportes:clienteHistorial', { clienteId }),
   getReporteVendedoresPeriodo: (desde, hasta, agrupacion) => ipcRenderer.invoke('reportes:vendedoresPeriodo', { desde, hasta, agrupacion }),
