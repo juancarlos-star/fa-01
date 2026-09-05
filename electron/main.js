@@ -1562,20 +1562,28 @@ ipcMain.handle('licencia:activar', (event, { codigo }) => {
   return { ok: true };
 });
 
-// Cuenta de correo propia del desarrollador/vendedor de MoviSync (fija en el codigo, no
-// configurable desde la app): se usa SOLO para que la pantalla de Activacion pueda avisar
-// automaticamente cuando un equipo nuevo necesita una clave, sin depender de que el negocio
-// que instala el programa haya configurado su propio correo (a esa altura, el cliente ni
-// siquiera pudo entrar todavia a Configuracion). Reutiliza la cuenta de Gmail que ya se usa
-// como remitente por defecto de "Email Reportes", asi no hace falta gestionar credenciales
-// nuevas para esto.
-const CORREO_SOLICITUDES_ACTIVACION = {
-  host: 'smtp.gmail.com',
-  port: 465,
-  remitente: 'ashleyreportes@gmail.com',
-  password: 'fruo hxvl kcex knrz',
-  destino: 'jcpublicidad4@gmail.com'
-};
+// Cuenta de correo propia del desarrollador/vendedor de MoviSync: se usa SOLO para que la
+// pantalla de Activacion pueda avisar automaticamente cuando un equipo nuevo necesita una
+// clave, sin depender de que el negocio que instala el programa haya configurado su propio
+// correo (a esa altura, el cliente ni siquiera pudo entrar todavia a Configuracion).
+//
+// Las credenciales viven en electron/config-correo-privado.js, un archivo que NO se sube a
+// GitHub (ver .gitignore) -antes estaban escritas directo aqui, lo cual las dejaba expuestas en
+// el codigo fuente. Si ese archivo no existe (por ejemplo, alguien clona el repositorio sin
+// copiarlo primero), esta funcion queda desactivada en vez de romper el resto de la app.
+let CORREO_SOLICITUDES_ACTIVACION = null;
+try {
+  const credencialesPrivadas = require('./config-correo-privado');
+  CORREO_SOLICITUDES_ACTIVACION = {
+    host: 'smtp.gmail.com',
+    port: 465,
+    remitente: credencialesPrivadas.remitente,
+    password: credencialesPrivadas.password,
+    destino: credencialesPrivadas.destino
+  };
+} catch (err) {
+  console.warn('No se encontro electron/config-correo-privado.js: el aviso automatico de nuevas activaciones queda desactivado.');
+}
 
 // Envia por correo el ID de este equipo al vendedor del programa, para que pueda generarle la
 // clave de activacion sin que el cliente tenga que copiarlo y mandarlo el mismo. Se manda como
@@ -1584,6 +1592,9 @@ const CORREO_SOLICITUDES_ACTIVACION = {
 // "Reenviar solicitud" en la pantalla permite forzarlo de nuevo si hizo falta (ej. no habia
 // internet la primera vez).
 ipcMain.handle('licencia:enviarSolicitud', async (event, { forzar } = {}) => {
+  if (!CORREO_SOLICITUDES_ACTIVACION) {
+    return { ok: false, message: 'El aviso automático por correo no está configurado en este equipo de desarrollo.' };
+  }
   const db = getDb();
   const machineId = obtenerMachineId(app);
   const yaAvisado = db.prepare("SELECT value FROM settings WHERE key = 'licencia_solicitud_enviada_id'").get()?.value;
