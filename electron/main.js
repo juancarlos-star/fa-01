@@ -351,16 +351,14 @@ ipcMain.handle('pdf:guardarYAbrir', async (event, { nombreArchivo, base64, subca
   try {
     const filePath = prepararGuardadoPDF(nombreArchivo, base64, subcarpeta);
     shell.showItemInFolder(filePath);
-    // El Explorador de Windows que acaba de abrirse le roba el foco del sistema operativo a la
-    // ventana de MoviSync. Sin este refocus explicito, la ventana se queda "inactiva" para
-    // Windows -aunque se vea normal en pantalla- y deja de recibir lo que se escribe en
-    // CUALQUIER campo, hasta que el usuario le hace click manualmente. El setTimeout le da
-    // tiempo a Windows de terminar de abrir el Explorador antes de reclamar el foco de vuelta
-    // (si se llama de inmediato, a veces el propio Explorador lo vuelve a tomar un instante
-    // despues, dejando el bug intacto).
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus();
-    }, 400);
+    // A proposito NO se le devuelve el foco a la ventana de MoviSync aqui (a diferencia de otros
+    // flujos automaticos del sistema). Este handler SOLO se dispara cuando el usuario pidio
+    // explicitamente "Descargar PDF" o "Reimprimir PDF" -es decir, quiere justamente IRSE a mirar
+    // el Explorador de Windows-, asi que reclamar el foco de vuelta a los pocos milisegundos
+    // termina tapando el Explorador que se acaba de abrir casi de inmediato (se ve como si "se
+    // cerrara solo" sin dejar tiempo a verlo). Si despues de cerrar el Explorador el teclado
+    // llega a quedar sin responder dentro de la app, un click en cualquier parte de la ventana
+    // lo restablece -ese pequeño paso manual es preferible a no poder ver el archivo nunca-.
     return { ok: true, path: filePath };
   } catch (err) {
     console.error('Error guardando PDF', err);
