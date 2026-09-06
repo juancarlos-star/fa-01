@@ -709,6 +709,23 @@ function initDb() {
       costo_unitario_usd REAL NOT NULL DEFAULT 0,
       FOREIGN KEY (factura_id) REFERENCES facturas(id)
     );
+    -- Rastro de auditoria de facturas/notas de venta eliminadas: "Eliminar" las hace desaparecer
+    -- de los reportes normales (eso sigue igual), pero queda esta constancia -quien la borro,
+    -- cuando, cual era, y por que- para que el dueño del negocio pueda revisar despues si algo
+    -- no le cuadra. No se puede editar ni borrar desde la app (solo se inserta aqui).
+    CREATE TABLE IF NOT EXISTS facturas_eliminadas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      factura_id INTEGER NOT NULL,
+      numero_factura TEXT,
+      es_nota_venta INTEGER NOT NULL DEFAULT 0,
+      cliente_nombre TEXT,
+      total_usd REAL,
+      total_bs REAL,
+      fecha_original TEXT,
+      usuario_elimino TEXT,
+      motivo TEXT NOT NULL,
+      eliminado_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS compras_encabezado (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       proveedor TEXT NOT NULL,

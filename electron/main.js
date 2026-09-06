@@ -2410,7 +2410,11 @@ ipcMain.handle('facturas:detalle', (event, { id }) => {
   return { ok: true, factura, items };
 });
 
-ipcMain.handle('facturas:eliminar', (event, { id }) => {
+ipcMain.handle('facturas:eliminar', (event, { id, motivo }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
+  const motivoLimpio = (motivo || '').trim();
+  if (!motivoLimpio) return { ok: false, message: 'Escribe el motivo de la eliminación' };
   const db = getDb();
   const factura = db.prepare('SELECT * FROM facturas WHERE id = ?').get(id);
   if (!factura) return { ok: false, message: 'Factura no encontrada' };
@@ -2424,11 +2428,40 @@ ipcMain.handle('facturas:eliminar', (event, { id }) => {
         db.prepare('UPDATE products SET stock_cantidad = stock_cantidad + ? WHERE id = ?').run(item.cantidad, item.product_id);
       }
     });
+    // Antes de borrarla de verdad, se deja una constancia en "facturas_eliminadas" -que numero
+    // tenia, quien la elimino, cuando, y por que- para que quede algo que auditar despues, aunque
+    // la factura en si ya no aparezca en ningun reporte normal.
+    db.prepare(
+      `INSERT INTO facturas_eliminadas
+       (factura_id, numero_factura, es_nota_venta, cliente_nombre, total_usd, total_bs, fecha_original, usuario_elimino, motivo, eliminado_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))`
+    ).run(
+      factura.id,
+      factura.numero_factura,
+      factura.es_nota_venta ? 1 : 0,
+      factura.cliente_nombre,
+      factura.total_usd,
+      factura.total_bs,
+      factura.created_at,
+      sesionActual?.username || '',
+      motivoLimpio
+    );
     db.prepare('DELETE FROM factura_items WHERE factura_id = ?').run(id);
     db.prepare('DELETE FROM facturas WHERE id = ?').run(id);
   });
   transaccion();
   return { ok: true };
+});
+
+// Solo para el administrador: historial de todas las facturas/notas de venta que se han
+// eliminado, con quien las borro, cuando, y por que -para poder revisar despues si algo no
+// cuadra en las cuentas (por ejemplo, si un total de ventas de un dia se ve mas bajo de lo
+// esperado).
+ipcMain.handle('facturas:listarEliminadas', () => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
+  const db = getDb();
+  return db.prepare('SELECT * FROM facturas_eliminadas ORDER BY id DESC').all();
 });
 
 // ---------- IPC: Devolucion de Facturas (ventas) ----------
