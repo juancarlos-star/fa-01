@@ -838,7 +838,7 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
 
       <div className="pos-footer-actions">
         <span style={{ marginRight: '16px', color: '#667085', fontSize: '0.85rem', alignSelf: 'center' }}>
-          Tasa: {tasaCambio} Bs/USD — Total en Bs: <strong>Bs {fmt(totalBs)}</strong>
+          Tasa: {tasaCambio} Bs/USD — Total: <strong>${fmt(total)}</strong> — Total en Bs: <strong>Bs {fmt(totalBs)}</strong>
         </span>
         <button type="button" className="pos-btn-totalizar" onClick={handleTotalizar} disabled={emitiendo}>
           {emitiendo ? 'Totalizando...' : 'F10 Totalizar'}
