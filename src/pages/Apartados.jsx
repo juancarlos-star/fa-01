@@ -63,14 +63,21 @@ function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, on
     : Math.round((apartado.total_usd - apartado.abonado_usd) * 100) / 100;
   const [imprimiendo, setImprimiendo] = useState(false);
   const [procesandoFactura, setProcesandoFactura] = useState(false);
+  const [errorImprimir, setErrorImprimir] = useState('');
   // Solo tiene sentido ofrecer facturar/nota de venta desde aqui si el apartado sigue 'activo'
   // (o sea, todavia nadie eligio que hacer con el) y ya quedo pagado del todo.
   const puedeFacturarAhora = saldo <= 0.005 && apartado.estado === 'activo' && onFacturar;
 
   const handleImprimir = async () => {
     setImprimiendo(true);
+    setErrorImprimir('');
     try {
       await onImprimir();
+    } catch (err) {
+      // Si algo se rompe generando el PDF, que se note -antes quedaba en silencio y parecia
+      // que el boton "no hacia nada".
+      console.error('Error generando el recibo de abono:', err);
+      setErrorImprimir('No se pudo generar el recibo: ' + (err?.message || String(err)));
     } finally {
       setImprimiendo(false);
     }
@@ -139,6 +146,7 @@ function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, on
           )}
           <button onClick={onCerrar}>Cerrar</button>
         </div>
+        {errorImprimir && <p style={{ color: '#b42318', marginTop: 8, marginBottom: 0, fontSize: '0.85rem' }}>{errorImprimir}</p>}
       </div>
     </div>
   );
