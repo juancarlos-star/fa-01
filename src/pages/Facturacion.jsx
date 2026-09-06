@@ -5,7 +5,7 @@ import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
 import SeleccionUnidadesModal from '../components/SeleccionUnidadesModal.jsx';
 import BuscadorProductoInput from '../components/BuscadorProductoInput.jsx';
 
-export default function Facturacion({ currentUser, modo = 'factura' }) {
+export default function Facturacion({ currentUser, modo = 'factura', apartadoOrigen, onApartadoOrigenConsumido }) {
   // modo='notaVenta': mismo modulo, pero IVA siempre 0%, numeracion propia (separada de
   // Factura) y textos ajustados. Se guarda en la misma tabla facturas (columna es_nota_venta),
   // asi que los reportes de ventas/ganancias ya la toman en cuenta sin cambios aparte.
@@ -82,6 +82,78 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
 
   const [carrito, setCarrito] = useState([]);
   const [error, setError] = useState('');
+
+  // Precarga de un Apartado ("Generar factura" / "Nota de venta" desde Apartados.jsx): se
+  // aplica UNA sola vez (la ref evita repetirlo si el componente se vuelve a renderizar).
+  // Los accesorios se agregan directo al carrito -no necesitan IMEI-. El primer producto con
+  // seguimiento por unidad (equipo/simcard/usim) se deja cargado en la fila de entrada, tal
+  // cual como si el vendedor lo hubiera buscado el mismo, para que el flujo normal le pida el
+  // IMEI/codigo (el selector de unidades, o escanearlo) -asi nunca se factura un equipo sin
+  // pasar por ese paso-. Si hay mas de uno de este tipo, se avisa para cargar los demas a mano.
+  const apartadoOrigenAplicadoRef = useRef(false);
+  useEffect(() => {
+    if (!apartadoOrigen || apartadoOrigenAplicadoRef.current) return;
+    if (apartadoOrigen.depositoId && String(depositoId) !== String(apartadoOrigen.depositoId)) {
+      setDepositoId(String(apartadoOrigen.depositoId));
+      return; // se vuelve a ejecutar este efecto cuando cambie depositoId y recargue productosParaSugerencias
+    }
+    if (productosParaSugerencias.length === 0) return; // todavia cargando el inventario de este deposito
+
+    apartadoOrigenAplicadoRef.current = true;
+
+    (async () => {
+      if (apartadoOrigen.clienteId) {
+        const cli = await window.api.obtenerClientePorId(apartadoOrigen.clienteId);
+        if (cli) {
+          setClienteSeleccionado(cli);
+          setCedula(cli.rif_cedula || '');
+        }
+      }
+
+      const itemsConProducto = (apartadoOrigen.items || []).map((it) => ({
+        ...it,
+        producto: productosParaSugerencias.find((p) => p.id === it.product_id)
+      })).filter((it) => it.producto);
+
+      const accesorios = itemsConProducto.filter((it) => it.producto.tipo === 'accesorio');
+      const conUnidad = itemsConProducto.filter((it) => it.producto.tipo !== 'accesorio');
+
+      if (accesorios.length > 0) {
+        setCarrito((prev) => [
+          ...prev,
+          ...accesorios.map((it) => ({
+            key: `apartado-${it.id}`,
+            product_id: it.product_id,
+            tipo: 'accesorio',
+            descripcion: it.producto.nombre,
+            producto_codigo: it.producto.codigo_producto || null,
+            codigo: it.producto.codigo_producto || null,
+            cantidad: it.cantidad,
+            precio_unitario: it.precio_unitario_usd
+          }))
+        ]);
+      }
+
+      if (conUnidad.length > 0) {
+        const primero = conUnidad[0];
+        setFilaProducto(primero.producto);
+        setFilaCantidad(primero.cantidad);
+        setFilaPrecio(String(primero.precio_unitario_usd || primero.producto.precio2 || ''));
+        const unidades = await window.api.listUnits(primero.producto.id, Number(apartadoOrigen.depositoId));
+        setFilaUnidadesDisponibles(unidades.filter((u) => u.estado === 'disponible'));
+        if (conUnidad.length > 1) {
+          setError(
+            `Este apartado también incluye "${conUnidad.slice(1).map((x) => x.producto.nombre).join(', ')}" — ` +
+            'agrégalo(s) escribiendo su código en la casilla de Código después de terminar con este.'
+          );
+        }
+        setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
+      } else {
+        setTimeout(() => codigoRef.current?.focus(), 0);
+      }
+    })();
+  }, [apartadoOrigen, depositoId, productosParaSugerencias]);
+
   const [confirmacion, setConfirmacion] = useState(null);
   const [keyPendienteQuitar, setKeyPendienteQuitar] = useState(null);
   const [emitiendo, setEmitiendo] = useState(false);
@@ -99,7 +171,9 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
   useEffect(() => {
     window.api.listDepositos(true).then((data) => {
       setDepositos(data);
-      if (data.length > 0) setDepositoId(String(data[0].id));
+      // Si se viene de un Apartado con su propio deposito, ese manda -no se pisa con el
+      // primero de la lista (ver el efecto de precarga de apartadoOrigen mas abajo).
+      if (data.length > 0 && !apartadoOrigen?.depositoId) setDepositoId(String(data[0].id));
     });
   }, []);
 
@@ -492,6 +566,15 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
       setCarrito([]);
       quitarCliente();
       window.api.getSettings().then(setSettings);
+
+      // Si esta factura/nota de venta viene de un Apartado ("Generar factura"/"Nota de venta"
+      // desde Apartados.jsx), se cierra ese apartado dejando constancia del numero de
+      // documento con el que se facturo -recien ahi se libera la reserva de stock que tenia-.
+      if (apartadoOrigen?.apartadoId) {
+        await window.api.completarApartado(apartadoOrigen.apartadoId, res.facturaId, currentUser?.username);
+        onApartadoOrigenConsumido && onApartadoOrigenConsumido();
+      }
+
 
       // La factura se imprime automaticamente al totalizar, sin que el usuario tenga que
       // pedirlo aparte (igual que ya ocurre en Cargos y Descargos). Esto se hace ANTES de
