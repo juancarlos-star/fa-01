@@ -856,6 +856,160 @@ function generarPDFGananciasFondo(reporte, desde, hasta, settings) {
   return { nombre: `Reporte-Ventas-Ganancias_${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
 }
 
+// =========================================================================================
+// STOCK MUERTO -- mismo criterio que la pantalla (Reportes > Inventario > Stock muerto):
+// solo productos con stock > 0 y "diasSinMoverse" >= umbralDias (60 por defecto, igual que
+// el valor inicial que trae la pantalla) entran al listado de "para liquidar".
+// =========================================================================================
+function generarPDFStockMuertoFondo(reporte, settings, umbralDias = 60) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  const colorAcento = [180, 71, 8];
+
+  const yEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 90 });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(colorAcento[0], colorAcento[1], colorAcento[2]);
+  doc.text('REPORTE DE INVENTARIO — STOCK MUERTO', 200, 15, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Productos con ${umbralDias}+ dias sin venderse`, 200, 21, { align: 'right' });
+
+  let y = Math.max(30, yEmpresa + 6);
+  doc.setDrawColor(200);
+  doc.line(10, y, 200, y);
+  y += 6;
+
+  const paraLiquidar = (reporte.productos || []).filter((p) => p.diasSinMoverse >= umbralDias);
+  const capitalEnUmbral = paraLiquidar.reduce((acc, p) => acc + p.capitalInmovilizadoUsd, 0);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(
+    `Productos en ese umbral: ${paraLiquidar.length}   —   Capital inmovilizado en ellos: $${fmt(capitalEnUmbral)}   —   Capital inmovilizado en TODO el stock: $${fmt(reporte.capitalTotalInmovilizado)}`,
+    10,
+    y
+  );
+  y += 6;
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Tipo', 'Codigo', 'Producto', 'Stock', 'Costo', 'Capital', 'Dias sin venderse']],
+    body: paraLiquidar.map((p) => [
+      TIPO_LABEL_INV_FONDO[p.tipo] || p.tipo,
+      p.codigo_producto || '—',
+      p.nombre,
+      String(p.stock),
+      `$${fmt(p.costo_promedio_usd)}`,
+      `$${fmt(p.capitalInmovilizadoUsd)}`,
+      p.nuncaVendido ? `Nunca vendido (${p.diasSinMoverse} dias en inventario)` : `${p.diasSinMoverse} dias`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2 },
+    headStyles: { fillColor: colorAcento, textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 },
+    didDrawPage: () => dibujarPiePaginaEmpresa(doc, settings)
+  });
+
+  if (paraLiquidar.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text('Ningun producto lleva tanto tiempo sin venderse.', 10, y + 6);
+  }
+
+  const fechaArchivo = new Date().toISOString().slice(0, 10);
+  return { nombre: `Reporte-Stock-Muerto_${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
+}
+
+// =========================================================================================
+// MARGEN REAL POR PRODUCTO -- mismo contenido que la pantalla (Reportes > Ventas > Margen
+// real por producto): ganancia y % de margen por producto en el periodo, mas el comparativo
+// por tipo (equipo/simcard/usim/accesorio).
+// =========================================================================================
+function generarPDFMargenProductoFondo(reporte, desde, hasta, settings) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  const colorAcento = [11, 79, 158];
+
+  const yEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 90 });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(colorAcento[0], colorAcento[1], colorAcento[2]);
+  doc.text('MARGEN REAL POR PRODUCTO', 200, 15, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Periodo: ${desde} al ${hasta}`, 200, 21, { align: 'right' });
+
+  let y = Math.max(30, yEmpresa + 6);
+  doc.setDrawColor(200);
+  doc.line(10, y, 200, y);
+  y += 6;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(
+    `Ventas: $${fmt(reporte.totales.ventasUsd)}   —   Costo: $${fmt(reporte.totales.costoUsd)}   —   Ganancia: $${fmt(reporte.totales.gananciaUsd)}   —   Margen: ${fmt(reporte.totales.ventasUsd > 0 ? (reporte.totales.gananciaUsd / reporte.totales.ventasUsd) * 100 : 0)}%`,
+    10,
+    y
+  );
+  y += 8;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Comparativo por tipo', 10, y);
+  autoTable(doc, {
+    startY: y + 3,
+    head: [['Tipo', 'Cantidad', 'Ventas', 'Costo', 'Ganancia', 'Margen %']],
+    body: (reporte.porTipo || []).map((t) => [
+      TIPO_LABEL_INV_FONDO[t.tipo] || t.tipo,
+      String(t.cantidad),
+      `$${fmt(t.ventasUsd)}`,
+      `$${fmt(t.costoUsd)}`,
+      `$${fmt(t.gananciaUsd)}`,
+      `${fmt(t.margenPct)}%`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: colorAcento, textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 }
+  });
+
+  y = doc.lastAutoTable.finalY + 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Ranking por producto', 10, y);
+
+  autoTable(doc, {
+    startY: y + 3,
+    head: [['Producto', 'Tipo', 'Cantidad', 'Ventas', 'Costo', 'Ganancia', 'Margen %']],
+    body: (reporte.productos || []).map((p) => [
+      p.descripcion,
+      TIPO_LABEL_INV_FONDO[p.tipo] || p.tipo,
+      String(p.cantidad),
+      `$${fmt(p.ventasUsd)}`,
+      `$${fmt(p.costoUsd)}`,
+      `$${fmt(p.gananciaUsd)}`,
+      `${fmt(p.margenPct)}%`
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2 },
+    headStyles: { fillColor: colorAcento, textColor: [255, 255, 255] },
+    margin: { left: 10, right: 10 },
+    didDrawPage: () => dibujarPiePaginaEmpresa(doc, settings)
+  });
+
+  if ((reporte.productos || []).length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text('No hubo ventas en este periodo.', 10, y + 6);
+  }
+
+  const fechaArchivo = new Date().toISOString().slice(0, 10);
+  return { nombre: `Reporte-Margen-Por-Producto_${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
+}
+
 module.exports = {
   fmt,
   agruparItemsPorProducto,
@@ -868,5 +1022,7 @@ module.exports = {
   generarPDFResumenDiarioFondo,
   generarPDFInventarioProductosFondo,
   generarPDFInventarioFisicoFondo,
-  generarPDFGananciasFondo
+  generarPDFGananciasFondo,
+  generarPDFStockMuertoFondo,
+  generarPDFMargenProductoFondo
 };
