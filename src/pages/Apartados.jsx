@@ -44,6 +44,74 @@ function Badge({ estado }) {
   );
 }
 
+// Ventanilla central que se muestra: (1) justo despues de guardar un apartado nuevo, y (2) cada
+// vez que se registra un abono que NO deja el apartado en $0. Muestra un resumen de la
+// transaccion (cliente, producto(s), fecha, cuanto se abono ahora, cuanto queda debiendo) con un
+// boton para imprimir el recibo de ese abono (si hubo uno) y otro para cerrar la ventanilla.
+function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, onCerrar }) {
+  const saldo = apartado.saldo_usd !== undefined
+    ? apartado.saldo_usd
+    : Math.round((apartado.total_usd - apartado.abonado_usd) * 100) / 100;
+  const [imprimiendo, setImprimiendo] = useState(false);
+
+  const handleImprimir = async () => {
+    setImprimiendo(true);
+    try {
+      await onImprimir();
+    } finally {
+      setImprimiendo(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(16, 24, 40, 0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 200,
+        padding: '16px'
+      }}
+    >
+      <div
+        style={{
+          background: '#fff',
+          borderRadius: 12,
+          padding: '1.5rem',
+          width: '100%',
+          maxWidth: 440,
+          boxShadow: '0 20px 40px rgba(0,0,0,0.25)'
+        }}
+      >
+        <h2 style={{ marginTop: 0 }}>
+          {saldo <= 0.005 ? '¡Apartado pagado por completo!' : 'Transacción registrada'}
+        </h2>
+        <p style={{ margin: '4px 0' }}><strong>Cliente:</strong> {apartado.cliente_nombre}{apartado.cliente_telefono ? ` — ${apartado.cliente_telefono}` : ''}</p>
+        <p style={{ margin: '4px 0' }}><strong>Producto(s):</strong> {items.map((it) => `${it.descripcion} (x${it.cantidad})`).join(', ')}</p>
+        <p style={{ margin: '4px 0' }}><strong>Fecha de gestión:</strong> {abono ? abono.created_at : apartado.created_at}</p>
+        <p style={{ margin: '4px 0' }}><strong>Abonado en esta transacción:</strong> ${fmt(abono ? abono.monto_usd : 0)}</p>
+        <p style={{ margin: '4px 0' }}><strong>Total abonado hasta ahora:</strong> ${fmt(apartado.abonado_usd)}</p>
+        <p style={{ margin: '4px 0', fontSize: '1.05rem' }}>
+          <strong>Queda debiendo: </strong>
+          <strong style={{ color: saldo > 0 ? '#b42318' : '#0b8f4e' }}>${fmt(saldo)}</strong>
+        </p>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: '1.25rem', flexWrap: 'wrap' }}>
+          {abono && (
+            <button onClick={handleImprimir} disabled={imprimiendo}>
+              {imprimiendo ? 'Imprimiendo...' : '🖨️ Imprimir recibo'}
+            </button>
+          )}
+          <button onClick={onCerrar}>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Apartados({ currentUser }) {
   const [vista, setVista] = useState('lista'); // 'lista' | 'nuevo' | 'detalle'
   const [filtroEstado, setFiltroEstado] = useState('activo');
@@ -52,6 +120,14 @@ export default function Apartados({ currentUser }) {
   const [apartadoActivoId, setApartadoActivoId] = useState(null);
   const [settings, setSettings] = useState(null);
   useEffect(() => { window.api.getSettings().then(setSettings); }, []);
+
+  // Ventanilla central con el resumen de la ultima transaccion (crear apartado o registrar un
+  // abono): { apartado, items, abono }. abono puede ser null si se guardo el apartado sin abono
+  // inicial -en ese caso el modal no ofrece "Imprimir recibo" porque no hubo dinero de por medio.
+  // Vive aqui (y no dentro de ApartadoNuevo/ApartadoDetalle) para poder mostrarse encima de
+  // cualquiera de las 3 vistas, incluso despues de que "Nuevo apartado" ya regreso a la lista.
+  const [resumenTransaccion, setResumenTransaccion] = useState(null);
+  const cerrarResumen = () => setResumenTransaccion(null);
 
   // Reimprime un recibo YA emitido (no genera un abono nuevo, ni le asigna otro numero -usa el
   // mismo numero_recibo que ya tenia). Sirve tanto desde "Buscar recibo" como desde "Buscar por
@@ -86,6 +162,19 @@ export default function Apartados({ currentUser }) {
     setVista('detalle');
   };
 
+  // Al guardar un apartado nuevo: vuelve a la lista principal (no al detalle) y muestra la
+  // ventanilla de resumen encima de ella.
+  const handleApartadoGuardado = (apartado, items, abono) => {
+    setVista('lista');
+    setResumenTransaccion({ apartado, items, abono: abono || null });
+  };
+
+  // Al registrar un abono desde el detalle: se queda en la misma pantalla (no hace falta volver
+  // a la lista, ya se esta viendo el apartado) y muestra el mismo resumen encima.
+  const handleAbonoRegistrado = (apartado, items, abono) => {
+    setResumenTransaccion({ apartado, items, abono });
+  };
+
   const abrirBuscador = (modo) => {
     setModoBusqueda(modo);
     setTextoBusqueda('');
@@ -116,29 +205,31 @@ export default function Apartados({ currentUser }) {
     }
   };
 
+  // El modal de resumen debe poder mostrarse encima de CUALQUIERA de las 3 vistas (lista, nuevo,
+  // detalle), asi que en vez de "return" por separado para cada vista (como antes), se arma el
+  // contenido en una variable y el modal se agrega siempre al final, fuera del if/else.
+  let contenido;
   if (vista === 'nuevo') {
-    return (
+    contenido = (
       <ApartadoNuevo
         currentUser={currentUser}
         settings={settings}
         onCancelar={() => setVista('lista')}
-        onCreado={(id) => abrirDetalle(id)}
+        onGuardado={handleApartadoGuardado}
       />
     );
-  }
-
-  if (vista === 'detalle' && apartadoActivoId) {
-    return (
+  } else if (vista === 'detalle' && apartadoActivoId) {
+    contenido = (
       <ApartadoDetalle
         id={apartadoActivoId}
         currentUser={currentUser}
         settings={settings}
         onVolver={() => setVista('lista')}
+        onAbonoRegistrado={handleAbonoRegistrado}
       />
     );
-  }
-
-  return (
+  } else {
+    contenido = (
     <div>
       <h1>Apartados</h1>
       <p style={{ color: '#667085', marginTop: '-0.5rem' }}>
@@ -289,11 +380,28 @@ export default function Apartados({ currentUser }) {
         </table>
       )}
     </div>
+    );
+  }
+
+  return (
+    <>
+      {contenido}
+      {resumenTransaccion && (
+        <ModalResumenApartado
+          apartado={resumenTransaccion.apartado}
+          items={resumenTransaccion.items}
+          abono={resumenTransaccion.abono}
+          settings={settings}
+          onImprimir={() => generarReciboAbonoPDF(resumenTransaccion.apartado, resumenTransaccion.items, resumenTransaccion.abono, settings, { imprimir: true })}
+          onCerrar={cerrarResumen}
+        />
+      )}
+    </>
   );
 }
 
 // ---------------- Nuevo apartado ----------------
-function ApartadoNuevo({ currentUser, settings, onCancelar, onCreado }) {
+function ApartadoNuevo({ currentUser, settings, onCancelar, onGuardado }) {
   const [depositos, setDepositos] = useState([]);
   const [depositoId, setDepositoId] = useState('');
   const [productos, setProductos] = useState([]);
@@ -422,13 +530,9 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onCreado }) {
         usuario: currentUser?.username
       });
       if (!res.ok) { setError(res.message || 'No se pudo crear el apartado'); return; }
-      // Si el apartado se creo con un abono inicial (adelanto al momento de apartar), ese
-      // primer pago tambien tiene su propio Recibo de Abono, y se imprime igual que cualquier
-      // otro abono -para el cliente, es lo mismo: entrego dinero, me dan un comprobante-.
-      if (res.abonoInicial) {
-        await generarReciboAbonoPDF(res.apartado, res.items, res.abonoInicial, settings, { imprimir: true });
-      }
-      onCreado(res.apartado.id);
+      // Ya no se imprime automaticamente aqui: se vuelve a la lista principal y se muestra la
+      // ventanilla de resumen (con el boton "Imprimir recibo" si hubo abono inicial).
+      onGuardado(res.apartado, res.items, res.abonoInicial);
     } finally {
       setGuardando(false);
     }
@@ -552,7 +656,7 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onCreado }) {
 }
 
 // ---------------- Detalle de un apartado ----------------
-function ApartadoDetalle({ id, currentUser, settings, onVolver }) {
+function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrado }) {
   const [datos, setDatos] = useState(null);
   const [montoAbono, setMontoAbono] = useState('');
   const [error, setError] = useState('');
@@ -592,9 +696,11 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver }) {
     try {
       const res = await window.api.abonarApartado(id, m, currentUser?.username);
       if (!res.ok) { setError(res.message || 'No se pudo registrar el abono'); return; }
-      await generarReciboAbonoPDF(res.apartado, res.items, res.abono, settings, { imprimir: true });
       setMontoAbono('');
       cargar();
+      // Ya no se imprime automaticamente aqui: se muestra la ventanilla de resumen (con el
+      // boton "Imprimir recibo") encima de esta misma pantalla.
+      onAbonoRegistrado(res.apartado, res.items, res.abono);
     } finally {
       setProcesando(false);
     }
