@@ -13,7 +13,12 @@
 ;   1. Espera en un bucle a que el .exe del instalador realmente termine de cerrarse (recien ahi
 ;      Windows libera el archivo y se puede borrar).
 ;   2. Borra el .exe del instalador.
-;   3. Se borra a si mismo al final, para no dejar ni el .bat temporal.
+;   3. Si el .exe estaba dentro de una carpeta llamada "FacturacionMovistar-instalador" (la que
+;      queda al descomprimir el .zip que se descarga), borra esa carpeta completa y, junto a
+;      ella, el archivo "FacturacionMovistar-instalador.zip" original -asi no queda nada regado
+;      en Descargas. Si el .exe se movio o se corrio desde otra carpeta con otro nombre, no se
+;      borra nada de esto (por seguridad, solo actua sobre esa carpeta puntual).
+;   4. Se borra a si mismo al final, para no dejar ni el .bat temporal.
 !macro customInstall
   FileOpen $0 "$TEMP\movisync_borrar_instalador.bat" w
   FileWrite $0 '@echo off$\r$\n'
@@ -23,6 +28,17 @@
   FileWrite $0 '  timeout /t 1 /nobreak >nul$\r$\n'
   FileWrite $0 '  goto intentar$\r$\n'
   FileWrite $0 ')$\r$\n'
+  FileWrite $0 'for %%C in ("$EXEDIR") do set "CARPETA=%%~nxC"$\r$\n'
+  FileWrite $0 'if /I not "%CARPETA%"=="FacturacionMovistar-instalador" goto finCarpeta$\r$\n'
+  FileWrite $0 'for %%P in ("$EXEDIR\..") do set "PADRE=%%~fP"$\r$\n'
+  FileWrite $0 ':intentarCarpeta$\r$\n'
+  FileWrite $0 'rmdir /s /q "$EXEDIR" >nul 2>&1$\r$\n'
+  FileWrite $0 'if exist "$EXEDIR" ($\r$\n'
+  FileWrite $0 '  timeout /t 1 /nobreak >nul$\r$\n'
+  FileWrite $0 '  goto intentarCarpeta$\r$\n'
+  FileWrite $0 ')$\r$\n'
+  FileWrite $0 'del /f /q "%PADRE%\FacturacionMovistar-instalador.zip" >nul 2>&1$\r$\n'
+  FileWrite $0 ':finCarpeta$\r$\n'
   FileWrite $0 'del /f /q "%~f0"$\r$\n'
   FileClose $0
   Exec '"$SYSDIR\cmd.exe" /c start "" /min "$TEMP\movisync_borrar_instalador.bat"'
