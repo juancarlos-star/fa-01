@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { fmt } from '../utils/format.js';
 import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
 import SelectorProducto from '../components/SelectorProducto.jsx';
+import { generarReciboAbonoPDF } from '../utils/generarReciboAbonoPDF.js';
 
 // Apartados / reservas con abono (feature #8). Diseño acordado con el dueño del negocio:
 //   - Menu propio (este archivo), no un submenu de Reportes.
@@ -49,6 +50,25 @@ export default function Apartados({ currentUser }) {
   const [apartados, setApartados] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [apartadoActivoId, setApartadoActivoId] = useState(null);
+  const [settings, setSettings] = useState(null);
+  useEffect(() => { window.api.getSettings().then(setSettings); }, []);
+
+  // Reimprime un recibo YA emitido (no genera un abono nuevo, ni le asigna otro numero -usa el
+  // mismo numero_recibo que ya tenia). Sirve tanto desde "Buscar recibo" como desde "Buscar por
+  // cliente", donde cada abono listado tiene su propio boton "Reimprimir".
+  const reimprimirRecibo = async (apartado, items, abono) => {
+    await generarReciboAbonoPDF(apartado, items, abono, settings, { imprimir: true });
+  };
+
+  // Buscador: por numero de Recibo de Abono (ej. "45" -> REC-000045), o por cliente (nombre,
+  // cedula/RIF o telefono -coincidencia parcial), para ver de un vistazo todos sus apartados y
+  // todos sus recibos de abono, sin tener que ir entrando uno por uno desde la lista general.
+  const [modoBusqueda, setModoBusqueda] = useState(null); // null | 'recibo' | 'cliente'
+  const [textoBusqueda, setTextoBusqueda] = useState('');
+  const [buscando, setBuscando] = useState(false);
+  const [errorBusqueda, setErrorBusqueda] = useState('');
+  const [resultadoRecibo, setResultadoRecibo] = useState(null);
+  const [resultadoCliente, setResultadoCliente] = useState(null);
 
   const cargarLista = useCallback(async () => {
     setCargando(true);
@@ -66,10 +86,41 @@ export default function Apartados({ currentUser }) {
     setVista('detalle');
   };
 
+  const abrirBuscador = (modo) => {
+    setModoBusqueda(modo);
+    setTextoBusqueda('');
+    setErrorBusqueda('');
+    setResultadoRecibo(null);
+    setResultadoCliente(null);
+  };
+
+  const ejecutarBusqueda = async () => {
+    setErrorBusqueda('');
+    setResultadoRecibo(null);
+    setResultadoCliente(null);
+    if (!textoBusqueda.trim()) return;
+    setBuscando(true);
+    try {
+      if (modoBusqueda === 'recibo') {
+        const res = await window.api.buscarReciboAbonoPorNumero(textoBusqueda.trim());
+        if (!res.ok) { setErrorBusqueda(res.message); return; }
+        setResultadoRecibo(res);
+      } else {
+        const res = await window.api.buscarApartadosPorCliente(textoBusqueda.trim());
+        if (!res.ok) { setErrorBusqueda(res.message); return; }
+        if (res.apartados.length === 0) { setErrorBusqueda('No se encontró ningún apartado de ese cliente.'); return; }
+        setResultadoCliente(res.apartados);
+      }
+    } finally {
+      setBuscando(false);
+    }
+  };
+
   if (vista === 'nuevo') {
     return (
       <ApartadoNuevo
         currentUser={currentUser}
+        settings={settings}
         onCancelar={() => setVista('lista')}
         onCreado={(id) => abrirDetalle(id)}
       />
@@ -81,6 +132,7 @@ export default function Apartados({ currentUser }) {
       <ApartadoDetalle
         id={apartadoActivoId}
         currentUser={currentUser}
+        settings={settings}
         onVolver={() => setVista('lista')}
       />
     );
@@ -93,7 +145,7 @@ export default function Apartados({ currentUser }) {
         Reservas de productos con abono: el cliente separa el producto y lo va pagando poco a poco.
       </p>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '1rem 0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '1rem 0', flexWrap: 'wrap', gap: '8px' }}>
         <div className="reportes-subtabs" style={{ marginBottom: 0 }}>
           {['activo', 'listo_para_entregar', 'completado', 'cancelado', 'todos'].map((e) => (
             <button
@@ -105,8 +157,96 @@ export default function Apartados({ currentUser }) {
             </button>
           ))}
         </div>
-        <button onClick={() => setVista('nuevo')}>+ Nuevo apartado</button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => abrirBuscador('recibo')}>🔎 Buscar recibo</button>
+          <button onClick={() => abrirBuscador('cliente')}>🔎 Buscar por cliente</button>
+          <button onClick={() => setVista('nuevo')}>+ Nuevo apartado</button>
+        </div>
       </div>
+
+      {modoBusqueda && (
+        <div className="form-box" style={{ marginBottom: '1.25rem', background: '#f9fafb' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0 }}>
+              {modoBusqueda === 'recibo' ? 'Buscar Recibo de Abono por número' : 'Buscar apartados por cliente'}
+            </h3>
+            <button onClick={() => abrirBuscador(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '0.5rem', alignItems: 'center' }}>
+            <input
+              autoFocus
+              value={textoBusqueda}
+              onChange={(e) => setTextoBusqueda(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') ejecutarBusqueda(); }}
+              placeholder={modoBusqueda === 'recibo' ? 'Ej: 45 (para REC-000045)' : 'Nombre, cédula/RIF o teléfono del cliente'}
+              style={{ flex: 1, maxWidth: 360 }}
+            />
+            <button onClick={ejecutarBusqueda} disabled={buscando}>{buscando ? 'Buscando...' : 'Buscar'}</button>
+          </div>
+          {errorBusqueda && <p style={{ color: '#b42318', marginBottom: 0 }}>{errorBusqueda}</p>}
+
+          {resultadoRecibo && (
+            <div style={{ marginTop: '1rem', background: '#fff', border: '1px solid #d0d5dd', borderRadius: 8, padding: '0.9rem' }}>
+              <h4 style={{ margin: '0 0 6px' }}>
+                Recibo REC-{String(resultadoRecibo.abono.numero_recibo).padStart(6, '0')}
+              </h4>
+              <p style={{ margin: '2px 0' }}><strong>Cliente:</strong> {resultadoRecibo.apartado.cliente_nombre} {resultadoRecibo.apartado.cliente_telefono ? `— ${resultadoRecibo.apartado.cliente_telefono}` : ''}</p>
+              <p style={{ margin: '2px 0' }}><strong>Apartado N°:</strong> {resultadoRecibo.apartado.numero} <Badge estado={resultadoRecibo.apartado.estado} /></p>
+              <p style={{ margin: '2px 0' }}><strong>Monto abonado en este recibo:</strong> ${fmt(resultadoRecibo.abono.monto_usd)}</p>
+              <p style={{ margin: '2px 0' }}><strong>Fecha:</strong> {resultadoRecibo.abono.created_at} — <strong>Atendido por:</strong> {resultadoRecibo.abono.usuario || '—'}</p>
+              <p style={{ margin: '2px 0' }}><strong>Productos del apartado:</strong> {resultadoRecibo.items.map((it) => it.descripcion).join(', ')}</p>
+              <div style={{ marginTop: '0.6rem', display: 'flex', gap: '8px' }}>
+                <button onClick={() => abrirDetalle(resultadoRecibo.apartado.id)}>Ver apartado completo</button>
+                <button onClick={() => reimprimirRecibo(resultadoRecibo.apartado, resultadoRecibo.items, resultadoRecibo.abono)}>Reimprimir recibo</button>
+              </div>
+            </div>
+          )}
+
+          {resultadoCliente && (
+            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {resultadoCliente.map((a) => (
+                <div key={a.id} style={{ background: '#fff', border: '1px solid #d0d5dd', borderRadius: 8, padding: '0.9rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 style={{ margin: 0 }}>Apartado N° {a.numero} <Badge estado={a.estado} /></h4>
+                    <button onClick={() => abrirDetalle(a.id)}>Ver apartado completo</button>
+                  </div>
+                  <p style={{ margin: '4px 0', fontSize: '0.9rem', color: '#475467' }}>
+                    {a.cliente_nombre} {a.cliente_telefono ? `— ${a.cliente_telefono}` : ''} · {a.deposito_nombre || '—'} · {a.created_at}
+                  </p>
+                  <p style={{ margin: '4px 0', fontSize: '0.9rem' }}>
+                    Productos: {a.items.map((it) => it.descripcion).join(', ')}
+                  </p>
+                  <p style={{ margin: '4px 0', fontSize: '0.9rem' }}>
+                    Total: <strong>${fmt(a.total_usd)}</strong> — Abonado: <strong style={{ color: '#0b8f4e' }}>${fmt(a.abonado_usd)}</strong> — Saldo: <strong style={{ color: a.saldo_usd > 0 ? '#b42318' : '#0b8f4e' }}>${fmt(a.saldo_usd)}</strong>
+                  </p>
+                  {a.abonos.length > 0 && (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '6px', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', borderBottom: '1px solid #eee', color: '#667085' }}>
+                          <th style={{ padding: '4px' }}>Recibo</th>
+                          <th>Fecha</th>
+                          <th>Monto</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {a.abonos.map((ab) => (
+                          <tr key={ab.id} style={{ borderBottom: '1px solid #f2f4f7' }}>
+                            <td style={{ padding: '4px' }}>REC-{String(ab.numero_recibo).padStart(6, '0')}</td>
+                            <td>{ab.created_at}</td>
+                            <td>${fmt(ab.monto_usd)}</td>
+                            <td><button onClick={() => reimprimirRecibo(a, a.items, ab)} style={{ fontSize: '0.78rem' }}>Reimprimir</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {cargando ? (
         <p>Cargando...</p>
@@ -153,7 +293,7 @@ export default function Apartados({ currentUser }) {
 }
 
 // ---------------- Nuevo apartado ----------------
-function ApartadoNuevo({ currentUser, onCancelar, onCreado }) {
+function ApartadoNuevo({ currentUser, settings, onCancelar, onCreado }) {
   const [depositos, setDepositos] = useState([]);
   const [depositoId, setDepositoId] = useState('');
   const [productos, setProductos] = useState([]);
@@ -272,6 +412,12 @@ function ApartadoNuevo({ currentUser, onCancelar, onCreado }) {
         usuario: currentUser?.username
       });
       if (!res.ok) { setError(res.message || 'No se pudo crear el apartado'); return; }
+      // Si el apartado se creo con un abono inicial (adelanto al momento de apartar), ese
+      // primer pago tambien tiene su propio Recibo de Abono, y se imprime igual que cualquier
+      // otro abono -para el cliente, es lo mismo: entrego dinero, me dan un comprobante-.
+      if (res.abonoInicial) {
+        await generarReciboAbonoPDF(res.apartado, res.items, res.abonoInicial, settings, { imprimir: true });
+      }
       onCreado(res.apartado.id);
     } finally {
       setGuardando(false);
@@ -376,7 +522,7 @@ function ApartadoNuevo({ currentUser, onCancelar, onCreado }) {
 }
 
 // ---------------- Detalle de un apartado ----------------
-function ApartadoDetalle({ id, currentUser, onVolver }) {
+function ApartadoDetalle({ id, currentUser, settings, onVolver }) {
   const [datos, setDatos] = useState(null);
   const [montoAbono, setMontoAbono] = useState('');
   const [error, setError] = useState('');
@@ -416,6 +562,7 @@ function ApartadoDetalle({ id, currentUser, onVolver }) {
     try {
       const res = await window.api.abonarApartado(id, m, currentUser?.username);
       if (!res.ok) { setError(res.message || 'No se pudo registrar el abono'); return; }
+      await generarReciboAbonoPDF(res.apartado, res.items, res.abono, settings, { imprimir: true });
       setMontoAbono('');
       cargar();
     } finally {
@@ -507,20 +654,31 @@ function ApartadoDetalle({ id, currentUser, onVolver }) {
 
       <h3 style={{ marginTop: '1.25rem' }}>Abonos</h3>
       {abonos.length === 0 ? <p>Todavía no hay abonos registrados.</p> : (
-        <table style={{ width: '100%', maxWidth: 480, borderCollapse: 'collapse', background: '#fff' }}>
+        <table style={{ width: '100%', maxWidth: 560, borderCollapse: 'collapse', background: '#fff' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Fecha</th>
+              <th style={{ padding: '0.5rem' }}>Recibo</th>
+              <th>Fecha</th>
               <th>Monto</th>
               <th>Usuario</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {abonos.map((ab) => (
               <tr key={ab.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{ab.created_at}</td>
+                <td style={{ padding: '0.5rem' }}>REC-{String(ab.numero_recibo).padStart(6, '0')}</td>
+                <td>{ab.created_at}</td>
                 <td>${fmt(ab.monto_usd)}</td>
                 <td>{ab.usuario || '—'}</td>
+                <td>
+                  <button
+                    style={{ fontSize: '0.78rem' }}
+                    onClick={() => generarReciboAbonoPDF(apartado, items, ab, settings, { imprimir: true })}
+                  >
+                    Reimprimir
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
