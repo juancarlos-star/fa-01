@@ -257,6 +257,13 @@ export default function Apartados({ currentUser, onIrAFacturar }) {
         const res = await window.api.buscarReciboAbonoPorNumero(textoBusqueda.trim());
         if (!res.ok) { setErrorBusqueda(res.message); return; }
         setResultadoRecibo(res);
+      } else if (modoBusqueda === 'numero') {
+        // Este va directo al detalle del apartado (para abonar), no muestra una tarjeta de
+        // resultado aparte como los otros dos modos.
+        const res = await window.api.buscarApartadoPorNumero(textoBusqueda.trim());
+        if (!res.ok) { setErrorBusqueda(res.message); return; }
+        abrirBuscador(null);
+        abrirDetalle(res.apartadoId);
       } else {
         const res = await window.api.buscarApartadosPorCliente(textoBusqueda.trim());
         if (!res.ok) { setErrorBusqueda(res.message); return; }
@@ -314,6 +321,7 @@ export default function Apartados({ currentUser, onIrAFacturar }) {
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button onClick={() => abrirBuscador('recibo')}>🔎 Buscar recibo</button>
+          <button onClick={() => abrirBuscador('numero')}>🔎 Buscar apartado</button>
           <button onClick={() => abrirBuscador('cliente')}>🔎 Buscar por cliente</button>
           <button onClick={() => setVista('nuevo')}>+ Nuevo apartado</button>
         </div>
@@ -323,7 +331,11 @@ export default function Apartados({ currentUser, onIrAFacturar }) {
         <div className="form-box" style={{ marginBottom: '1.25rem', background: '#f9fafb' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0 }}>
-              {modoBusqueda === 'recibo' ? 'Buscar Recibo de Abono por número' : 'Buscar apartados por cliente'}
+              {modoBusqueda === 'recibo'
+                ? 'Buscar Recibo de Abono por número'
+                : modoBusqueda === 'numero'
+                  ? 'Buscar apartado por número (para abonar)'
+                  : 'Buscar apartados por cliente'}
             </h3>
             <button onClick={() => abrirBuscador(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
           </div>
@@ -333,7 +345,13 @@ export default function Apartados({ currentUser, onIrAFacturar }) {
               value={textoBusqueda}
               onChange={(e) => setTextoBusqueda(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') ejecutarBusqueda(); }}
-              placeholder={modoBusqueda === 'recibo' ? 'Ej: 45 (para REC-000045)' : 'Nombre, cédula/RIF o teléfono del cliente'}
+              placeholder={
+                modoBusqueda === 'recibo'
+                  ? 'Ej: 45 o REC-000045'
+                  : modoBusqueda === 'numero'
+                    ? 'Ej: 9'
+                    : 'Nombre, cédula/RIF o teléfono del cliente'
+              }
               style={{ flex: 1, maxWidth: 360 }}
             />
             <button onClick={ejecutarBusqueda} disabled={buscando}>{buscando ? 'Buscando...' : 'Buscar'}</button>
@@ -933,11 +951,24 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
       )}
 
       {apartado.estado === 'listo_para_entregar' && (
-        <div className="form-box" style={{ maxWidth: 420, marginTop: '1rem', background: '#eff8ff' }}>
-          <h4>Cerrar apartado</h4>
+        <div className="form-box" style={{ maxWidth: 420, marginTop: '1rem', background: '#fffaeb', border: '1px solid #fedf89' }}>
+          <h4 style={{ color: '#b54708' }}>⚠️ La factura de este apartado no se completó</h4>
           <p style={{ fontSize: '0.9rem', color: '#475467' }}>
-            Ve a Facturación y genera la factura normal para este cliente. Cuando la tengas, elígela
-            aquí para vincularla (o cierra sin vincular si prefieres no hacerlo).
+            Se intentó facturar (o hacer nota de venta) pero el proceso no se terminó — puede que
+            se haya cerrado el programa o se haya cancelado a mitad de camino. El producto sigue
+            reservado. Puedes intentarlo de nuevo con confianza: el sistema no deja crear una
+            factura duplicada para este apartado.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => handleIrAFacturar('factura')} disabled={procesando}>
+              🧾 Generar factura
+            </button>
+            <button onClick={() => handleIrAFacturar('notaVenta')} disabled={procesando}>
+              📝 Nota de venta
+            </button>
+          </div>
+          <p style={{ fontSize: '0.85rem', color: '#475467', marginTop: '1rem' }}>
+            O si ya la hiciste a mano en Facturación, vincúlala aquí para cerrar el apartado:
           </p>
           <label>Factura de este cliente (opcional)</label>
           <select value={facturaElegida} onChange={(e) => setFacturaElegida(e.target.value)}>

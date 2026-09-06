@@ -626,14 +626,14 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
       quitarCliente();
       window.api.getSettings().then(setSettings);
 
-      // Si esta factura/nota de venta viene de un Apartado ("Generar factura"/"Nota de venta"
-      // desde Apartados.jsx), se cierra ese apartado dejando constancia del numero de
-      // documento con el que se facturo -recien ahi se libera la reserva de stock que tenia-.
+      // Ya NO hace falta llamar aparte a completarApartado: cuando esta factura/nota de venta
+      // viene de un Apartado (apartadoOrigenId), el backend cierra el apartado -y deja
+      // constancia del numero de documento- DENTRO DE LA MISMA TRANSACCION que crea la factura
+      // (ver facturas:crear en electron/main.js). Asi es imposible que quede duplicada o a
+      // medias aunque el programa se cierre justo despues de totalizar.
       if (apartadoOrigen?.apartadoId) {
-        await window.api.completarApartado(apartadoOrigen.apartadoId, res.facturaId, currentUser?.username);
         onApartadoOrigenConsumido && onApartadoOrigenConsumido();
       }
-
 
       // La factura se imprime automaticamente al totalizar, sin que el usuario tenga que
       // pedirlo aparte (igual que ya ocurre en Cargos y Descargos). Esto se hace ANTES de
