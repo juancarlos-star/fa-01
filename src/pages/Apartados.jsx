@@ -139,12 +139,12 @@ function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, on
         )}
 
         <div style={{ display: 'flex', gap: 8, marginTop: '1.25rem', flexWrap: 'wrap' }}>
-          {abono && (
+          {!puedeFacturarAhora && abono && (
             <button onClick={handleImprimir} disabled={imprimiendo}>
               {imprimiendo ? 'Imprimiendo...' : '🖨️ Imprimir recibo'}
             </button>
           )}
-          <button onClick={onCerrar}>Cerrar</button>
+          {!puedeFacturarAhora && <button onClick={onCerrar}>Cerrar</button>}
         </div>
         {errorImprimir && <p style={{ color: '#b42318', marginTop: 8, marginBottom: 0, fontSize: '0.85rem' }}>{errorImprimir}</p>}
       </div>
@@ -181,6 +181,8 @@ export default function Apartados({ currentUser, onIrAFacturar }) {
     if (onIrAFacturar) {
       onIrAFacturar({
         apartadoId: apartado.id,
+        numero: apartado.numero,
+        total: apartado.total_usd,
         depositoId: apartado.deposito_id,
         clienteId: apartado.cliente_id,
         clienteNombre: apartado.cliente_nombre,
@@ -794,6 +796,8 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
       if (!res.ok) { setError(res.message || 'No se pudo actualizar'); return; }
       onIrAFacturar({
         apartadoId: apartado.id,
+        numero: apartado.numero,
+        total: apartado.total_usd,
         depositoId: apartado.deposito_id,
         clienteId: apartado.cliente_id,
         clienteNombre: apartado.cliente_nombre,

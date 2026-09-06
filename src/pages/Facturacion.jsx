@@ -85,12 +85,31 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
 
   // Precarga de un Apartado ("Generar factura" / "Nota de venta" desde Apartados.jsx): se
   // aplica UNA sola vez (la ref evita repetirlo si el componente se vuelve a renderizar).
-  // Los accesorios se agregan directo al carrito -no necesitan IMEI-. El primer producto con
-  // seguimiento por unidad (equipo/simcard/usim) se deja cargado en la fila de entrada, tal
-  // cual como si el vendedor lo hubiera buscado el mismo, para que el flujo normal le pida el
-  // IMEI/codigo (el selector de unidades, o escanearlo) -asi nunca se factura un equipo sin
-  // pasar por ese paso-. Si hay mas de uno de este tipo, se avisa para cargar los demas a mano.
+  // Los accesorios se agregan directo al carrito -no necesitan IMEI-. TODOS los productos con
+  // seguimiento por unidad (equipo/simcard/usim) se van cargando en la fila de entrada UNO POR
+  // UNO, en cola (apartadoCola guarda los que faltan): al completar cada uno (eligiendo su
+  // IMEI/ICCID igual que si el vendedor lo hubiera buscado el mismo) se carga automaticamente
+  // el siguiente, hasta que no quede ninguno. Esto asegura que el total mostrado en pantalla
+  // termine coincidiendo con el total real del apartado, en vez de quedarse a medias con solo
+  // el primer producto (que fue el bug reportado: se facturaba con un monto parcial).
   const apartadoOrigenAplicadoRef = useRef(false);
+  const [apartadoCola, setApartadoCola] = useState([]);
+  const [filaVieneDeApartado, setFilaVieneDeApartado] = useState(false);
+
+  const cargarSiguientePendienteApartado = async (lista) => {
+    const [primero, ...resto] = lista;
+    setFilaVieneDeApartado(true);
+    setFilaProducto(primero.producto);
+    setFilaCantidad(primero.cantidad);
+    setFilaPrecio(String(primero.precio_unitario_usd || primero.producto.precio2 || ''));
+    setFilaUnidadEncontrada(null);
+    const unidades = await window.api.listUnits(primero.producto.id, Number(apartadoOrigen.depositoId));
+    const usados = codigosEnCarritoSet();
+    setFilaUnidadesDisponibles(unidades.filter((u) => u.estado === 'disponible' && !usados.has(u.codigo.toLowerCase())));
+    setApartadoCola(resto);
+    setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
+  };
+
   useEffect(() => {
     if (!apartadoOrigen || apartadoOrigenAplicadoRef.current) return;
     if (apartadoOrigen.depositoId && String(depositoId) !== String(apartadoOrigen.depositoId)) {
@@ -135,19 +154,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
       }
 
       if (conUnidad.length > 0) {
-        const primero = conUnidad[0];
-        setFilaProducto(primero.producto);
-        setFilaCantidad(primero.cantidad);
-        setFilaPrecio(String(primero.precio_unitario_usd || primero.producto.precio2 || ''));
-        const unidades = await window.api.listUnits(primero.producto.id, Number(apartadoOrigen.depositoId));
-        setFilaUnidadesDisponibles(unidades.filter((u) => u.estado === 'disponible'));
-        if (conUnidad.length > 1) {
-          setError(
-            `Este apartado también incluye "${conUnidad.slice(1).map((x) => x.producto.nombre).join(', ')}" — ` +
-            'agrégalo(s) escribiendo su código en la casilla de Código después de terminar con este.'
-          );
-        }
-        setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
+        await cargarSiguientePendienteApartado(conUnidad);
       } else {
         setTimeout(() => codigoRef.current?.focus(), 0);
       }
@@ -272,6 +279,22 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
     setMostrarModalUnidades(false);
   };
 
+  // Se llama despues de agregar exitosamente al carrito el producto que estaba en la fila,
+  // SOLO cuando ese producto veni­a de la cola de un Apartado (filaVieneDeApartado). Si todavia
+  // quedan productos pendientes en la cola, carga el siguiente automaticamente; si no, limpia
+  // la fila y deja el foco listo para seguir agregando productos sueltos a mano.
+  const avanzarColaApartado = () => {
+    if (!filaVieneDeApartado) return false;
+    if (apartadoCola.length > 0) {
+      cargarSiguientePendienteApartado(apartadoCola);
+    } else {
+      setFilaVieneDeApartado(false);
+      limpiarFila();
+      setTimeout(() => codigoRef.current?.focus(), 0);
+    }
+    return true;
+  };
+
   const codigosEnCarritoSet = () =>
     new Set(carrito.filter((i) => i.codigo).map((i) => i.codigo.toLowerCase()));
 
@@ -283,6 +306,11 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
       setErrorFila('Selecciona primero el deposito');
       return;
     }
+    // Si el vendedor decide buscar un codigo distinto a mano mientras todavia habia un producto
+    // de un Apartado cargado en la fila, esa carga automatica queda cancelada -ya no se
+    // considera "pendiente" (sigue quedando en la cola para el aviso del banner, pero no se
+    // vuelve a auto-cargar sola).
+    setFilaVieneDeApartado(false);
     setBuscandoCodigo(true);
     try {
       const p = await window.api.buscarProductoPorCodigo(texto, Number(depositoId));
@@ -428,6 +456,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
           precio_unitario: precioFila()
         }
       ]);
+      if (avanzarColaApartado()) return;
       limpiarFila();
       setTimeout(() => codigoRef.current?.focus(), 0);
     } else {
@@ -451,6 +480,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
       precio_unitario: precioFila()
     }));
     setCarrito((prev) => [...prev, ...nuevosItems]);
+    if (avanzarColaApartado()) return;
     limpiarFila();
     setTimeout(() => codigoRef.current?.focus(), 0);
   };
@@ -518,6 +548,14 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
   const total = subtotal + iva;
   const totalBs = total * tasaCambio;
   const totalPiezas = carrito.reduce((acc, i) => acc + (parseInt(i.cantidad, 10) || 0), 0);
+
+  // Cuantos productos del Apartado de origen todavia no terminan de agregarse a esta factura
+  // (les falta elegir su IMEI/ICCID): el que esta ahora mismo en la fila de entrada (si vino de
+  // la cola) mas los que siguen esperando en la cola. Mientras sea mayor a 0 no se deja
+  // totalizar -asi el total nunca puede quedar "a medias" respecto al total real del apartado-.
+  const pendientesApartado = apartadoOrigen
+    ? apartadoCola.length + (filaVieneDeApartado ? 1 : 0)
+    : 0;
   const numeroSettingKey = esNotaVenta ? 'numero_nota_venta_siguiente' : 'numero_factura_siguiente';
   const numeroFacturaPreview = settings && settings[numeroSettingKey]
     ? String(settings[numeroSettingKey]).padStart(6, '0')
@@ -545,6 +583,26 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
       setError('Selecciona el deposito del cual se factura');
       return;
     }
+    // Si esta factura/nota de venta viene de un Apartado, no se deja totalizar mientras falte
+    // elegir el IMEI/ICCID de alguno de sus productos (quedaria facturando de menos), ni si el
+    // total no coincide con el total real del apartado (por si se quito algun producto a mano).
+    if (apartadoOrigen) {
+      if (pendientesApartado > 0) {
+        setError(
+          `Todavía falta cargar el código (IMEI/ICCID) de ${pendientesApartado} producto(s) de este ` +
+          'apartado antes de poder totalizar.'
+        );
+        return;
+      }
+      if (apartadoOrigen.total != null && Math.abs(total - Number(apartadoOrigen.total)) > 0.01) {
+        setError(
+          `El total de esta ${esNotaVenta ? 'nota de venta' : 'factura'} ($${fmt(total)}) no coincide con ` +
+          `el total del Apartado N° ${apartadoOrigen.numero} ($${fmt(apartadoOrigen.total)}). Revisa los ` +
+          'productos antes de totalizar.'
+        );
+        return;
+      }
+    }
     const cliente = { id: clienteSeleccionado.id };
     totalizandoRef.current = true;
     setEmitiendo(true);
@@ -554,7 +612,8 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
         items: carrito,
         usuario: currentUser?.username,
         depositoId: Number(depositoId),
-        esNotaVenta
+        esNotaVenta,
+        apartadoOrigenId: apartadoOrigen?.apartadoId || null
       });
 
       if (!res.ok) {
@@ -681,6 +740,33 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
         <span className="pos-topbar-center">{esNotaVenta ? 'NOTA DE VENTA' : 'FACTURACIÓN'}</span>
         <span className="pos-topbar-side">MODO: NORMAL</span>
       </div>
+
+      {apartadoOrigen && (
+        <div
+          style={{
+            background: pendientesApartado > 0 ? '#fdf3d9' : '#f0fdf4',
+            border: `1px solid ${pendientesApartado > 0 ? '#f0b429' : '#bbf7d0'}`,
+            borderRadius: 8,
+            padding: '0.6rem 0.9rem',
+            margin: '0.75rem 0',
+            fontSize: '0.88rem'
+          }}
+        >
+          <strong>
+            Completando el Apartado N° {apartadoOrigen.numero} — Total del apartado: ${fmt(apartadoOrigen.total)}
+          </strong>
+          {pendientesApartado > 0 ? (
+            <p style={{ margin: '4px 0 0' }}>
+              ⚠️ Todavía falta cargar el código (IMEI/ICCID) de {pendientesApartado} producto(s) para
+              completar ese total — sigue el paso de Cantidad/Código que está abierto abajo.
+            </p>
+          ) : (
+            <p style={{ margin: '4px 0 0', color: '#0b8f4e' }}>
+              ✓ Todos los productos del apartado ya están cargados. Puedes totalizar.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="pos-panels">
         <div className="pos-left">

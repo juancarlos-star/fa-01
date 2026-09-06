@@ -41,6 +41,13 @@ export default function Facturas({ currentUser }) {
         <p><strong>Cliente:</strong> {factura.cliente_nombre} {factura.cliente_rif ? `(${factura.cliente_rif})` : ''}</p>
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
+        {factura.apartado_origen_id && (
+          <p style={{ color: '#175cd3', background: '#eff8ff', border: '1px solid #b2ddff', borderRadius: 6, padding: '0.5rem 0.75rem', display: 'inline-block' }}>
+            <strong>
+              Esta {factura.es_nota_venta ? 'nota de venta' : 'factura'} corresponde al pago total del Apartado N° {factura.apartado_origen_numero ?? factura.apartado_origen_id}.
+            </strong>
+          </p>
+        )}
         <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         {esAdmin && !factura.es_devolucion && (
           <button onClick={() => handleEliminar(factura.id)} style={{ marginBottom: '1rem', marginLeft: '8px', color: '#b42318' }}>
@@ -101,6 +108,11 @@ export default function Facturas({ currentUser }) {
               <tr key={f.id} style={{ borderBottom: '1px solid #eee', color: f.es_devolucion ? '#b42318' : undefined }}>
                 <td style={{ padding: '0.5rem' }}>
                   {f.es_devolucion ? `Devolución N° ${String(f.numero_devolucion).padStart(6, '0')}` : `#${f.numero_factura || String(f.id).padStart(6, '0')}`}
+                  {f.apartado_origen_id && (
+                    <span style={{ display: 'block', fontSize: '0.72rem', color: '#175cd3' }}>
+                      Apartado N° {f.apartado_origen_numero ?? f.apartado_origen_id}
+                    </span>
+                  )}
                 </td>
                 <td>{f.created_at}</td>
                 <td>{f.cliente_nombre}</td>
