@@ -1,28 +1,45 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 
 /**
  * Selector de producto tipo "combobox": muestra un input de texto que, a medida
  * que el usuario escribe, va filtrando el desplegable para mostrar solo los
- * productos cuyo nombre coincide con lo escrito. Si el campo esta vacio, se
+ * productos cuyo nombre O codigo coincide con lo escrito. Si el campo esta vacio, se
  * muestra el desplegable completo en orden alfabetico (igual que antes).
  *
+ * Soporta navegacion por teclado (flechas + Enter) para poder usarse en flujos de
+ * captura rapida tipo "Enter, Enter, Enter" (ver Apartados > Nuevo apartado): al
+ * presionar Enter se selecciona el resaltado (o el primero de la lista si no se
+ * navego con flechas) y se llama a onEnterSeleccionar, que el padre usa para saltar
+ * el foco al siguiente campo del renglon.
+ *
+ * Expone (via ref) un metodo focus() para que el padre pueda devolver el foco aqui
+ * despues de agregar un renglon al carrito.
+ *
  * Props:
- * - productos: lista de productos [{ id, nombre, stock_disponible? }]
+ * - productos: lista de productos [{ id, nombre, codigo_producto?, stock_disponible? }]
  * - value: id del producto seleccionado (string o number) o '' si no hay ninguno
  * - onChange: (idComoString) => void
+ * - onEnterSeleccionar: () => void -- opcional, se llama justo despues de seleccionar por Enter
  * - placeholder: texto del input cuando esta vacio
  * - mostrarStock: si true, agrega "(disponible: N)" junto al nombre en la lista
  */
-export default function SelectorProducto({
+const SelectorProducto = forwardRef(function SelectorProducto({
   productos,
   value,
   onChange,
-  placeholder = '-- Selecciona un producto --',
+  onEnterSeleccionar,
+  placeholder = '-- Nombre o código de producto --',
   mostrarStock = true
-}) {
+}, ref) {
   const [texto, setTexto] = useState('');
   const [abierto, setAbierto] = useState(false);
+  const [resaltado, setResaltado] = useState(0);
   const contenedorRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => inputRef.current?.focus()
+  }));
 
   // Mantiene el texto visible sincronizado con el producto seleccionado
   useEffect(() => {
@@ -47,8 +64,15 @@ export default function SelectorProducto({
 
   const textoBusqueda = texto.trim().toLowerCase();
   const filtrados = textoBusqueda
-    ? productos.filter((p) => p.nombre.toLowerCase().includes(textoBusqueda))
+    ? productos.filter((p) =>
+        p.nombre.toLowerCase().includes(textoBusqueda) ||
+        (p.codigo_producto || '').toLowerCase().includes(textoBusqueda)
+      )
     : productos;
+
+  // Cada vez que cambia la lista filtrada se vuelve a resaltar el primer resultado,
+  // para que un Enter inmediato siempre tome "el de arriba".
+  useEffect(() => { setResaltado(0); }, [texto]);
 
   const seleccionar = (p) => {
     onChange(String(p.id));
@@ -63,13 +87,35 @@ export default function SelectorProducto({
     if (value) onChange('');
   };
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setAbierto(true);
+      setResaltado((i) => Math.min(i + 1, filtrados.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setResaltado((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const elegido = filtrados[resaltado];
+      if (elegido) {
+        seleccionar(elegido);
+        onEnterSeleccionar && onEnterSeleccionar();
+      }
+    } else if (e.key === 'Escape') {
+      setAbierto(false);
+    }
+  };
+
   return (
     <div ref={contenedorRef} style={{ position: 'relative' }}>
       <input
+        ref={inputRef}
         type="text"
         value={texto}
         onChange={handleChangeTexto}
         onFocus={() => setAbierto(true)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         autoComplete="off"
       />
@@ -97,20 +143,21 @@ export default function SelectorProducto({
               Sin resultados
             </li>
           ) : (
-            filtrados.map((p) => (
+            filtrados.map((p, i) => (
               <li
                 key={p.id}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => seleccionar(p)}
+                onMouseEnter={() => setResaltado(i)}
                 style={{
                   padding: '6px 8px',
                   cursor: 'pointer',
                   borderBottom: '1px solid #f0f0f0',
                   fontSize: '0.9rem',
-                  background: String(p.id) === String(value) ? '#eef4ff' : 'transparent'
+                  background: i === resaltado ? '#eef4ff' : (String(p.id) === String(value) ? '#f7f9fc' : 'transparent')
                 }}
               >
-                {p.nombre}
+                {p.codigo_producto ? `[${p.codigo_producto}] ` : ''}{p.nombre}
                 {mostrarStock && p.stock_disponible !== undefined ? ` (disponible: ${p.stock_disponible})` : ''}
               </li>
             ))
@@ -119,4 +166,6 @@ export default function SelectorProducto({
       )}
     </div>
   );
-}
+});
+
+export default SelectorProducto;
