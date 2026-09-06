@@ -13,7 +13,9 @@ const {
   generarPDFResumenDiarioFondo,
   generarPDFInventarioProductosFondo,
   generarPDFInventarioFisicoFondo,
-  generarPDFGananciasFondo
+  generarPDFGananciasFondo,
+  generarPDFStockMuertoFondo,
+  generarPDFMargenProductoFondo
 } = require('./pdfGeneradoresFondo');
 
 // ---------- Helpers de STOCK POR DEPOSITO (accesorios) ----------
@@ -580,7 +582,7 @@ ipcMain.handle('facturacion:sugerenciasVentaCruzada', (event, { idsEnCarrito = [
 
   const placeholders = categoriasMarcadas.map(() => '?').join(',');
   const accesorios = db.prepare(
-    `SELECT id, nombre, categoria, precio2, stock_cantidad
+    `SELECT id, nombre, categoria, precio2, stock_cantidad, codigo_producto
      FROM products
      WHERE tipo = 'accesorio' AND stock_cantidad > 0 AND categoria IN (${placeholders})
      ORDER BY categoria, nombre`
@@ -3066,6 +3068,29 @@ async function respaldarYNotificarAlCerrar() {
       registrarLogBackup('Aviso: fallo generando el Inventario Fisico: ' + (err?.message || String(err)));
     }
 
+    // Reporte de Inventario - Stock muerto: igual que los dos de arriba, es una "foto" del
+    // inventario actual (no depende de lo que paso hoy), asi que siempre se adjunta.
+    try {
+      const reporteStockMuerto = obtenerReporteStockMuerto(db);
+      const pdfStockMuerto = generarPDFStockMuertoFondo(reporteStockMuerto, settingsObj);
+      adjuntos.push({ nombre: pdfStockMuerto.nombre, buffer: pdfStockMuerto.buffer });
+    } catch (err) {
+      console.error('No se pudo generar el Reporte de Stock Muerto:', err);
+      registrarLogBackup('Aviso: fallo generando el Reporte de Stock Muerto: ' + (err?.message || String(err)));
+    }
+
+    // Reporte de Ventas - Margen real por producto DEL DIA (hoy), igual criterio que el
+    // Reporte de Ventas y Ganancias de arriba (una "foto" del dia).
+    try {
+      const hoyISOMargen = new Date().toISOString().slice(0, 10);
+      const reporteMargen = calcularReporteMargenPorProducto(db, hoyISOMargen, hoyISOMargen);
+      const pdfMargen = generarPDFMargenProductoFondo(reporteMargen, hoyISOMargen, hoyISOMargen, settingsObj);
+      adjuntos.push({ nombre: pdfMargen.nombre, buffer: pdfMargen.buffer });
+    } catch (err) {
+      console.error('No se pudo generar el Reporte de Margen Real por Producto:', err);
+      registrarLogBackup('Aviso: fallo generando el Reporte de Margen Real por Producto: ' + (err?.message || String(err)));
+    }
+
     const pesoTotalMB = (adjuntos.reduce((acc, a) => acc + a.buffer.length, 0) / (1024 * 1024)).toFixed(2);
     registrarLogBackup(`Enviando correo con ${adjuntos.length} adjunto(s), ${pesoTotalMB} MB en total...`);
 
@@ -3853,8 +3878,9 @@ ipcMain.handle('reportes:libroComprasIva', (event, { desde, hasta }) => {
   };
 });
 
-ipcMain.handle('reportes:margenPorProducto', (event, { desde, hasta }) => {
-  const db = getDb();
+// Se separa en funcion propia (en vez de vivir solo dentro del ipcMain.handle) para poder
+// llamarla tambien desde el correo automatico/manual de cierre, igual que calcularReporteGanancias.
+function calcularReporteMargenPorProducto(db, desde, hasta) {
   // Se excluyen devoluciones (f.es_devolucion = 0) para no restar ganancia que ya se descontó
   // aparte en el reporte de devoluciones. La ganancia de cada linea es precio de venta menos
   // costo unitario AL MOMENTO DE VENDER (costo_unitario_usd, guardado en cada factura_items),
@@ -3915,6 +3941,11 @@ ipcMain.handle('reportes:margenPorProducto', (event, { desde, hasta }) => {
   );
 
   return { ok: true, desde, hasta, productos, porTipo, totales };
+}
+
+ipcMain.handle('reportes:margenPorProducto', (event, { desde, hasta }) => {
+  const db = getDb();
+  return calcularReporteMargenPorProducto(db, desde, hasta);
 });
 
 // ---------------- Ventas: Clientes frecuentes / historial de compras ----------------
