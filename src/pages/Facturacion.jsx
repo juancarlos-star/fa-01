@@ -295,8 +295,8 @@ export default function Facturacion({ currentUser, modo = 'factura' }) {
         product_id: accesorio.id,
         tipo: 'accesorio',
         descripcion: accesorio.nombre,
-        producto_codigo: null,
-        codigo: null,
+        producto_codigo: accesorio.codigo_producto || null,
+        codigo: accesorio.codigo_producto || null,
         cantidad: 1,
         precio_unitario: accesorio.precio2 || 0
       }
