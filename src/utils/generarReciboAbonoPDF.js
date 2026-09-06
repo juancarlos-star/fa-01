@@ -95,15 +95,20 @@ export async function generarReciboAbonoPDF(apartado, items, abono, settings, op
   doc.text(`MONTO ABONADO HOY: $${fmt(abono.monto_usd)}`, 133, y + 1);
   y += 12;
 
-  doc.setTextColor(0, 0, 0);
   doc.setFontSize(10.5);
   doc.setFont('helvetica', 'bold');
+  // El color (rojo si queda saldo, verde si ya esta pagado por completo) hay que fijarlo ANTES
+  // de dibujar el texto -jsPDF no "repinta" retroactivamente lo que ya se dibujo-, y ademas hay
+  // que pasarle los 3 numeros de rojo/verde/azul sueltos (con "...", como en el resto de este
+  // archivo), no el arreglo completo de un solo golpe: pasarlo asi ("...(condicion ? [r,g,b] :
+  // [r,g,b])") es lo que arreglamos aqui, porque pasarlo sin separar hacia que jsPDF fallara al
+  // generar el PDF con el error "Invalid argument passed to jsPDF.f3".
+  doc.setTextColor(...(saldoPendiente > 0.005 ? [180, 35, 24] : [11, 143, 78]));
   doc.text(
     saldoPendiente > 0.005 ? `Saldo pendiente: $${fmt(saldoPendiente)}` : 'APARTADO PAGADO POR COMPLETO',
     130,
     y
   );
-  doc.setTextColor(saldoPendiente > 0.005 ? [180, 35, 24] : [11, 143, 78]);
 
   const nombreArchivo = `Recibo_Abono_${String(abono.numero_recibo).padStart(6, '0')}_${fechaParaNombreArchivo()}`;
   if (opciones.imprimir) {
