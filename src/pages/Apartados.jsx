@@ -623,110 +623,170 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onGuardado }) {
     }
   };
 
+  const saldoInicial = Math.max(0, totalUsd - (parseFloat(abonoInicial) || 0));
+
   return (
-    <div>
-      <h1>Nuevo apartado</h1>
+    <div className="pos-page">
+      <div className="pos-topbar">
+        <span className="pos-topbar-side">MODULO DE APARTADOS</span>
+        <span className="pos-topbar-center">NUEVO APARTADO</span>
+        <span className="pos-topbar-side">MODO: NORMAL</span>
+      </div>
 
-      <div className="form-box" style={{ maxWidth: 560 }}>
-        <label>Depósito</label>
-        <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
-          {depositos.map((d) => (
-            <option key={d.id} value={d.id}>{d.nombre}</option>
-          ))}
-        </select>
-
-        <label style={{ marginTop: '0.75rem' }}>Cliente (Cédula / RIF)</label>
-        {clienteSeleccionado ? (
-          <div className="pos-stripe" style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>{clienteSeleccionado.nombre} — {clienteSeleccionado.rif_cedula}</span>
-            <button onClick={quitarCliente}>Cambiar</button>
+      <div className="pos-panels">
+        <div className="pos-left">
+          <div className="pos-field">
+            <label>Cliente (Cédula / RIF) <span className="required-mark">*</span></label>
+            <input
+              value={cedula}
+              onChange={(e) => { setCedula(e.target.value); if (clienteSeleccionado) setClienteSeleccionado(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarClientePorEnter(); } }}
+              placeholder="Cédula/RIF y Enter para buscar o crear"
+              disabled={!!clienteSeleccionado || buscandoCliente}
+            />
           </div>
-        ) : (
-          <input
-            value={cedula}
-            onChange={(e) => setCedula(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarClientePorEnter(); } }}
-            placeholder="Cédula/RIF y Enter para buscar o crear"
-            disabled={buscandoCliente}
-          />
-        )}
+
+          <div className="pos-field">
+            <label>Depósito <span className="required-mark">*</span></label>
+            <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
+              {depositos.length === 0 && <option value="">-- No hay depósitos --</option>}
+              {depositos.map((d) => (
+                <option key={d.id} value={d.id}>{d.codigo ? `${d.codigo} - ` : ''}{d.nombre}</option>
+              ))}
+            </select>
+          </div>
+
+          {clienteSeleccionado && (
+            <div className="pos-actions-row">
+              <button type="button" className="pos-btn-link" onClick={quitarCliente}>Cambiar cliente</button>
+            </div>
+          )}
+        </div>
+
+        <div className="pos-mid">
+          {buscandoCliente ? (
+            <div className="pos-stripe placeholder">Buscando cliente...</div>
+          ) : clienteSeleccionado ? (
+            <>
+              <div className="pos-stripe">{clienteSeleccionado.nombre || '—'}</div>
+              <div className="pos-stripe">{clienteSeleccionado.rif_cedula || '—'}</div>
+              <div className="pos-stripe">{clienteSeleccionado.telefono || '—'}</div>
+            </>
+          ) : (
+            <>
+              <div className="pos-stripe placeholder">Escribe la cédula o RIF y presiona Enter</div>
+              <div className="pos-stripe placeholder">—</div>
+              <div className="pos-stripe placeholder">—</div>
+            </>
+          )}
+        </div>
+
+        <div className="pos-right">
+          <div className="pos-right-header">Apartado</div>
+          <div className="pos-right-row">
+            <span>Total productos</span>
+            <span>${fmt(totalUsd)}</span>
+          </div>
+          <div className="pos-right-row">
+            <span>Abono inicial</span>
+            <span>${fmt(parseFloat(abonoInicial) || 0)}</span>
+          </div>
+          <div className="pos-right-row total-final">
+            <span>Saldo pendiente</span>
+            <span>${fmt(saldoInicial)}</span>
+          </div>
+        </div>
       </div>
 
-      <h3 style={{ marginTop: '1.5rem' }}>Productos a apartar</h3>
-      <div className="form-box" style={{ maxWidth: 720, display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ flex: 2, minWidth: 220 }}>
-          <label>Producto</label>
-          <SelectorProducto
-            ref={refProducto}
-            productos={productos}
-            value={productoIdFila}
-            onChange={setProductoIdFila}
-            onEnterSeleccionar={() => refCantidad.current?.focus()}
-          />
-        </div>
-        <div style={{ width: 90 }}>
-          <label>Cantidad</label>
-          <input
-            ref={refCantidad}
-            type="number"
-            min="1"
-            value={cantidadFila}
-            onChange={(e) => setCantidadFila(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); refPrecio.current?.focus(); refPrecio.current?.select(); } }}
-          />
-        </div>
-        <div style={{ width: 120 }}>
-          <label>Precio (USD)</label>
-          <input
-            ref={refPrecio}
-            type="number"
-            step="0.01"
-            value={precioFila}
-            onChange={(e) => setPrecioFila(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarAlCarrito(); } }}
-          />
-        </div>
-        <button onClick={agregarAlCarrito}>Agregar</button>
-      </div>
+      {error && <div className="pos-error-banner">{error}</div>}
 
-      {carrito.length > 0 && (
-        <table style={{ width: '100%', maxWidth: 720, borderCollapse: 'collapse', background: '#fff', marginTop: '0.75rem' }}>
+      <div className="pos-table-wrap">
+        <table className="pos-table">
           <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Producto</th>
-              <th>Cantidad</th>
-              <th>Precio</th>
-              <th>Subtotal</th>
-              <th></th>
+            <tr>
+              <th style={{ width: '46%' }}>Producto</th>
+              <th style={{ width: '12%' }}>Cantidad</th>
+              <th style={{ width: '16%' }}>Precio ($)</th>
+              <th style={{ width: '16%', textAlign: 'right' }}>Subtotal ($)</th>
+              <th style={{ width: '10%' }}></th>
             </tr>
           </thead>
           <tbody>
-            {carrito.map((c) => (
-              <tr key={c.key} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{c.nombre}</td>
-                <td>{c.cantidad}</td>
-                <td>${fmt(c.precioUnitarioUsd)}</td>
-                <td>${fmt(c.cantidad * c.precioUnitarioUsd)}</td>
-                <td><button onClick={() => quitarDelCarrito(c.key)}>Quitar</button></td>
-              </tr>
-            ))}
+            <tr className="fila-entrada">
+              <td>
+                <SelectorProducto
+                  ref={refProducto}
+                  productos={productos}
+                  value={productoIdFila}
+                  onChange={setProductoIdFila}
+                  onEnterSeleccionar={() => refCantidad.current?.focus()}
+                  placeholder="Nombre o código de producto"
+                />
+              </td>
+              <td>
+                <input
+                  ref={refCantidad}
+                  type="number"
+                  min="1"
+                  value={cantidadFila}
+                  onChange={(e) => setCantidadFila(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); refPrecio.current?.focus(); refPrecio.current?.select(); } }}
+                />
+              </td>
+              <td>
+                <input
+                  ref={refPrecio}
+                  type="number"
+                  step="0.01"
+                  value={precioFila}
+                  onChange={(e) => setPrecioFila(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarAlCarrito(); } }}
+                />
+              </td>
+              <td className="text-right" style={{ paddingTop: 8 }}>
+                ${fmt((parseInt(cantidadFila, 10) || 0) * (parseFloat(precioFila) || 0))}
+              </td>
+              <td>
+                <button type="button" className="pos-btn-link" onClick={agregarAlCarrito}>+ Agregar</button>
+              </td>
+            </tr>
+            {carrito.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: '#98a2b3', padding: '1rem' }}>Aún no has agregado productos a este apartado.</td></tr>
+            ) : (
+              carrito.map((c) => (
+                <tr key={c.key}>
+                  <td>{c.nombre}</td>
+                  <td>{c.cantidad}</td>
+                  <td>${fmt(c.precioUnitarioUsd)}</td>
+                  <td className="text-right">${fmt(c.cantidad * c.precioUnitarioUsd)}</td>
+                  <td><button type="button" className="pos-btn-link" onClick={() => quitarDelCarrito(c.key)}>Quitar</button></td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
-      )}
-
-      <div className="form-box" style={{ maxWidth: 420, marginTop: '1rem' }}>
-        <p style={{ fontSize: '1.1rem' }}>Total del apartado: <strong>${fmt(totalUsd)}</strong></p>
-        <label>Abono inicial (USD, opcional)</label>
-        <input type="number" step="0.01" value={abonoInicial} onChange={(e) => setAbonoInicial(e.target.value)} />
-        <label style={{ marginTop: '0.5rem' }}>Notas (opcional)</label>
-        <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} />
       </div>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      <div className="pos-panels" style={{ marginTop: '0.75rem' }}>
+        <div className="pos-left">
+          <div className="pos-field">
+            <label>Abono inicial (USD, opcional)</label>
+            <input type="number" step="0.01" value={abonoInicial} onChange={(e) => setAbonoInicial(e.target.value)} />
+          </div>
+        </div>
+        <div className="pos-mid">
+          <div className="pos-field">
+            <label>Notas (opcional)</label>
+            <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} style={{ width: '100%', resize: 'vertical' }} />
+          </div>
+        </div>
+      </div>
 
-      <div style={{ marginTop: '1rem' }}>
-        <button onClick={handleGuardar} disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar apartado'}</button>{' '}
-        <button onClick={onCancelar}>Cancelar</button>
+      <div className="pos-footer-actions">
+        <button type="button" className="btn-ghost" onClick={onCancelar} style={{ marginRight: 'auto' }}>Cancelar</button>
+        <button type="button" className="pos-btn-totalizar" onClick={handleGuardar} disabled={guardando}>
+          {guardando ? 'Guardando...' : 'Guardar apartado'}
+        </button>
       </div>
 
       {mostrarModalClienteNuevo && (
