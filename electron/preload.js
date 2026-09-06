@@ -156,6 +156,7 @@ contextBridge.exposeInMainWorld('api', {
   completarApartado: (id, facturaId, usuario) => ipcRenderer.invoke('apartados:completar', { id, facturaId, usuario }),
   buscarReciboAbonoPorNumero: (numeroRecibo) => ipcRenderer.invoke('apartados:buscarReciboPorNumero', { numeroRecibo }),
   buscarApartadosPorCliente: (texto) => ipcRenderer.invoke('apartados:buscarPorCliente', { texto }),
+  buscarApartadoPorNumero: (numero) => ipcRenderer.invoke('apartados:buscarPorNumero', { numero }),
   // Respaldo
   crearBackup: () => ipcRenderer.invoke('backup:crear'),
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar'),

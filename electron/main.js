@@ -2220,15 +2220,22 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   if (!deposito) return { ok: false, message: 'El deposito seleccionado no es valido o esta inactivo' };
 
   // Si esta factura/nota de venta viene del pago total de un Apartado ("Generar factura"/"Nota
-  // de venta" desde Apartados.jsx), se valida que exista y siga abierto (activo o
-  // listo_para_entregar) antes de dejar constancia del enlace -evita guardar un enlace roto si
-  // el apartado ya se cerro o cancelo por otro lado mientras se estaba facturando.
+  // de venta" desde Apartados.jsx), se valida que exista y siga abierto ANTES de crear nada. Si
+  // el apartado ya quedo 'completado' (por ejemplo porque esta factura ya se genero antes y esto
+  // es un reintento), se corta aqui mismo y no se crea una segunda factura -esto, junto con el
+  // mismo chequeo repetido dentro de la transaccion mas abajo, es lo que garantiza que nunca
+  // pueda quedar duplicada.
   let apartadoOrigenValido = null;
   if (apartadoOrigenId) {
     const apartadoRow = db.prepare('SELECT * FROM apartados WHERE id = ?').get(apartadoOrigenId);
-    if (apartadoRow && (apartadoRow.estado === 'activo' || apartadoRow.estado === 'listo_para_entregar')) {
-      apartadoOrigenValido = apartadoRow;
+    if (!apartadoRow) return { ok: false, message: 'El apartado de origen ya no existe' };
+    if (apartadoRow.estado === 'completado') {
+      return { ok: false, message: 'Este apartado ya fue facturado antes (no se creó una factura duplicada)' };
     }
+    if (apartadoRow.estado === 'cancelado') {
+      return { ok: false, message: 'Este apartado está cancelado' };
+    }
+    apartadoOrigenValido = apartadoRow;
   }
 
   const settingsRows = db.prepare('SELECT key, value FROM settings').all();
@@ -2346,10 +2353,32 @@ ipcMain.handle('facturas:crear', (event, payload) => {
       `INSERT INTO settings (key, value) VALUES ('${numeroSettingKey}', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     ).run(String(siguienteNumero + 1));
 
+    // Si esta factura/nota de venta viene de un Apartado, se cierra AQUI MISMO, dentro de esta
+    // misma transaccion: o se crea la factura Y se cierra el apartado los dos juntos, o si algo
+    // falla no se guarda ninguno de los dos (better-sqlite3 hace rollback automatico). Se vuelve
+    // a checar el estado justo antes de tocarlo (no solo al principio del handler, ver
+    // apartadoOrigenValido mas arriba) para blindarse contra un reintento que llegue a mitad de
+    // camino de otro ya en curso -esto es lo que garantiza que nunca se pueda duplicar la
+    // factura de un mismo apartado, ni aunque se cierre el programa a la mitad y se reintente.
+    if (apartadoOrigenValido) {
+      const actual = db.prepare('SELECT estado FROM apartados WHERE id = ?').get(apartadoOrigenValido.id);
+      if (!actual || actual.estado === 'completado') {
+        throw new Error('Este apartado ya fue facturado antes (no se creó una factura duplicada)');
+      }
+      db.prepare(
+        `UPDATE apartados SET estado = 'completado', factura_id = ?, actualizado_at = datetime('now','localtime') WHERE id = ?`
+      ).run(facturaId, apartadoOrigenValido.id);
+    }
+
     return facturaId;
   });
 
-  const facturaId = transaccion();
+  let facturaId;
+  try {
+    facturaId = transaccion();
+  } catch (err) {
+    return { ok: false, message: err.message || 'No se pudo crear la factura' };
+  }
 
   return {
     ok: true,
@@ -4906,7 +4935,11 @@ ipcMain.handle('apartados:completar', (event, { id, facturaId, usuario }) => {
 // poder mostrar el contexto completo sin tener que ir a buscarlo aparte.
 ipcMain.handle('apartados:buscarReciboPorNumero', (event, { numeroRecibo }) => {
   const db = getDb();
-  const n = parseInt(numeroRecibo, 10);
+  // Acepta el numero "pelado" (16), con ceros a la izquierda (000016) o con el prefijo tal cual
+  // aparece impreso en el recibo (REC-000016): se quita cualquier caracter que no sea digito
+  // antes de convertir a numero, asi cualquiera de esas 3 formas funciona igual.
+  const soloDigitos = String(numeroRecibo || '').replace(/\D/g, '');
+  const n = parseInt(soloDigitos, 10);
   if (!n) return { ok: false, message: 'Numero de recibo invalido' };
   const abono = db.prepare('SELECT * FROM apartado_abonos WHERE numero_recibo = ?').get(n);
   if (!abono) return { ok: false, message: `No existe ningun recibo con el numero ${n}` };
@@ -4915,6 +4948,20 @@ ipcMain.handle('apartados:buscarReciboPorNumero', (event, { numeroRecibo }) => {
   ).get(abono.apartado_id);
   const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(abono.apartado_id);
   return { ok: true, abono, apartado, items };
+});
+
+// Busca UN apartado por su propio numero (el de la columna "N°" de la lista, ej. 9) para ir
+// derecho a su registro completo -pensado para cuando el cliente ya sabe su numero de apartado
+// y solo quiere ir a abonar, sin tener que buscarlo por nombre en la lista general. Igual que el
+// de recibo, acepta el numero con o sin ceros a la izquierda.
+ipcMain.handle('apartados:buscarPorNumero', (event, { numero }) => {
+  const db = getDb();
+  const soloDigitos = String(numero || '').replace(/\D/g, '');
+  const n = parseInt(soloDigitos, 10);
+  if (!n) return { ok: false, message: 'Numero de apartado invalido' };
+  const apartado = db.prepare('SELECT id FROM apartados WHERE numero = ?').get(n);
+  if (!apartado) return { ok: false, message: `No existe ningun apartado con el numero ${n}` };
+  return { ok: true, apartadoId: apartado.id };
 });
 
 // Busca todos los apartados de UN cliente (por nombre, cedula/RIF, o telefono -coincidencia
