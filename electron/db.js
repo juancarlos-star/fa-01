@@ -59,6 +59,13 @@ function migrarFacturasSiHaceFalta(database) {
   if (!tieneColumna(database, 'facturas', 'cliente_direccion')) {
     database.exec('ALTER TABLE facturas ADD COLUMN cliente_direccion TEXT');
   }
+  // Enlaza (cuando aplica) la factura/nota de venta con el Apartado cuyo pago total la origino,
+  // para dejar constancia en los reportes ("Esta factura corresponde al pago total del Apartado
+  // N° X") sin tener que adivinarlo por fecha/cliente. Es la contraparte de apartados.factura_id
+  // (que ya enlazaba en el sentido apartado -> factura); este campo enlaza factura -> apartado.
+  if (!tieneColumna(database, 'facturas', 'apartado_origen_id')) {
+    database.exec('ALTER TABLE facturas ADD COLUMN apartado_origen_id INTEGER');
+  }
 }
 
 function migrarCostosSiHaceFalta(database) {

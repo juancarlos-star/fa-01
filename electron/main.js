@@ -2207,7 +2207,7 @@ ipcMain.handle('proveedores:update', (event, { id, nombre, rif, telefono, direcc
 // ---------- IPC: Facturacion ----------
 ipcMain.handle('facturas:crear', (event, payload) => {
   const db = getDb();
-  const { cliente, items, usuario, sinCliente, depositoId, esNotaVenta } = payload;
+  const { cliente, items, usuario, sinCliente, depositoId, esNotaVenta, apartadoOrigenId } = payload;
 
   if (!items || items.length === 0) {
     return { ok: false, message: `La ${esNotaVenta ? 'nota de venta' : 'factura'} debe tener al menos un producto` };
@@ -2218,6 +2218,18 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   if (!depositoId) return { ok: false, message: 'Selecciona el deposito del cual se factura' };
   const deposito = depositoValido(db, depositoId);
   if (!deposito) return { ok: false, message: 'El deposito seleccionado no es valido o esta inactivo' };
+
+  // Si esta factura/nota de venta viene del pago total de un Apartado ("Generar factura"/"Nota
+  // de venta" desde Apartados.jsx), se valida que exista y siga abierto (activo o
+  // listo_para_entregar) antes de dejar constancia del enlace -evita guardar un enlace roto si
+  // el apartado ya se cerro o cancelo por otro lado mientras se estaba facturando.
+  let apartadoOrigenValido = null;
+  if (apartadoOrigenId) {
+    const apartadoRow = db.prepare('SELECT * FROM apartados WHERE id = ?').get(apartadoOrigenId);
+    if (apartadoRow && (apartadoRow.estado === 'activo' || apartadoRow.estado === 'listo_para_entregar')) {
+      apartadoOrigenValido = apartadoRow;
+    }
+  }
 
   const settingsRows = db.prepare('SELECT key, value FROM settings').all();
   const settings = {};
@@ -2297,10 +2309,10 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     const facturaInfo = db
       .prepare(
         `INSERT INTO facturas
-         (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, deposito_id, created_at, es_nota_venta)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?)`
+         (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, deposito_id, created_at, es_nota_venta, apartado_origen_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?)`
       )
-      .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '', depositoId, esNotaVenta ? 1 : 0);
+      .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '', depositoId, esNotaVenta ? 1 : 0, apartadoOrigenValido ? apartadoOrigenValido.id : null);
 
     const facturaId = facturaInfo.lastInsertRowid;
 
@@ -2350,12 +2362,22 @@ ipcMain.handle('facturas:crear', (event, payload) => {
 
 ipcMain.handle('facturas:list', () => {
   const db = getDb();
-  return db.prepare('SELECT * FROM facturas ORDER BY id DESC').all();
+  return db.prepare(
+    `SELECT f.*, ao.numero AS apartado_origen_numero
+     FROM facturas f
+     LEFT JOIN apartados ao ON ao.id = f.apartado_origen_id
+     ORDER BY f.id DESC`
+  ).all();
 });
 
 ipcMain.handle('facturas:detalle', (event, { id }) => {
   const db = getDb();
-  const factura = db.prepare('SELECT * FROM facturas WHERE id = ?').get(id);
+  const factura = db.prepare(
+    `SELECT f.*, ao.numero AS apartado_origen_numero
+     FROM facturas f
+     LEFT JOIN apartados ao ON ao.id = f.apartado_origen_id
+     WHERE f.id = ?`
+  ).get(id);
   if (!factura) return { ok: false, message: 'Factura no encontrada' };
   const items = db.prepare('SELECT * FROM factura_items WHERE factura_id = ?').all(id);
   return { ok: true, factura, items };
