@@ -16,7 +16,7 @@ import { generarReciboAbonoPDF } from '../utils/generarReciboAbonoPDF.js';
 const ESTADO_LABEL = {
   activo: 'Activo',
   listo_para_entregar: 'Listo para entregar',
-  completado: 'Completado',
+  completado: 'Entregado',
   cancelado: 'Cancelado'
 };
 const ESTADO_COLOR = {
@@ -25,6 +25,15 @@ const ESTADO_COLOR = {
   completado: '#067647',
   cancelado: '#98a2b3'
 };
+
+// Texto legible del documento con el que se cerro el apartado (si se cerro con uno). Usa el
+// numero real impreso en el documento (numero_factura), no el id interno de la base de datos.
+function textoDocumento(apartado) {
+  if (!apartado.factura_id) return null;
+  if (!apartado.numero_factura) return `Documento interno #${apartado.factura_id}`;
+  const numero = String(apartado.numero_factura).padStart(6, '0');
+  return apartado.es_nota_venta ? `Nota de venta N° ${numero}` : `Factura N° ${numero}`;
+}
 
 function Badge({ estado }) {
   return (
@@ -399,6 +408,7 @@ export default function Apartados({ currentUser, onIrAFacturar }) {
               <th>Total</th>
               <th>Abonado</th>
               <th>Saldo</th>
+              <th>Documento</th>
               <th>Fecha</th>
               <th></th>
             </tr>
@@ -415,6 +425,7 @@ export default function Apartados({ currentUser, onIrAFacturar }) {
                 <td style={{ color: a.saldo_usd > 0 ? '#b42318' : '#0b8f4e', fontWeight: 600 }}>
                   ${fmt(a.saldo_usd)}
                 </td>
+                <td style={{ fontSize: '0.85rem' }}>{textoDocumento(a) || '—'}</td>
                 <td>{a.created_at}</td>
                 <td>
                   <button onClick={() => abrirDetalle(a.id)}>Ver</button>
@@ -812,7 +823,7 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
         {apartado.estado === 'cancelado' && apartado.motivo_cancelacion && (
           <p style={{ color: '#b42318' }}><strong>Motivo de cancelación:</strong> {apartado.motivo_cancelacion}</p>
         )}
-        {apartado.factura_id && <p><strong>Factura vinculada:</strong> #{apartado.factura_id}</p>}
+        {apartado.factura_id && <p><strong>Facturado con:</strong> {textoDocumento(apartado)}</p>}
       </div>
 
       <h3 style={{ marginTop: '1.25rem' }}>Productos</h3>
