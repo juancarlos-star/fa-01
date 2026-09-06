@@ -117,8 +117,11 @@ export default function CategoriasAdmin() {
               <>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                   {c.nombre}
-                  <label style={{ fontSize: '0.72rem', color: '#667085', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 400 }}>
-                    <input type="checkbox" checked={!!c.sugerir_venta_cruzada} onChange={() => handleToggleVentaCruzada(c)} />
+                  <label style={{ fontSize: '0.72rem', color: '#667085', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 400 }}>
+                    <span className="switch">
+                      <input type="checkbox" checked={!!c.sugerir_venta_cruzada} onChange={() => handleToggleVentaCruzada(c)} />
+                      <span className="switch-track"></span>
+                    </span>
                     Sugerir al facturar un equipo
                   </label>
                 </span>
