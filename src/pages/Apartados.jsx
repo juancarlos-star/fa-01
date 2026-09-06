@@ -805,13 +805,17 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
 
   const handleIrAFacturar = async (modo) => {
     setProcesando(true);
+    setError('');
     try {
-      // Se marca "listo_para_entregar" primero para que el producto se mantenga reservado
-      // mientras se hace la factura/nota de venta -si el usuario se arrepiente o no termina el
-      // proceso, el apartado queda igual con la opcion de "Cerrar apartado" mas abajo para
-      // vincular la factura despues a mano.
-      const res = await window.api.marcarApartadoListoParaEntregar(id, currentUser?.username);
-      if (!res.ok) { setError(res.message || 'No se pudo actualizar'); return; }
+      // Se marca "listo_para_entregar" la PRIMERA vez, para que el producto se mantenga
+      // reservado mientras se hace la factura/nota de venta. Si el apartado ya quedo en ese
+      // estado (por ejemplo, un intento anterior se interrumpio a mitad de camino), no hay que
+      // volver a marcarlo -de hecho el sistema lo rechazaria, porque esa accion exige que este
+      // 'activo'- simplemente se reintenta el paso de facturar directamente.
+      if (apartado.estado === 'activo') {
+        const res = await window.api.marcarApartadoListoParaEntregar(id, currentUser?.username);
+        if (!res.ok) { setError(res.message || 'No se pudo actualizar'); return; }
+      }
       onIrAFacturar({
         apartadoId: apartado.id,
         numero: apartado.numero,
