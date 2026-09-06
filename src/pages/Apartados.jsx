@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fmt } from '../utils/format.js';
 import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
 import SelectorProducto from '../components/SelectorProducto.jsx';
@@ -313,6 +313,14 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onCreado }) {
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
 
+  // Refs para el flujo de captura rapida por Enter del renglon "Productos a apartar":
+  // Producto -> (Enter) -> Cantidad -> (Enter) -> Precio -> (Enter) agrega el renglon al
+  // carrito y devuelve el foco a Producto, listo para cargar el siguiente item sin tocar
+  // el mouse -igual que un punto de venta-.
+  const refProducto = useRef(null);
+  const refCantidad = useRef(null);
+  const refPrecio = useRef(null);
+
   useEffect(() => {
     window.api.listDepositos(true).then((data) => {
       setDepositos(data);
@@ -365,9 +373,9 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onCreado }) {
 
   const agregarAlCarrito = () => {
     setError('');
-    if (!productoSeleccionado) { setError('Selecciona un producto'); return; }
+    if (!productoSeleccionado) { setError('Selecciona un producto'); refProducto.current?.focus(); return; }
     const cant = parseInt(cantidadFila, 10) || 0;
-    if (cant < 1) { setError('La cantidad debe ser al menos 1'); return; }
+    if (cant < 1) { setError('La cantidad debe ser al menos 1'); refCantidad.current?.focus(); return; }
     const yaEnCarrito = carrito.filter((c) => c.productId === productoSeleccionado.id).reduce((a, c) => a + c.cantidad, 0);
     if (cant + yaEnCarrito > (productoSeleccionado.stock_disponible || 0)) {
       setError(`Solo hay ${productoSeleccionado.stock_disponible || 0} disponibles de "${productoSeleccionado.nombre}"`);
@@ -381,6 +389,8 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onCreado }) {
     setProductoIdFila('');
     setCantidadFila(1);
     setPrecioFila('');
+    // Vuelve el foco al selector de producto para cargar el siguiente item sin usar el mouse.
+    refProducto.current?.focus();
   };
 
   const quitarDelCarrito = (key) => setCarrito(carrito.filter((c) => c.key !== key));
@@ -457,15 +467,35 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onCreado }) {
       <div className="form-box" style={{ maxWidth: 720, display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ flex: 2, minWidth: 220 }}>
           <label>Producto</label>
-          <SelectorProducto productos={productos} value={productoIdFila} onChange={setProductoIdFila} />
+          <SelectorProducto
+            ref={refProducto}
+            productos={productos}
+            value={productoIdFila}
+            onChange={setProductoIdFila}
+            onEnterSeleccionar={() => refCantidad.current?.focus()}
+          />
         </div>
         <div style={{ width: 90 }}>
           <label>Cantidad</label>
-          <input type="number" min="1" value={cantidadFila} onChange={(e) => setCantidadFila(e.target.value)} />
+          <input
+            ref={refCantidad}
+            type="number"
+            min="1"
+            value={cantidadFila}
+            onChange={(e) => setCantidadFila(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); refPrecio.current?.focus(); refPrecio.current?.select(); } }}
+          />
         </div>
         <div style={{ width: 120 }}>
           <label>Precio (USD)</label>
-          <input type="number" step="0.01" value={precioFila} onChange={(e) => setPrecioFila(e.target.value)} />
+          <input
+            ref={refPrecio}
+            type="number"
+            step="0.01"
+            value={precioFila}
+            onChange={(e) => setPrecioFila(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarAlCarrito(); } }}
+          />
         </div>
         <button onClick={agregarAlCarrito}>Agregar</button>
       </div>
