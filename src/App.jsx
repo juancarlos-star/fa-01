@@ -186,6 +186,19 @@ export default function App() {
   const [licencia, setLicencia] = useState(null);
   useEffect(() => { window.api.licenciaEstado().then(setLicencia); }, []);
   const [view, setView] = useState('inicio');
+  // Datos de un apartado que el usuario decidio facturar (boton "Generar factura" / "Nota de
+  // venta" desde la pantalla de Apartados): { apartadoId, depositoId, clienteId, clienteNombre,
+  // clienteTelefono, items }. Facturacion.jsx lo usa para precargar el cliente y el carrito -se
+  // limpia solo al salir de esas pantallas para no dejarlo "pegado" en una factura futura sin
+  // relacion con el apartado.
+  const [apartadoParaFacturar, setApartadoParaFacturar] = useState(null);
+  const irAFacturarDesdeApartado = (datosApartado, modo) => {
+    setApartadoParaFacturar(datosApartado);
+    setView(modo === 'notaVenta' ? 'notaVenta' : 'facturacion');
+  };
+  useEffect(() => {
+    if (view !== 'facturacion' && view !== 'notaVenta') setApartadoParaFacturar(null);
+  }, [view]);
   // Submenu de Facturacion (Generar Factura / Devolucion de Factura), igual al de Compras.
   const [menuFacturacionAbierto, setMenuFacturacionAbierto] = useState(false);
   // Submenu de Compras (Generar Compras / Devolucion de Compras), igual al menu de referencia:
@@ -419,14 +432,27 @@ export default function App() {
       </aside>
       <main className="content">
         {view === 'inicio' && <Inicio user={user} />}
-        {view === 'facturacion' && <Facturacion currentUser={user} />}
-        {view === 'notaVenta' && <Facturacion currentUser={user} modo="notaVenta" />}
+        {view === 'facturacion' && (
+          <Facturacion
+            currentUser={user}
+            apartadoOrigen={apartadoParaFacturar}
+            onApartadoOrigenConsumido={() => setApartadoParaFacturar(null)}
+          />
+        )}
+        {view === 'notaVenta' && (
+          <Facturacion
+            currentUser={user}
+            modo="notaVenta"
+            apartadoOrigen={apartadoParaFacturar}
+            onApartadoOrigenConsumido={() => setApartadoParaFacturar(null)}
+          />
+        )}
         {view === 'devolucionFacturas' && <DevolucionFacturas currentUser={user} />}
         {view === 'compras' && <Compras currentUser={user} />}
         {view === 'comprasTelfAcces' && <ComprasTelfAcces currentUser={user} />}
         {view === 'devolucionCompras' && <DevolucionCompras currentUser={user} />}
         {view === 'traslados' && <Traslados currentUser={user} />}
-        {view === 'apartados' && <Apartados currentUser={user} />}
+        {view === 'apartados' && <Apartados currentUser={user} onIrAFacturar={irAFacturarDesdeApartado} />}
         {view === 'categorias' && <CategoriasAdmin />}
         {view === 'cargosDescargos' && <CargosDescargos currentUser={user} />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
