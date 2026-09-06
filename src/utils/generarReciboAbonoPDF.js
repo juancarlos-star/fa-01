@@ -107,7 +107,15 @@ export async function generarReciboAbonoPDF(apartado, items, abono, settings, op
 
   const nombreArchivo = `Recibo_Abono_${String(abono.numero_recibo).padStart(6, '0')}_${fechaParaNombreArchivo()}`;
   if (opciones.imprimir) {
-    await guardarAbrirEImprimirPDF(doc, nombreArchivo, 'Apartados');
+    const res = await guardarAbrirEImprimirPDF(doc, nombreArchivo, 'Apartados');
+    // "Imprimir recibo" es un boton que el usuario presiona a proposito (a diferencia del
+    // guardado/impresion automatico despues de cada venta, que a proposito NO abre nada si no
+    // hay impresora, para no interrumpir el flujo). Aqui SI se justifica abrir el visor de PDF
+    // cuando no hay impresora fisica conectada -si no, el boton "no hace nada" a los ojos del
+    // usuario, aunque el archivo si se haya guardado en Descargas-.
+    if (res.ok && res.impreso === false && res.path) {
+      window.api.verPdfConVisorExterno(res.path);
+    }
   } else {
     await guardarYAbrirPDF(doc, nombreArchivo, 'Apartados');
   }
