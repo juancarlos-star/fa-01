@@ -48,11 +48,15 @@ function Badge({ estado }) {
 // vez que se registra un abono que NO deja el apartado en $0. Muestra un resumen de la
 // transaccion (cliente, producto(s), fecha, cuanto se abono ahora, cuanto queda debiendo) con un
 // boton para imprimir el recibo de ese abono (si hubo uno) y otro para cerrar la ventanilla.
-function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, onCerrar }) {
+function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, onCerrar, onFacturar }) {
   const saldo = apartado.saldo_usd !== undefined
     ? apartado.saldo_usd
     : Math.round((apartado.total_usd - apartado.abonado_usd) * 100) / 100;
   const [imprimiendo, setImprimiendo] = useState(false);
+  const [procesandoFactura, setProcesandoFactura] = useState(false);
+  // Solo tiene sentido ofrecer facturar/nota de venta desde aqui si el apartado sigue 'activo'
+  // (o sea, todavia nadie eligio que hacer con el) y ya quedo pagado del todo.
+  const puedeFacturarAhora = saldo <= 0.005 && apartado.estado === 'activo' && onFacturar;
 
   const handleImprimir = async () => {
     setImprimiendo(true);
@@ -60,6 +64,15 @@ function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, on
       await onImprimir();
     } finally {
       setImprimiendo(false);
+    }
+  };
+
+  const handleFacturar = async (modo) => {
+    setProcesandoFactura(true);
+    try {
+      await onFacturar(modo);
+    } finally {
+      setProcesandoFactura(false);
     }
   };
 
@@ -99,6 +112,16 @@ function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, on
           <strong style={{ color: saldo > 0 ? '#b42318' : '#0b8f4e' }}>${fmt(saldo)}</strong>
         </p>
 
+        {puedeFacturarAhora && (
+          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '0.75rem', margin: '0.75rem 0' }}>
+            <p style={{ margin: '0 0 8px', fontWeight: 600 }}>¿Cómo lo facturamos?</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={() => handleFacturar('factura')} disabled={procesandoFactura}>🧾 Generar factura</button>
+              <button onClick={() => handleFacturar('notaVenta')} disabled={procesandoFactura}>📝 Nota de venta</button>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, marginTop: '1.25rem', flexWrap: 'wrap' }}>
           {abono && (
             <button onClick={handleImprimir} disabled={imprimiendo}>
@@ -112,7 +135,7 @@ function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, on
   );
 }
 
-export default function Apartados({ currentUser }) {
+export default function Apartados({ currentUser, onIrAFacturar }) {
   const [vista, setVista] = useState('lista'); // 'lista' | 'nuevo' | 'detalle'
   const [filtroEstado, setFiltroEstado] = useState('activo');
   const [apartados, setApartados] = useState([]);
@@ -128,6 +151,27 @@ export default function Apartados({ currentUser }) {
   // cualquiera de las 3 vistas, incluso despues de que "Nuevo apartado" ya regreso a la lista.
   const [resumenTransaccion, setResumenTransaccion] = useState(null);
   const cerrarResumen = () => setResumenTransaccion(null);
+
+  // Se dispara al presionar "Generar factura" / "Nota de venta" dentro de la ventanilla de
+  // resumen (cuando el abono deja el apartado en $0). Primero lo marca 'listo_para_entregar'
+  // (para que el producto se mantenga reservado mientras se factura) y despues avisa hacia
+  // arriba (App.jsx) para que navegue a Facturacion/Nota de Venta con los datos precargados.
+  const handleFacturarDesdeResumen = async (modo) => {
+    const { apartado, items } = resumenTransaccion;
+    const res = await window.api.marcarApartadoListoParaEntregar(apartado.id, currentUser?.username);
+    if (!res.ok) return;
+    setResumenTransaccion(null);
+    if (onIrAFacturar) {
+      onIrAFacturar({
+        apartadoId: apartado.id,
+        depositoId: apartado.deposito_id,
+        clienteId: apartado.cliente_id,
+        clienteNombre: apartado.cliente_nombre,
+        clienteTelefono: apartado.cliente_telefono,
+        items
+      }, modo);
+    }
+  };
 
   // Reimprime un recibo YA emitido (no genera un abono nuevo, ni le asigna otro numero -usa el
   // mismo numero_recibo que ya tenia). Sirve tanto desde "Buscar recibo" como desde "Buscar por
@@ -226,6 +270,7 @@ export default function Apartados({ currentUser }) {
         settings={settings}
         onVolver={() => setVista('lista')}
         onAbonoRegistrado={handleAbonoRegistrado}
+        onIrAFacturar={onIrAFacturar}
       />
     );
   } else {
@@ -394,6 +439,7 @@ export default function Apartados({ currentUser }) {
           settings={settings}
           onImprimir={() => generarReciboAbonoPDF(resumenTransaccion.apartado, resumenTransaccion.items, resumenTransaccion.abono, settings, { imprimir: true })}
           onCerrar={cerrarResumen}
+          onFacturar={handleFacturarDesdeResumen}
         />
       )}
     </>
@@ -656,7 +702,7 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onGuardado }) {
 }
 
 // ---------------- Detalle de un apartado ----------------
-function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrado }) {
+function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrado, onIrAFacturar }) {
   const [datos, setDatos] = useState(null);
   const [montoAbono, setMontoAbono] = useState('');
   const [error, setError] = useState('');
@@ -718,12 +764,23 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
     }
   };
 
-  const handleMarcarListo = async () => {
+  const handleIrAFacturar = async (modo) => {
     setProcesando(true);
     try {
+      // Se marca "listo_para_entregar" primero para que el producto se mantenga reservado
+      // mientras se hace la factura/nota de venta -si el usuario se arrepiente o no termina el
+      // proceso, el apartado queda igual con la opcion de "Cerrar apartado" mas abajo para
+      // vincular la factura despues a mano.
       const res = await window.api.marcarApartadoListoParaEntregar(id, currentUser?.username);
       if (!res.ok) { setError(res.message || 'No se pudo actualizar'); return; }
-      cargar();
+      onIrAFacturar({
+        apartadoId: apartado.id,
+        depositoId: apartado.deposito_id,
+        clienteId: apartado.cliente_id,
+        clienteNombre: apartado.cliente_nombre,
+        clienteTelefono: apartado.cliente_telefono,
+        items
+      }, modo);
     } finally {
       setProcesando(false);
     }
@@ -833,13 +890,22 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
 
       {apartado.estado === 'activo' && puedeEntregar && (
         <div className="form-box" style={{ maxWidth: 420, marginTop: '1rem', background: '#f0fdf4' }}>
-          <h4>Ya está pagado por completo — ¿qué hacemos?</h4>
+          <h4>Ya está pagado por completo — ¿cómo lo facturamos?</h4>
           <p style={{ fontSize: '0.9rem', color: '#475467' }}>
-            El producto sigue reservado en cualquiera de los dos casos, hasta que cierres el apartado.
+            Te llevamos a la pantalla correspondiente con el cliente y el producto ya cargados
+            (si es Teléfono, SIM o USIM, ahí mismo te pedirá el IMEI/código como siempre).
           </p>
-          <button onClick={handleMarcarListo} disabled={procesando}>
-            Marcar listo para entregar (lo facturo en Facturación)
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => handleIrAFacturar('factura')} disabled={procesando}>
+              🧾 Generar factura
+            </button>
+            <button onClick={() => handleIrAFacturar('notaVenta')} disabled={procesando}>
+              📝 Nota de venta
+            </button>
+          </div>
+          <p style={{ fontSize: '0.8rem', color: '#98a2b3', marginTop: 8, marginBottom: 0 }}>
+            El producto sigue reservado hasta que termines de facturarlo.
+          </p>
         </div>
       )}
 
