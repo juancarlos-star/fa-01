@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('api', {
   listClientes: () => ipcRenderer.invoke('clientes:list'),
   searchClientes: (query) => ipcRenderer.invoke('clientes:search', { query }),
   buscarClientePorCedula: (cedula) => ipcRenderer.invoke('clientes:buscarPorCedula', { cedula }),
+  obtenerClientePorId: (id) => ipcRenderer.invoke('clientes:obtenerPorId', { id }),
   createCliente: (data) => ipcRenderer.invoke('clientes:create', data),
   updateCliente: (id, data) => ipcRenderer.invoke('clientes:update', { id, ...data }),
   // Proveedores (modulo de Compras)
@@ -153,6 +154,8 @@ contextBridge.exposeInMainWorld('api', {
   cancelarApartado: (id, usuario, motivo) => ipcRenderer.invoke('apartados:cancelar', { id, usuario, motivo }),
   marcarApartadoListoParaEntregar: (id, usuario) => ipcRenderer.invoke('apartados:marcarListoParaEntregar', { id, usuario }),
   completarApartado: (id, facturaId, usuario) => ipcRenderer.invoke('apartados:completar', { id, facturaId, usuario }),
+  buscarReciboAbonoPorNumero: (numeroRecibo) => ipcRenderer.invoke('apartados:buscarReciboPorNumero', { numeroRecibo }),
+  buscarApartadosPorCliente: (texto) => ipcRenderer.invoke('apartados:buscarPorCliente', { texto }),
   // Respaldo
   crearBackup: () => ipcRenderer.invoke('backup:crear'),
   restaurarBackup: () => ipcRenderer.invoke('backup:restaurar'),

@@ -570,6 +570,21 @@ function migrarApartadosSiHaceFalta(database) {
       database.prepare('UPDATE apartados SET deposito_id = ? WHERE deposito_id IS NULL').run(principal.id);
     }
   }
+  // "numero_recibo": numeracion secuencial propia del Recibo de Abono (independiente del
+  // numero del apartado), para que cada abono tenga su propio comprobante identificable e
+  // imprimible por separado (ver apartados:abonar en main.js y generarReciboAbonoPDF.js).
+  if (!tieneColumna(database, 'apartado_abonos', 'numero_recibo')) {
+    database.exec('ALTER TABLE apartado_abonos ADD COLUMN numero_recibo INTEGER');
+    // Numera los abonos ya existentes en orden cronologico, para que ninguno quede sin numero.
+    const existentes = database.prepare('SELECT id FROM apartado_abonos ORDER BY created_at ASC, id ASC').all();
+    let n = 1;
+    const actualizar = database.prepare('UPDATE apartado_abonos SET numero_recibo = ? WHERE id = ?');
+    existentes.forEach((row) => { actualizar.run(n, row.id); n += 1; });
+    const yaExisteContador = database.prepare("SELECT value FROM settings WHERE key = 'numero_recibo_abono_siguiente'").get();
+    if (!yaExisteContador) {
+      database.prepare("INSERT INTO settings (key, value) VALUES ('numero_recibo_abono_siguiente', ?)").run(String(n));
+    }
+  }
 }
 
 function initDb() {
@@ -805,6 +820,7 @@ function initDb() {
   insertSetting.run('numero_factura_siguiente', '1');
   insertSetting.run('numero_nota_venta_siguiente', '1');
   insertSetting.run('numero_apartado_siguiente', '1');
+  insertSetting.run('numero_recibo_abono_siguiente', '1');
   // Copia de seguridad automatica por correo (Configuracion > Email Reportes): queda
   // DESACTIVADA por defecto y sin credenciales cargadas. Antes este archivo traia una cuenta de
   // Gmail y su contraseña de aplicacion puestas como valor por defecto -eso significaba que:

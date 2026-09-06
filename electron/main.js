@@ -2107,6 +2107,14 @@ ipcMain.handle('clientes:buscarPorCedula', (event, { cedula }) => {
   return db.prepare('SELECT * FROM clientes WHERE rif_cedula = ? COLLATE NOCASE').get(c) || null;
 });
 
+// Trae un cliente puntual por su id interno -usado al pre-cargar Facturacion desde un Apartado
+// ya pagado, donde solo se conoce el cliente_id guardado en la tabla apartados.
+ipcMain.handle('clientes:obtenerPorId', (event, { id }) => {
+  const db = getDb();
+  if (!id) return null;
+  return db.prepare('SELECT * FROM clientes WHERE id = ?').get(id) || null;
+});
+
 ipcMain.handle('clientes:create', (event, data) => {
   const db = getDb();
   const { nombre, rif_cedula, telefono, direccion, email, tipo_cliente, movil, red_social1, red_social2, red_social3, notas } = data;
@@ -4703,7 +4711,15 @@ ipcMain.handle('apartados:crear', (event, payload) => {
   let siguienteNumero = parseInt(settingsRow ? settingsRow.value : '1', 10);
   if (!siguienteNumero || siguienteNumero < 1) siguienteNumero = 1;
 
+  let numeroReciboInicial = null;
+  if (abono > 0) {
+    const reciboRow = db.prepare("SELECT value FROM settings WHERE key = 'numero_recibo_abono_siguiente'").get();
+    numeroReciboInicial = parseInt(reciboRow ? reciboRow.value : '1', 10);
+    if (!numeroReciboInicial || numeroReciboInicial < 1) numeroReciboInicial = 1;
+  }
+
   let apartadoId;
+  let abonoInicialId = null;
   const transaccion = db.transaction(() => {
     const info = db.prepare(
       `INSERT INTO apartados (numero, cliente_id, cliente_nombre, cliente_telefono, deposito_id, estado, total_usd, abonado_usd, notas, usuario, created_at)
@@ -4719,9 +4735,11 @@ ipcMain.handle('apartados:crear', (event, payload) => {
     });
 
     if (abono > 0) {
-      db.prepare(
-        `INSERT INTO apartado_abonos (apartado_id, monto_usd, usuario, created_at) VALUES (?, ?, ?, datetime('now','localtime'))`
-      ).run(apartadoId, abono, usuario || null);
+      const infoAbono = db.prepare(
+        `INSERT INTO apartado_abonos (apartado_id, monto_usd, numero_recibo, usuario, created_at) VALUES (?, ?, ?, ?, datetime('now','localtime'))`
+      ).run(apartadoId, abono, numeroReciboInicial, usuario || null);
+      abonoInicialId = infoAbono.lastInsertRowid;
+      db.prepare("UPDATE settings SET value = ? WHERE key = 'numero_recibo_abono_siguiente'").run(String(numeroReciboInicial + 1));
     }
 
     db.prepare("UPDATE settings SET value = ? WHERE key = 'numero_apartado_siguiente'").run(String(siguienteNumero + 1));
@@ -4729,7 +4747,9 @@ ipcMain.handle('apartados:crear', (event, payload) => {
   transaccion();
 
   const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(apartadoId);
-  return { ok: true, apartado };
+  const itemsGuardados = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(apartadoId);
+  const abonoInicialRegistrado = abonoInicialId ? db.prepare('SELECT * FROM apartado_abonos WHERE id = ?').get(abonoInicialId) : null;
+  return { ok: true, apartado, items: itemsGuardados, abonoInicial: abonoInicialRegistrado };
 });
 
 ipcMain.handle('apartados:listar', (event, { estado } = {}) => {
@@ -4768,18 +4788,37 @@ ipcMain.handle('apartados:abonar', (event, { id, monto, usuario }) => {
   if (m > saldoActual + 0.005) {
     return { ok: false, message: `El abono no puede superar el saldo pendiente ($${saldoActual.toFixed(2)})` };
   }
+
+  const settingsRow = db.prepare("SELECT value FROM settings WHERE key = 'numero_recibo_abono_siguiente'").get();
+  let numeroRecibo = parseInt(settingsRow ? settingsRow.value : '1', 10);
+  if (!numeroRecibo || numeroRecibo < 1) numeroRecibo = 1;
+
+  let abonoId;
   const transaccion = db.transaction(() => {
-    db.prepare(
-      `INSERT INTO apartado_abonos (apartado_id, monto_usd, usuario, created_at) VALUES (?, ?, ?, datetime('now','localtime'))`
-    ).run(id, m, usuario || null);
+    const info = db.prepare(
+      `INSERT INTO apartado_abonos (apartado_id, monto_usd, numero_recibo, usuario, created_at) VALUES (?, ?, ?, ?, datetime('now','localtime'))`
+    ).run(id, m, numeroRecibo, usuario || null);
+    abonoId = info.lastInsertRowid;
     db.prepare(
       `UPDATE apartados SET abonado_usd = abonado_usd + ?, actualizado_at = datetime('now','localtime') WHERE id = ?`
     ).run(m, id);
+    db.prepare("UPDATE settings SET value = ? WHERE key = 'numero_recibo_abono_siguiente'").run(String(numeroRecibo + 1));
   });
   transaccion();
+
   const actualizado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
+  const abonoRegistrado = db.prepare('SELECT * FROM apartado_abonos WHERE id = ?').get(abonoId);
+  const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(id);
   const saldoPendiente = Math.round((actualizado.total_usd - actualizado.abonado_usd) * 100) / 100;
-  return { ok: true, apartado: actualizado, saldoPendiente, puedeEntregar: saldoPendiente <= 0.005 };
+  return {
+    ok: true,
+    apartado: actualizado,
+    items,
+    abono: abonoRegistrado,
+    saldoAntes: saldoActual,
+    saldoPendiente,
+    puedeEntregar: saldoPendiente <= 0.005
+  };
 });
 
 ipcMain.handle('apartados:cancelar', (event, { id, usuario, motivo }) => {
@@ -4833,4 +4872,44 @@ ipcMain.handle('apartados:completar', (event, { id, facturaId, usuario }) => {
     `UPDATE apartados SET estado = 'completado', factura_id = ?, actualizado_at = datetime('now','localtime') WHERE id = ?`
   ).run(facturaId || null, id);
   return { ok: true };
+});
+
+// Busca UN recibo de abono puntual por su numero secuencial (el que aparece impreso en el
+// comprobante, ej. "REC-000045"). Devuelve tambien los datos del apartado y del cliente para
+// poder mostrar el contexto completo sin tener que ir a buscarlo aparte.
+ipcMain.handle('apartados:buscarReciboPorNumero', (event, { numeroRecibo }) => {
+  const db = getDb();
+  const n = parseInt(numeroRecibo, 10);
+  if (!n) return { ok: false, message: 'Numero de recibo invalido' };
+  const abono = db.prepare('SELECT * FROM apartado_abonos WHERE numero_recibo = ?').get(n);
+  if (!abono) return { ok: false, message: `No existe ningun recibo con el numero ${n}` };
+  const apartado = db.prepare(
+    `SELECT a.*, d.nombre AS deposito_nombre FROM apartados a LEFT JOIN depositos d ON d.id = a.deposito_id WHERE a.id = ?`
+  ).get(abono.apartado_id);
+  const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(abono.apartado_id);
+  return { ok: true, abono, apartado, items };
+});
+
+// Busca todos los apartados de UN cliente (por nombre, cedula/RIF, o telefono -coincidencia
+// parcial), con sus items y todos sus recibos de abono, para poder ver de un vistazo todo el
+// historial de apartados de ese cliente sin tener que entrar uno por uno.
+ipcMain.handle('apartados:buscarPorCliente', (event, { texto }) => {
+  const db = getDb();
+  const busqueda = (texto || '').trim();
+  if (!busqueda) return { ok: false, message: 'Escribe un nombre, cedula o telefono para buscar' };
+  const like = `%${busqueda}%`;
+  const apartados = db.prepare(
+    `SELECT a.*, d.nombre AS deposito_nombre
+     FROM apartados a
+     LEFT JOIN depositos d ON d.id = a.deposito_id
+     LEFT JOIN clientes c ON c.id = a.cliente_id
+     WHERE a.cliente_nombre LIKE ? OR a.cliente_telefono LIKE ? OR c.rif_cedula LIKE ?
+     ORDER BY a.created_at DESC`
+  ).all(like, like, like);
+  const resultado = apartados.map((a) => {
+    const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(a.id);
+    const abonos = db.prepare('SELECT * FROM apartado_abonos WHERE apartado_id = ? ORDER BY created_at ASC').all(a.id);
+    return { ...a, saldo_usd: Math.round((a.total_usd - a.abonado_usd) * 100) / 100, items, abonos };
+  });
+  return { ok: true, apartados: resultado };
 });
