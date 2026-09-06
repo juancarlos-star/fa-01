@@ -4755,9 +4755,10 @@ ipcMain.handle('apartados:crear', (event, payload) => {
 ipcMain.handle('apartados:listar', (event, { estado } = {}) => {
   const db = getDb();
   const base = `
-    SELECT a.*, d.nombre AS deposito_nombre
+    SELECT a.*, d.nombre AS deposito_nombre, f.numero_factura, f.es_nota_venta
     FROM apartados a
     LEFT JOIN depositos d ON d.id = a.deposito_id
+    LEFT JOIN facturas f ON f.id = a.factura_id
   `;
   const rows = estado
     ? db.prepare(`${base} WHERE a.estado = ? ORDER BY a.created_at DESC`).all(estado)
@@ -4768,7 +4769,11 @@ ipcMain.handle('apartados:listar', (event, { estado } = {}) => {
 ipcMain.handle('apartados:detalle', (event, { id }) => {
   const db = getDb();
   const apartado = db.prepare(
-    `SELECT a.*, d.nombre AS deposito_nombre FROM apartados a LEFT JOIN depositos d ON d.id = a.deposito_id WHERE a.id = ?`
+    `SELECT a.*, d.nombre AS deposito_nombre, f.numero_factura, f.es_nota_venta
+     FROM apartados a
+     LEFT JOIN depositos d ON d.id = a.deposito_id
+     LEFT JOIN facturas f ON f.id = a.factura_id
+     WHERE a.id = ?`
   ).get(id);
   if (!apartado) return { ok: false, message: 'Apartado no encontrado' };
   const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(id);
