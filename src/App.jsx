@@ -296,6 +296,7 @@ export default function App() {
                   </button>
             </SidebarSubmenu>
           </div>
+          <button className={view === 'apartados' ? 'active' : ''} onClick={() => setView('apartados')}><MIcon.Apartados />Apartados</button>
           <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuComprasAbierto ? ' dimmed' : ''}`}>
             <button
@@ -335,7 +336,6 @@ export default function App() {
           <hr className="sidebar-section-divider" />
           <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}><MIcon.Categorias />Categorias</button>
           <button className={view === 'cargosDescargos' ? 'active' : ''} onClick={() => setView('cargosDescargos')}><MIcon.CargosDescargos />Cargos y Descargos</button>
-          <button className={view === 'apartados' ? 'active' : ''} onClick={() => setView('apartados')}><MIcon.Apartados />Apartados</button>
           {user.role === 'administrador' && (
             <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}><MIcon.Gastos />Gastos</button>
           )}
