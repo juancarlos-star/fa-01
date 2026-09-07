@@ -88,6 +88,9 @@ contextBridge.exposeInMainWorld('api', {
   // Facturacion
   crearFactura: (payload) => ipcRenderer.invoke('facturas:crear', payload),
   listFacturas: () => ipcRenderer.invoke('facturas:list'),
+  listFacturasPorCliente: (clienteId, limite) => ipcRenderer.invoke('facturas:listPorCliente', { clienteId, limite }),
+  clientesConFacturaEnRango: (desde, hasta) => ipcRenderer.invoke('facturas:clientesConFacturaEnRango', { desde, hasta }),
+  buscarFacturas: (params) => ipcRenderer.invoke('facturas:buscar', params),
   detalleFactura: (id) => ipcRenderer.invoke('facturas:detalle', { id }),
   eliminarFactura: (id, motivo) => ipcRenderer.invoke('facturas:eliminar', { id, motivo }),
   listarFacturasEliminadas: () => ipcRenderer.invoke('facturas:listarEliminadas'),

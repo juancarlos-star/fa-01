@@ -2397,6 +2397,61 @@ ipcMain.handle('facturas:list', () => {
   ).all();
 });
 
+// Trae solo las facturas/notas de venta de UN cliente (usa idx_facturas_cliente_id), en vez de
+// traer TODO el historial de la tienda y filtrarlo del lado del navegador -eso ultimo funciona
+// pero se pone mas lento cada año que pasa; esto no, porque no depende de cuantas facturas tenga
+// el resto de los clientes, solo de las de este. Pensado para: (1) el desplegable de "Cerrar
+// apartado" para elegir la factura del cliente, y (2) el reporte "Ventas por cliente".
+ipcMain.handle('facturas:listPorCliente', (event, { clienteId, limite } = {}) => {
+  const db = getDb();
+  if (!clienteId) return [];
+  return db.prepare(
+    `SELECT f.*, ao.numero AS apartado_origen_numero
+     FROM facturas f
+     LEFT JOIN apartados ao ON ao.id = f.apartado_origen_id
+     WHERE f.cliente_id = ?
+     ORDER BY f.id DESC
+     LIMIT ?`
+  ).all(clienteId, limite || 50);
+});
+
+// Para el reporte "Clientes" con filtro por fecha de facturacion: en vez de traer TODAS las
+// facturas de la historia y despues filtrar cuales caen en el rango, se pide directo la lista de
+// clientes que facturaron EN ESE RANGO (usa idx_facturas_created_at, ya que la comparacion es
+// directa contra la columna -sin envolverla en date()-). El tamaño de la respuesta queda
+// acotado por cuanto dure el rango elegido, no por la antigüedad de la tienda.
+ipcMain.handle('facturas:clientesConFacturaEnRango', (event, { desde, hasta } = {}) => {
+  const db = getDb();
+  if (!desde || !hasta) return [];
+  const filas = db.prepare(
+    `SELECT DISTINCT cliente_id FROM facturas
+     WHERE cliente_id IS NOT NULL AND created_at >= ? AND created_at <= ?`
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
+  return filas.map((f) => f.cliente_id);
+});
+
+// Para la pantalla de Historial de Facturas: antes cargaba TODA la historia de la tienda sin
+// importar hace cuanto se abrio, cada vez que se entraba a esta pantalla -el numero de filas
+// solo podia crecer, para siempre, cada año. Ahora se pide siempre acotado por un rango de
+// fechas (el frontend por defecto manda el mes actual) y opcionalmente un texto de busqueda
+// (numero de documento, cliente o cedula/RIF). Con rango de fechas, la parte de created_at usa
+// idx_facturas_created_at y reduce el trabajo a solo esos dias antes de aplicarle el texto.
+ipcMain.handle('facturas:buscar', (event, { desde, hasta, texto, limite } = {}) => {
+  const db = getDb();
+  let sql = `SELECT f.*, ao.numero AS apartado_origen_numero FROM facturas f LEFT JOIN apartados ao ON ao.id = f.apartado_origen_id WHERE 1=1`;
+  const params = [];
+  if (desde) { sql += ' AND f.created_at >= ?'; params.push(`${desde} 00:00:00`); }
+  if (hasta) { sql += ' AND f.created_at <= ?'; params.push(`${hasta} 23:59:59`); }
+  if (texto && texto.trim()) {
+    const like = `%${texto.trim()}%`;
+    sql += ' AND (f.numero_factura LIKE ? OR f.cliente_nombre LIKE ? OR f.cliente_rif LIKE ?)';
+    params.push(like, like, like);
+  }
+  sql += ' ORDER BY f.id DESC LIMIT ?';
+  params.push(Math.min(limite || 300, 1000));
+  return db.prepare(sql).all(...params);
+});
+
 ipcMain.handle('facturas:detalle', (event, { id }) => {
   const db = getDb();
   const factura = db.prepare(
