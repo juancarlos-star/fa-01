@@ -2,12 +2,25 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { fmt } from '../utils/format.js';
 import PromptModal from '../components/PromptModal.jsx';
+import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFecha.jsx';
 
 export default function Facturas({ currentUser }) {
   const [facturas, setFacturas] = useState([]);
   const [detalle, setDetalle] = useState(null);
   const [settings, setSettings] = useState(null);
   const esAdmin = currentUser?.role === 'administrador';
+
+  // Antes esta pantalla cargaba TODO el historial de facturas de la tienda sin ningun limite,
+  // cada vez que se entraba a ella -con los años esto se vuelve cada vez mas pesado, sin techo.
+  // Ahora se acota siempre a un rango de fechas (por defecto el mes actual, igual que los demas
+  // reportes) mas un buscador opcional por numero de documento, cliente o cedula/RIF -si de
+  // verdad hace falta buscar algo mas viejo que el rango, se amplia el rango o se usa el
+  // buscador con "Todo el historial".
+  const [desde, setDesde] = useState(primerDiaDelMesStr());
+  const [hasta, setHasta] = useState(hoyStr());
+  const [textoBusqueda, setTextoBusqueda] = useState('');
+  const [buscarTodoElHistorial, setBuscarTodoElHistorial] = useState(false);
+  const [cargandoLista, setCargandoLista] = useState(false);
 
   // Antes de eliminar una factura/nota de venta se pide un motivo (obligatorio) y se guarda un
   // rastro en "facturas_eliminadas" -quien, cuando, cual, y por que- para poder auditarlo despues
@@ -19,11 +32,23 @@ export default function Facturas({ currentUser }) {
   const [eliminadas, setEliminadas] = useState([]);
 
   const cargar = useCallback(async () => {
-    const data = await window.api.listFacturas();
+    setCargandoLista(true);
+    const data = await window.api.buscarFacturas({
+      desde: buscarTodoElHistorial ? null : desde,
+      hasta: buscarTodoElHistorial ? null : hasta,
+      texto: textoBusqueda,
+      limite: 500
+    });
     setFacturas(data);
-  }, []);
+    setCargandoLista(false);
+  }, [desde, hasta, textoBusqueda, buscarTodoElHistorial]);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  // Pequeño "debounce": si el usuario esta escribiendo en el buscador, espera 300ms sin
+  // teclear antes de consultar, para no mandar una consulta por cada letra.
+  useEffect(() => {
+    const t = setTimeout(() => cargar(), 300);
+    return () => clearTimeout(t);
+  }, [cargar]);
   useEffect(() => { window.api.getSettings().then(setSettings); }, []);
 
   const verDetalle = async (id) => {
@@ -179,10 +204,35 @@ export default function Facturas({ currentUser }) {
           🗑️ Ver facturas eliminadas
         </button>
       )}
-      {facturas.length === 0 ? (
-        <p>Aun no se ha emitido ninguna factura.</p>
+
+      {!buscarTodoElHistorial && <FiltroFecha desde={desde} hasta={hasta} onChange={(d, h) => { setDesde(d); setHasta(h); }} />}
+
+      <div className="form-box" style={{ maxWidth: '620px', marginBottom: '1rem', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          value={textoBusqueda}
+          onChange={(e) => setTextoBusqueda(e.target.value)}
+          placeholder="Buscar por N°, cliente o cédula/RIF..."
+          style={{ flex: 1, minWidth: 220 }}
+        />
+        <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+          <input type="checkbox" checked={buscarTodoElHistorial} onChange={(e) => setBuscarTodoElHistorial(e.target.checked)} />
+          Buscar en todo el historial (ignora las fechas)
+        </label>
+      </div>
+
+      {cargandoLista ? (
+        <p>Buscando...</p>
+      ) : facturas.length === 0 ? (
+        <p>No se encontró ninguna factura con ese filtro.</p>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+        <>
+          {facturas.length >= 500 && (
+            <p style={{ color: '#b54708' }}>
+              Se muestran las 500 más recientes que coinciden — acota el rango de fechas o
+              escribe algo en el buscador para ver menos resultados.
+            </p>
+          )}
+          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
               <th style={{ padding: '0.5rem' }}>N°</th>
@@ -218,6 +268,7 @@ export default function Facturas({ currentUser }) {
             ))}
           </tbody>
         </table>
+        </>
       )}
       {modalEliminar}
       {errorEliminar && (

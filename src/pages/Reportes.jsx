@@ -2413,7 +2413,7 @@ function ReporteVentasPorCliente({ desde, hasta }) {
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [clienteId, setClienteId] = useState(null);
-  const [todasFacturas, setTodasFacturas] = useState([]);
+  const [facturasClienteCrudo, setFacturasClienteCrudo] = useState([]);
   const [detalle, setDetalle] = useState(null);
   const settings = useSettings();
   const [cargando, setCargando] = useState(false);
@@ -2421,8 +2421,17 @@ function ReporteVentasPorCliente({ desde, hasta }) {
 
   useEffect(() => {
     window.api.listClientes().then(setClientes);
-    window.api.listFacturas().then(setTodasFacturas);
   }, []);
+
+  // Antes se cargaban TODAS las facturas de la tienda al entrar a este reporte, y se filtraban
+  // en el navegador cuando se elegia un cliente. Ahora solo se piden las facturas DE ESE cliente
+  // (facturas:listPorCliente, usa idx_facturas_cliente_id) justo cuando se elige, asi el reporte
+  // no se pone mas pesado de abrir a medida que la tienda acumula años de facturas de otros
+  // clientes.
+  useEffect(() => {
+    if (!clienteId) { setFacturasClienteCrudo([]); return; }
+    window.api.listFacturasPorCliente(clienteId, 500).then(setFacturasClienteCrudo);
+  }, [clienteId]);
 
   const clienteSeleccionado = clientes.find((c) => c.id === clienteId) || null;
 
@@ -2436,14 +2445,14 @@ function ReporteVentasPorCliente({ desde, hasta }) {
 
   const facturasCliente = useMemo(() => {
     if (!clienteId) return [];
-    return todasFacturas
-      .filter((f) => f.cliente_id === clienteId && !f.es_devolucion)
+    return facturasClienteCrudo
+      .filter((f) => !f.es_devolucion)
       .filter((f) => {
         const fecha = (f.created_at || '').slice(0, 10);
         return fecha >= desde && fecha <= hasta;
       })
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-  }, [clienteId, todasFacturas, desde, hasta]);
+  }, [clienteId, facturasClienteCrudo, desde, hasta]);
 
   const verDetalle = async (id) => {
     setCargando(true);
@@ -2579,7 +2588,7 @@ const FILTROS_CLIENTE = [
 
 function ReporteClientes() {
   const [clientes, setClientes] = useState(null);
-  const [facturas, setFacturas] = useState(null);
+  const [idsConFacturaEnRango, setIdsConFacturaEnRango] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [vista, setVista] = useState('todos'); // todos | emails | telefonos
   const [generandoPDF, setGenerandoPDF] = useState(false);
@@ -2593,30 +2602,27 @@ function ReporteClientes() {
 
   const cargar = useCallback(async () => {
     setCargando(true);
-    const [dataClientes, dataFacturas] = await Promise.all([
-      window.api.listClientes(),
-      window.api.listFacturas()
-    ]);
+    const dataClientes = await window.api.listClientes();
     setClientes(dataClientes);
-    setFacturas(dataFacturas);
     setCargando(false);
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  // Antes esto cargaba TODO el historial de facturas de la tienda de una vez (incluso si el
+  // filtro activo ni siquiera era por fecha), y filtraba en el navegador. Ahora solo se pide
+  // -acotado al rango elegido, via facturas:clientesConFacturaEnRango- cuando el filtro por
+  // fecha esta realmente en uso, y se vuelve a pedir si el rango cambia.
+  useEffect(() => {
+    if (filtroTipo !== 'fecha') return;
+    window.api.clientesConFacturaEnRango(filtroDesde, filtroHasta).then((ids) => setIdsConFacturaEnRango(new Set(ids)));
+  }, [filtroTipo, filtroDesde, filtroHasta]);
+
   const clientesFiltrados = useMemo(() => {
     if (!clientes) return [];
     if (filtroTipo === 'fecha') {
-      if (!facturas) return [];
-      const idsConFactura = new Set(
-        facturas
-          .filter((f) => {
-            const fecha = (f.created_at || '').slice(0, 10);
-            return fecha && fecha >= filtroDesde && fecha <= filtroHasta;
-          })
-          .map((f) => f.cliente_id)
-      );
-      return clientes.filter((c) => idsConFactura.has(c.id));
+      if (!idsConFacturaEnRango) return [];
+      return clientes.filter((c) => idsConFacturaEnRango.has(c.id));
     }
 
     const texto = filtroTexto.trim().toLowerCase();
@@ -2630,7 +2636,7 @@ function ReporteClientes() {
     };
     const campo = campoPorTipo[filtroTipo];
     return clientes.filter((c) => (c[campo] || '').toLowerCase().includes(texto));
-  }, [clientes, facturas, filtroTipo, filtroTexto, filtroDesde, filtroHasta]);
+  }, [clientes, idsConFacturaEnRango, filtroTipo, filtroTexto]);
 
   if (cargando) return <p>Cargando...</p>;
   if (!clientes) return null;

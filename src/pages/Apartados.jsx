@@ -819,14 +819,14 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
   useEffect(() => { cargar(); }, [cargar]);
 
   // Para la pantalla de "listo para entregar": trae las facturas mas recientes del mismo
-  // cliente, para que sea facil elegir cual es la que ya se hizo a mano en Facturacion (en vez
-  // de tener que copiar el numero a mano). Siempre se puede cerrar sin elegir ninguna.
+  // cliente (por cliente_id, acotado y con indice -ver facturas:listPorCliente-), para que sea
+  // facil elegir cual es la que ya se hizo a mano en Facturacion. Siempre se puede cerrar sin
+  // elegir ninguna. Si el apartado no tiene cliente_id (se cargo solo con un nombre suelto, sin
+  // registro formal), no hay forma confiable de cruzarlo con una factura -se deja vacio-.
   useEffect(() => {
     if (datos?.apartado?.estado !== 'listo_para_entregar') return;
-    window.api.listFacturas().then((todas) => {
-      const nombre = (datos.apartado.cliente_nombre || '').trim().toLowerCase();
-      setFacturasCliente(todas.filter((f) => (f.cliente_nombre || '').trim().toLowerCase() === nombre).slice(0, 15));
-    });
+    if (!datos.apartado.cliente_id) { setFacturasCliente([]); return; }
+    window.api.listFacturasPorCliente(datos.apartado.cliente_id, 15).then(setFacturasCliente);
   }, [datos]);
 
   if (!datos) return <div><button onClick={onVolver}>← Volver</button><p>Cargando...</p></div>;
