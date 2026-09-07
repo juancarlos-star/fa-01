@@ -564,6 +564,37 @@ function migrarDevolucionesFacturaSiHaceFalta(database) {
 // entregada antes de agregar el filtro por deposito), se agrega la columna aqui en vez de
 // depender solo del CREATE TABLE IF NOT EXISTS (que no modifica una tabla que ya existe).
 // Los apartados viejos que queden con deposito_id NULL se asignan al deposito principal para
+// Indices que faltaban desde el principio: sin esto, cualquier busqueda que no sea por "id"
+// (por product_id, factura_id, apartado_id, estado, cliente, fecha, etc.) obliga a SQLite a
+// recorrer la tabla ENTERA fila por fila. Al principio no se nota (pocas filas), pero a medida
+// que se acumulan años de facturas/unidades/abonos, esas mismas consultas se ponen cada vez mas
+// lentas -este es el arreglo de fondo para que la app no se ponga lenta con el tiempo-.
+// CREATE INDEX IF NOT EXISTS es seguro de correr siempre: si el indice ya existe no hace nada.
+function crearIndicesSiHacenFalta(database) {
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_factura_items_factura_id ON factura_items(factura_id);
+    CREATE INDEX IF NOT EXISTS idx_factura_items_product_id ON factura_items(product_id);
+    CREATE INDEX IF NOT EXISTS idx_factura_items_unit_id ON factura_items(unit_id);
+    CREATE INDEX IF NOT EXISTS idx_facturas_created_at ON facturas(created_at);
+    CREATE INDEX IF NOT EXISTS idx_facturas_cliente_id ON facturas(cliente_id);
+    CREATE INDEX IF NOT EXISTS idx_facturas_apartado_origen_id ON facturas(apartado_origen_id);
+    CREATE INDEX IF NOT EXISTS idx_inventory_units_product_estado ON inventory_units(product_id, estado);
+    CREATE INDEX IF NOT EXISTS idx_inventory_units_deposito_estado ON inventory_units(deposito_id, estado);
+    CREATE INDEX IF NOT EXISTS idx_clientes_rif_cedula ON clientes(rif_cedula);
+    CREATE INDEX IF NOT EXISTS idx_apartados_estado ON apartados(estado);
+    CREATE INDEX IF NOT EXISTS idx_apartados_cliente_id ON apartados(cliente_id);
+    CREATE INDEX IF NOT EXISTS idx_apartados_numero ON apartados(numero);
+    CREATE INDEX IF NOT EXISTS idx_apartado_items_apartado_id ON apartado_items(apartado_id);
+    CREATE INDEX IF NOT EXISTS idx_apartado_abonos_apartado_id ON apartado_abonos(apartado_id);
+    CREATE INDEX IF NOT EXISTS idx_apartado_abonos_numero_recibo ON apartado_abonos(numero_recibo);
+    CREATE INDEX IF NOT EXISTS idx_products_tipo_categoria ON products(tipo, categoria);
+    CREATE INDEX IF NOT EXISTS idx_compras_product_id ON compras(product_id);
+    CREATE INDEX IF NOT EXISTS idx_compras_encabezado_id ON compras(compra_encabezado_id);
+    CREATE INDEX IF NOT EXISTS idx_gastos_created_at ON gastos(created_at);
+    CREATE INDEX IF NOT EXISTS idx_product_stock_deposito_producto ON product_stock_deposito(product_id, deposito_id);
+  `);
+}
+
 // no perder la reserva de stock que ya tenian.
 function migrarApartadosSiHaceFalta(database) {
   const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='apartados'").get();
@@ -834,6 +865,7 @@ function initDb() {
   migrarTasaCambioComprasSiHaceFalta(database);
   migrarNotaVentaSiHaceFalta(database);
   migrarApartadosSiHaceFalta(database);
+  crearIndicesSiHacenFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   insertSetting.run('tasa_cambio', '1');

@@ -2740,9 +2740,16 @@ ipcMain.handle('compras:list', (event, { desde, hasta } = {}) => {
 // misma logica desde el correo automatico/manual de cierre (que necesita "hoy" sin pasar por
 // el puente IPC del renderer).
 function calcularReporteGanancias(db, desde, hasta) {
+  // Antes esto envolvia la columna en date(created_at), lo que obliga a SQLite a recorrer TODA
+  // la tabla facturas sin poder usar ningun indice (una funcion sobre la columna invalida el
+  // indice). Al comparar created_at directo contra el rango ya armado (sin funcion), SQLite si
+  // puede usar idx_facturas_created_at / idx_gastos_created_at -mismo resultado, mucho mas
+  // rapido a medida que se acumulan años de facturas.
+  const desdeInicio = `${desde} 00:00:00`;
+  const hastaFin = `${hasta} 23:59:59`;
   const facturas = db.prepare(
-    "SELECT * FROM facturas WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at"
-  ).all(desde, hasta);
+    "SELECT * FROM facturas WHERE created_at >= ? AND created_at <= ? ORDER BY created_at"
+  ).all(desdeInicio, hastaFin);
 
   const ventasSubtotalUsd = facturas.reduce((acc, f) => acc + f.subtotal_usd, 0);
   const ivaCobradoUsd = facturas.reduce((acc, f) => acc + f.iva_usd, 0);
@@ -2759,8 +2766,8 @@ function calcularReporteGanancias(db, desde, hasta) {
   }
 
   const gastos = db.prepare(
-    "SELECT * FROM gastos WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at"
-  ).all(desde, hasta);
+    "SELECT * FROM gastos WHERE created_at >= ? AND created_at <= ? ORDER BY created_at"
+  ).all(desdeInicio, hastaFin);
   const gastosTotalUsd = gastos.reduce((acc, g) => acc + g.monto_usd, 0);
 
   const gananciaBrutaUsd = ventasSubtotalUsd - costoVendidoUsd;
@@ -3020,8 +3027,9 @@ function generarResumenDiarioTexto(db, cantidadDocumentosHoy) {
   let stockTotal = 0;
   let valorCostoUsd = 0;
   let valorVentaUsd = 0;
+  const stockDeTodos = obtenerStockPorDepositoDeTodosLosProductos(db);
   productos.forEach((p) => {
-    const stock = obtenerStockPorDepositoDeProducto(db, p).reduce((acc, d) => acc + d.cantidad, 0);
+    const stock = stockDeTodos(p.id).reduce((acc, d) => acc + d.cantidad, 0);
     stockTotal += stock;
     valorCostoUsd += stock * (p.costo_promedio_usd || 0);
     valorVentaUsd += stock * (p.precio2 || 0);
@@ -4163,6 +4171,50 @@ function obtenerStockPorDepositoDeProducto(db, product) {
   ).all(product.id);
 }
 
+// Version "para todos los productos de una vez" de la funcion de arriba. La de arriba hace 1
+// consulta POR PRODUCTO -bien para un producto suelto (ej. Facturacion), pero un problema serio
+// en cualquier reporte que recorra TODO el catalogo (Stock Muerto, Inventario de Productos,
+// Catalogo para WhatsApp, y el resumen que se manda por correo al cerrar el programa): con solo
+// 500 productos ya son 500 consultas repetidas cada vez que se abre/envia ese reporte, y eso
+// escala mal a medida que el inventario crece. Esta version resuelve TODO el catalogo con nada
+// mas que 3 consultas en total, sin importar cuantos productos haya.
+function obtenerStockPorDepositoDeTodosLosProductos(db) {
+  const depositos = db.prepare('SELECT id, nombre FROM depositos WHERE activo = 1 ORDER BY nombre').all();
+  const productos = db.prepare('SELECT id FROM products').all();
+
+  const mapa = new Map();
+  productos.forEach((p) => {
+    mapa.set(p.id, depositos.map((d) => ({ deposito_id: d.id, deposito_nombre: d.nombre, cantidad: 0 })));
+  });
+
+  db.prepare(
+    `SELECT psd.product_id AS product_id, psd.deposito_id AS deposito_id, psd.cantidad AS cantidad
+     FROM product_stock_deposito psd
+     JOIN depositos d ON d.id = psd.deposito_id AND d.activo = 1`
+  ).all().forEach((fila) => {
+    const filasProducto = mapa.get(fila.product_id);
+    const destino = filasProducto && filasProducto.find((f) => f.deposito_id === fila.deposito_id);
+    if (destino) destino.cantidad = fila.cantidad;
+  });
+
+  db.prepare(
+    `SELECT u.product_id AS product_id, u.deposito_id AS deposito_id, COUNT(*) AS cantidad
+     FROM inventory_units u
+     JOIN depositos d ON d.id = u.deposito_id AND d.activo = 1
+     WHERE u.estado = 'disponible'
+     GROUP BY u.product_id, u.deposito_id`
+  ).all().forEach((fila) => {
+    const filasProducto = mapa.get(fila.product_id);
+    const destino = filasProducto && filasProducto.find((f) => f.deposito_id === fila.deposito_id);
+    if (destino) destino.cantidad = fila.cantidad;
+  });
+
+  // Devuelve una funcion getter en vez del Map crudo, para que el codigo que ya llamaba a
+  // obtenerStockPorDepositoDeProducto(db, p) por producto individual cambie lo minimo posible:
+  // ahora solo cambia POR CUAL funcion pregunta ("la de todos" en vez de "la de uno").
+  return (productId) => mapa.get(productId) || [];
+}
+
 // "Productos": listado valorizado de todo el inventario (stock x costo promedio y stock x
 // precio de venta), opcionalmente filtrado a un solo deposito. Se separa en una funcion propia
 // (en vez de vivir solo dentro del ipcMain.handle) para poder llamarla tambien desde el correo
@@ -4174,8 +4226,9 @@ function obtenerReporteInventarioProductos(db, depositoId) {
   // campo cargado a mano -- asi siempre refleja la tasa vigente al momento de ver el reporte.
   const tasaCambio = parseFloat(db.prepare("SELECT value FROM settings WHERE key = 'tasa_cambio'").get()?.value) || 1;
 
+  const stockDeTodos = obtenerStockPorDepositoDeTodosLosProductos(db);
   const filas = productos.map((p) => {
-    const porDeposito = obtenerStockPorDepositoDeProducto(db, p);
+    const porDeposito = stockDeTodos(p.id);
     const stock = depositoId
       ? (porDeposito.find((d) => d.deposito_id === depositoId)?.cantidad || 0)
       : porDeposito.reduce((acc, d) => acc + d.cantidad, 0);
@@ -4233,9 +4286,10 @@ ipcMain.handle('reportes:catalogo', (event, { tipo } = {}) => {
     ? db.prepare('SELECT * FROM products WHERE tipo = ? ORDER BY categoria, nombre').all(tipo)
     : db.prepare('SELECT * FROM products ORDER BY tipo, categoria, nombre').all();
 
+  const stockDeTodos = obtenerStockPorDepositoDeTodosLosProductos(db);
   const disponibles = productos
     .map((p) => {
-      const stock = obtenerStockPorDepositoDeProducto(db, p).reduce((acc, d) => acc + d.cantidad, 0);
+      const stock = stockDeTodos(p.id).reduce((acc, d) => acc + d.cantidad, 0);
       const precioUsd = p.precio2 || 0;
       return {
         id: p.id,
@@ -4259,6 +4313,7 @@ ipcMain.handle('reportes:catalogo', (event, { tipo } = {}) => {
 // marca aparte con "nuncaVendido: true" para no confundirlo con "se vendio hace mucho".
 function obtenerReporteStockMuerto(db) {
   const productos = db.prepare('SELECT * FROM products ORDER BY tipo, nombre').all();
+  const stockDeTodos = obtenerStockPorDepositoDeTodosLosProductos(db);
   const ultimaVentaPorProducto = new Map(
     db.prepare(
       `SELECT fi.product_id AS product_id, MAX(f.created_at) AS ultima_venta
@@ -4271,7 +4326,7 @@ function obtenerReporteStockMuerto(db) {
 
   const filas = productos
     .map((p) => {
-      const stock = obtenerStockPorDepositoDeProducto(db, p).reduce((acc, d) => acc + d.cantidad, 0);
+      const stock = stockDeTodos(p.id).reduce((acc, d) => acc + d.cantidad, 0);
       if (stock <= 0) return null; // sin existencia no hay nada que liquidar
       const ultimaVenta = ultimaVentaPorProducto.get(p.id) || null;
       const fechaReferencia = ultimaVenta || p.created_at;
