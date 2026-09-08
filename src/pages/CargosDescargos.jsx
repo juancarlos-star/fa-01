@@ -679,13 +679,31 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
       <label>Producto</label>
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
         {producto ? (
-          <div style={{
-            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            gap: '0.5rem', padding: '0.4rem 0.6rem', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#f9fafb'
-          }}>
-            <span>{producto.nombre} <span style={{ color: '#667085', fontSize: '0.85rem' }}>(stock: {producto.stock_disponible})</span></span>
-            <button type="button" onClick={volverABuscarProducto} style={{ fontSize: '0.78rem', padding: '2px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', cursor: 'pointer' }}>
-              Cambiar
+          // Todo el recuadro es clickeable (no solo el texto "Limpiar"): al pinchar en
+          // cualquier parte se borra el producto seleccionado y se puede escribir/buscar otro
+          // de inmediato, igual que si nunca se hubiera elegido uno. El texto "Limpiar" de la
+          // derecha es solo la pista visual de que se puede hacer click ahi.
+          // NOTA: el color del texto se fija explicito (no se deja heredar) porque la regla
+          // ".form-box button" del CSS global pone TODOS los botones con texto blanco -pensada
+          // para los botones solidos azules del formulario- y como este boton en particular
+          // tiene fondo blanco, el texto quedaba blanco sobre blanco (invisible): ese era el
+          // "rectangulo vacio" que se veia al lado del campo Producto.
+          <div
+            onClick={volverABuscarProducto}
+            title="Click para quitar este producto y buscar/escribir otro"
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: '0.5rem', padding: '0.4rem 0.6rem', border: '1px solid #d0d5dd', borderRadius: '4px',
+              background: '#f9fafb', cursor: 'pointer'
+            }}
+          >
+            <span style={{ color: '#111' }}>{producto.nombre} <span style={{ color: '#667085', fontSize: '0.85rem' }}>(stock: {producto.stock_disponible})</span></span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); volverABuscarProducto(); }}
+              style={{ fontSize: '0.78rem', padding: '2px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', color: '#0b4f9e', cursor: 'pointer' }}
+            >
+              Limpiar ×
             </button>
           </div>
         ) : (
