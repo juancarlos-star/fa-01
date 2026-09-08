@@ -51,8 +51,15 @@ function codificarAsunto(asunto) {
 }
 
 // Corta un string base64 largo en lineas de 76 caracteres, como pide el estandar MIME.
+// Si el string viene vacio (ej. un adjunto de 0 bytes, o un cuerpo de texto vacio), el regex
+// no encuentra ninguna coincidencia y .match() devuelve null -antes esto tumbaba el envio
+// completo del correo con un error críptico ("Cannot read properties of null"). Con este caso
+// cubierto, un adjunto vacio simplemente se envia como una parte sin contenido, sin romper el
+// resto del correo.
 function envolverBase64(base64) {
-  return base64.match(/.{1,76}/g).join('\r\n');
+  if (!base64) return '';
+  const partes = base64.match(/.{1,76}/g);
+  return partes ? partes.join('\r\n') : '';
 }
 
 // Genera un "Message-ID" unico para el encabezado del correo (formato estandar
