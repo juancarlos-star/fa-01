@@ -379,11 +379,15 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
 
   // Cantidad maxima que se puede pedir en la fila actual: el stock del deposito para
   // accesorios, o la cantidad de unidades (IMEI/ICCID) disponibles para equipos/SIM/USIM.
+  // Fuera del flujo de "completar un apartado", se limita ademas a stock_disponible (que ya
+  // resta lo reservado por apartados activos) -- apartado_items no guarda el IMEI puntual de
+  // cada unidad reservada, asi que la unica forma de no vender por error una unidad que ya
+  // esta prometida a un cliente con apartado es topar la CANTIDAD vendible en una venta normal.
   const maxDisponibleFila = () => {
     if (!filaProducto) return 0;
-    return filaProducto.tipo === 'accesorio'
-      ? (filaProducto.stock_disponible || 0)
-      : filaUnidadesDisponibles.length;
+    if (filaProducto.tipo === 'accesorio') return (filaProducto.stock_disponible || 0);
+    if (filaVieneDeApartado) return filaUnidadesDisponibles.length;
+    return Math.min(filaUnidadesDisponibles.length, filaProducto.stock_disponible ?? filaUnidadesDisponibles.length);
   };
 
   // Agrega una sugerencia de venta cruzada (accesorio) al carrito con cantidad 1 y su precio
