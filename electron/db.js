@@ -592,6 +592,16 @@ function crearIndicesSiHacenFalta(database) {
     CREATE INDEX IF NOT EXISTS idx_compras_encabezado_id ON compras(compra_encabezado_id);
     CREATE INDEX IF NOT EXISTS idx_gastos_created_at ON gastos(created_at);
     CREATE INDEX IF NOT EXISTS idx_product_stock_deposito_producto ON product_stock_deposito(product_id, deposito_id);
+    -- Los siguientes 6 indices son de la Parte 3 de la prueba de estrés: cubren las tablas
+    -- que quedaron fuera de la primera tanda de indices (compras, compras_encabezado,
+    -- cargos_descargos_encabezado, descargos, notificaciones) y que ahora se pueden aprovechar
+    -- porque las consultas correspondientes en main.js dejaron de envolver created_at en date().
+    CREATE INDEX IF NOT EXISTS idx_compras_created_at ON compras(created_at);
+    CREATE INDEX IF NOT EXISTS idx_compras_encabezado_created_at ON compras_encabezado(created_at);
+    CREATE INDEX IF NOT EXISTS idx_cargos_descargos_encabezado_created_at ON cargos_descargos_encabezado(created_at);
+    CREATE INDEX IF NOT EXISTS idx_descargos_created_at ON descargos(created_at);
+    CREATE INDEX IF NOT EXISTS idx_notificaciones_created_at ON notificaciones(created_at);
+    CREATE INDEX IF NOT EXISTS idx_notificaciones_tipo_producto ON notificaciones(tipo, producto_id);
   `);
 }
 

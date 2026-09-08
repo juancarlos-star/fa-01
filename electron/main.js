@@ -1745,10 +1745,16 @@ ipcMain.handle('settings:get', () => {
 // para no repetirse); las de stock se re-evaluan cada vez (si el producto sigue bajo/agotado, no
 // se vuelve a avisar el mismo dia; si se resuelve y vuelve a bajar otro dia, se avisa de nuevo).
 function existeNotificacionHoy(db, tipo, productoId) {
+  // Igual que en calcularReporteGanancias: se compara created_at directo contra el rango del
+  // dia (en vez de envolverlo en date()) para poder usar idx_notificaciones_created_at /
+  // idx_notificaciones_tipo_producto. Esta tabla se poda a 2 semanas en notificaciones:listar,
+  // asi que el impacto real es bajo, pero se deja consistente con el resto de la base.
   const hoy = new Date().toISOString().slice(0, 10);
+  const inicioHoy = `${hoy} 00:00:00`;
+  const finHoy = `${hoy} 23:59:59`;
   const row = productoId
-    ? db.prepare("SELECT id FROM notificaciones WHERE tipo = ? AND producto_id = ? AND date(created_at) = ?").get(tipo, productoId, hoy)
-    : db.prepare("SELECT id FROM notificaciones WHERE tipo = ? AND producto_id IS NULL AND date(created_at) = ?").get(tipo, hoy);
+    ? db.prepare("SELECT id FROM notificaciones WHERE tipo = ? AND producto_id = ? AND created_at BETWEEN ? AND ?").get(tipo, productoId, inicioHoy, finHoy)
+    : db.prepare("SELECT id FROM notificaciones WHERE tipo = ? AND producto_id IS NULL AND created_at BETWEEN ? AND ?").get(tipo, inicioHoy, finHoy);
   return !!row;
 }
 
@@ -1782,13 +1788,16 @@ ipcMain.handle('notificaciones:generar', () => {
   }
 
   // --- Ventas de hoy vs ayer (en $ y en unidades), cada una es su propia notificacion ---
+  // Esta comparacion corre cada vez que se entra a Inicio y cada 30 minutos mientras se este
+  // ahi, contra la tabla facturas (la que mas crece de todas) -por eso importa que aproveche
+  // idx_facturas_created_at en vez de escanearla completa con date(created_at).
   const totalUsdDia = (fecha) => db.prepare(
-    "SELECT COALESCE(SUM(total_usd),0) AS t FROM facturas WHERE date(created_at) = ?"
-  ).get(fecha).t;
+    "SELECT COALESCE(SUM(total_usd),0) AS t FROM facturas WHERE created_at BETWEEN ? AND ?"
+  ).get(`${fecha} 00:00:00`, `${fecha} 23:59:59`).t;
   const unidadesDia = (fecha) => db.prepare(
     `SELECT COALESCE(SUM(fi.cantidad),0) AS u FROM factura_items fi
-     JOIN facturas f ON f.id = fi.factura_id WHERE date(f.created_at) = ?`
-  ).get(fecha).u;
+     JOIN facturas f ON f.id = fi.factura_id WHERE f.created_at BETWEEN ? AND ?`
+  ).get(`${fecha} 00:00:00`, `${fecha} 23:59:59`).u;
 
   const totalHoy = totalUsdDia(hoy);
   const totalAyer = totalUsdDia(ayer);
@@ -1816,9 +1825,11 @@ ipcMain.handle('notificaciones:generar', () => {
 // 2 semanas (no solo se ocultan del listado): asi la tabla nunca crece sin limite.
 ipcMain.handle('notificaciones:listar', () => {
   const db = getDb();
-  db.prepare("DELETE FROM notificaciones WHERE date(created_at) < date('now','localtime','-14 days')").run();
+  // datetime('now',...) se calcula UNA vez como valor constante y se compara directo contra
+  // la columna (sin date() envolviendola), asi puede usar idx_notificaciones_created_at.
+  db.prepare("DELETE FROM notificaciones WHERE created_at < datetime('now','localtime','-14 days')").run();
   const notificaciones = db.prepare(
-    "SELECT * FROM notificaciones WHERE date(created_at) >= date('now','localtime','-14 days') ORDER BY created_at DESC"
+    "SELECT * FROM notificaciones WHERE created_at >= datetime('now','localtime','-14 days') ORDER BY created_at DESC"
   ).all();
   const noLeidas = notificaciones.filter((n) => !n.leida).length;
   return { notificaciones, noLeidas };
@@ -2764,8 +2775,8 @@ ipcMain.handle('gastos:list', (event, { desde, hasta } = {}) => {
   const db = getDb();
   if (desde && hasta) {
     return db.prepare(
-      "SELECT * FROM gastos WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY id DESC"
-    ).all(desde, hasta);
+      "SELECT * FROM gastos WHERE created_at BETWEEN ? AND ? ORDER BY id DESC"
+    ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
   }
   return db.prepare('SELECT * FROM gastos ORDER BY id DESC').all();
 });
@@ -2783,8 +2794,8 @@ ipcMain.handle('compras:list', (event, { desde, hasta } = {}) => {
   const db = getDb();
   if (desde && hasta) {
     return db.prepare(
-      "SELECT * FROM compras WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY id DESC"
-    ).all(desde, hasta);
+      "SELECT * FROM compras WHERE created_at BETWEEN ? AND ? ORDER BY id DESC"
+    ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
   }
   return db.prepare('SELECT * FROM compras ORDER BY id DESC').all();
 });
@@ -2948,8 +2959,14 @@ function recolectarDocumentosDeHoy(db, settings) {
   const resumen = { notasVenta: [], facturas: [], compras: [], cargosDescargos: [], gastos: [] };
 
   // ---- Notas de Venta y Facturas (misma tabla "facturas", separadas por es_nota_venta) ----
+  // Las 4 consultas "de hoy" de esta funcion comparan created_at contra el rango del dia ya
+  // resuelto por SQLite ('start of day' / '+1 day' son funciones sobre la CONSTANTE 'now', no
+  // sobre la columna), asi que si pueden usar los indices de created_at de cada tabla.
   const facturasHoy = db.prepare(
-    `SELECT * FROM facturas WHERE es_devolucion = 0 AND date(created_at) = date('now','localtime') ORDER BY created_at ASC`
+    `SELECT * FROM facturas WHERE es_devolucion = 0
+       AND created_at >= datetime('now','localtime','start of day')
+       AND created_at < datetime('now','localtime','start of day','+1 day')
+     ORDER BY created_at ASC`
   ).all();
   facturasHoy.forEach((factura) => {
     const items = db.prepare('SELECT * FROM factura_items WHERE factura_id = ?').all(factura.id);
@@ -2973,7 +2990,10 @@ function recolectarDocumentosDeHoy(db, settings) {
 
   // ---- Compras (incluye devoluciones de compra, cada una con su propio PDF) ----
   const comprasHoy = db.prepare(
-    `SELECT * FROM compras_encabezado WHERE date(created_at) = date('now','localtime') ORDER BY created_at ASC`
+    `SELECT * FROM compras_encabezado
+     WHERE created_at >= datetime('now','localtime','start of day')
+       AND created_at < datetime('now','localtime','start of day','+1 day')
+     ORDER BY created_at ASC`
   ).all();
   comprasHoy.forEach((encabezado) => {
     const itemsCrudos = db.prepare('SELECT * FROM compras WHERE compra_encabezado_id = ?').all(encabezado.id);
@@ -3003,7 +3023,10 @@ function recolectarDocumentosDeHoy(db, settings) {
 
   // ---- Cargos y Descargos (agrupados por encabezado, igual que en su historial) ----
   const cargosDescargosHoy = db.prepare(
-    `SELECT * FROM cargos_descargos_encabezado WHERE date(created_at) = date('now','localtime') ORDER BY created_at ASC`
+    `SELECT * FROM cargos_descargos_encabezado
+     WHERE created_at >= datetime('now','localtime','start of day')
+       AND created_at < datetime('now','localtime','start of day','+1 day')
+     ORDER BY created_at ASC`
   ).all();
   cargosDescargosHoy.forEach((encabezado) => {
     const esCargo = encabezado.tipo_documento === 'cargo';
@@ -3043,7 +3066,10 @@ function recolectarDocumentosDeHoy(db, settings) {
 
   // ---- Gastos (comprobante individual nuevo, no existia hasta ahora) ----
   const gastosHoy = db.prepare(
-    `SELECT * FROM gastos WHERE date(created_at) = date('now','localtime') ORDER BY created_at ASC`
+    `SELECT * FROM gastos
+     WHERE created_at >= datetime('now','localtime','start of day')
+       AND created_at < datetime('now','localtime','start of day','+1 day')
+     ORDER BY created_at ASC`
   ).all();
   gastosHoy.forEach((gasto) => {
     try {
@@ -3071,11 +3097,15 @@ function generarResumenDiarioTexto(db, cantidadDocumentosHoy) {
 
   const ventasHoy = db.prepare(
     `SELECT COUNT(*) AS cantidad, COALESCE(SUM(total_usd), 0) AS totalUsd, COALESCE(SUM(total_bs), 0) AS totalBs
-     FROM facturas WHERE es_devolucion = 0 AND date(created_at) = date('now', 'localtime')`
+     FROM facturas WHERE es_devolucion = 0
+       AND created_at >= datetime('now','localtime','start of day')
+       AND created_at < datetime('now','localtime','start of day','+1 day')`
   ).get();
   const devolucionesHoy = db.prepare(
     `SELECT COUNT(*) AS cantidad, COALESCE(SUM(total_usd), 0) AS totalUsd
-     FROM facturas WHERE es_devolucion = 1 AND date(created_at) = date('now', 'localtime')`
+     FROM facturas WHERE es_devolucion = 1
+       AND created_at >= datetime('now','localtime','start of day')
+       AND created_at < datetime('now','localtime','start of day','+1 day')`
   ).get();
 
   const productos = db.prepare('SELECT * FROM products').all();
@@ -3867,8 +3897,8 @@ ipcMain.handle('units:writeOffRange', (event, { product_id, codigoInicio, codigo
 ipcMain.handle('reportes:facturas', (event, { desde, hasta }) => {
   const db = getDb();
   const facturas = db.prepare(
-    "SELECT * FROM facturas WHERE es_devolucion = 0 AND date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
-  ).all(desde, hasta);
+    "SELECT * FROM facturas WHERE es_devolucion = 0 AND created_at BETWEEN ? AND ? ORDER BY created_at DESC"
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
   const totalUsd = facturas.reduce((acc, f) => acc + f.total_usd, 0);
   const totalBs = facturas.reduce((acc, f) => acc + f.total_bs, 0);
 
@@ -3896,8 +3926,8 @@ ipcMain.handle('reportes:facturas', (event, { desde, hasta }) => {
 ipcMain.handle('reportes:devolucionesFacturas', (event, { desde, hasta }) => {
   const db = getDb();
   const devoluciones = db.prepare(
-    "SELECT * FROM facturas WHERE es_devolucion = 1 AND date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
-  ).all(desde, hasta);
+    "SELECT * FROM facturas WHERE es_devolucion = 1 AND created_at BETWEEN ? AND ? ORDER BY created_at DESC"
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
   const getOriginal = db.prepare('SELECT numero_factura FROM facturas WHERE id = ?');
   const conOriginal = devoluciones.map((d) => ({
     ...d,
@@ -3914,8 +3944,8 @@ ipcMain.handle('reportes:devolucionesFacturas', (event, { desde, hasta }) => {
 ipcMain.handle('reportes:compras', (event, { desde, hasta }) => {
   const db = getDb();
   const compras = db.prepare(
-    "SELECT * FROM compras_encabezado WHERE es_devolucion = 0 AND date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
-  ).all(desde, hasta);
+    "SELECT * FROM compras_encabezado WHERE es_devolucion = 0 AND created_at BETWEEN ? AND ? ORDER BY created_at DESC"
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
   const totalUsd = compras.reduce((acc, c) => acc + c.total_usd, 0);
 
   // Para cada compra ORIGINAL de la lista, se agrega un resumen ligero de sus devoluciones -si
@@ -3943,8 +3973,8 @@ ipcMain.handle('reportes:compras', (event, { desde, hasta }) => {
 ipcMain.handle('reportes:devolucionesCompras', (event, { desde, hasta }) => {
   const db = getDb();
   const devoluciones = db.prepare(
-    "SELECT * FROM compras_encabezado WHERE es_devolucion = 1 AND date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at DESC"
-  ).all(desde, hasta);
+    "SELECT * FROM compras_encabezado WHERE es_devolucion = 1 AND created_at BETWEEN ? AND ? ORDER BY created_at DESC"
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
   const getOriginal = db.prepare('SELECT numero_factura_compra FROM compras_encabezado WHERE id = ?');
   const conOriginal = devoluciones.map((d) => ({
     ...d,
@@ -3966,8 +3996,8 @@ ipcMain.handle('reportes:libroVentasIva', (event, { desde, hasta }) => {
   if (chequeo) return chequeo;
   const db = getDb();
   const filas = db.prepare(
-    "SELECT * FROM facturas WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at ASC, id ASC"
-  ).all(desde, hasta);
+    "SELECT * FROM facturas WHERE created_at BETWEEN ? AND ? ORDER BY created_at ASC, id ASC"
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const getOriginal = db.prepare('SELECT numero_factura FROM facturas WHERE id = ?');
   const filasConReferencia = filas.map((f) => ({
@@ -4000,8 +4030,8 @@ ipcMain.handle('reportes:libroComprasIva', (event, { desde, hasta }) => {
   const db = getDb();
   const ivaPorcentajeActual = obtenerIvaPorcentajeActual(db);
   const filas = db.prepare(
-    "SELECT * FROM compras_encabezado WHERE date(created_at) BETWEEN date(?) AND date(?) ORDER BY created_at ASC, id ASC"
-  ).all(desde, hasta);
+    "SELECT * FROM compras_encabezado WHERE created_at BETWEEN ? AND ? ORDER BY created_at ASC, id ASC"
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const getOriginal = db.prepare('SELECT numero_factura_compra FROM compras_encabezado WHERE id = ?');
   const filasConCalculo = filas.map((f) => {
@@ -4043,8 +4073,8 @@ function calcularReporteMargenPorProducto(db, desde, hasta) {
             fi.precio_unitario_usd, fi.costo_unitario_usd, fi.subtotal_usd
      FROM factura_items fi
      JOIN facturas f ON f.id = fi.factura_id
-     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)`
-  ).all(desde, hasta);
+     WHERE f.es_devolucion = 0 AND f.created_at BETWEEN ? AND ?`
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const porProducto = new Map();
   for (const it of items) {
@@ -4170,8 +4200,8 @@ ipcMain.handle('reportes:productosVendidos', (event, { desde, hasta, tipo, produ
   let query = `SELECT fi.*, f.created_at AS fecha, f.numero_factura, f.cliente_nombre
                FROM factura_items fi
                JOIN facturas f ON f.id = fi.factura_id
-               WHERE date(f.created_at) BETWEEN date(?) AND date(?)`;
-  const params = [desde, hasta];
+               WHERE f.created_at BETWEEN ? AND ?`;
+  const params = [`${desde} 00:00:00`, `${hasta} 23:59:59`];
   if (tipo) {
     query += ' AND fi.tipo = ?';
     params.push(tipo);
@@ -4465,17 +4495,17 @@ ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
      FROM compras c
      LEFT JOIN products p ON p.id = c.product_id
      LEFT JOIN inventory_units u ON u.id = c.unit_id
-     WHERE c.compra_encabezado_id IS NULL AND date(c.created_at) BETWEEN date(?) AND date(?)
+     WHERE c.compra_encabezado_id IS NULL AND c.created_at BETWEEN ? AND ?
      ORDER BY c.created_at DESC`
-  ).all(desde, hasta);
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
   const descargos = db.prepare(
     `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo
      FROM descargos d
      LEFT JOIN products p ON p.id = d.product_id
      LEFT JOIN inventory_units u ON u.id = d.unit_id
-     WHERE date(d.created_at) BETWEEN date(?) AND date(?)
+     WHERE d.created_at BETWEEN ? AND ?
      ORDER BY d.created_at DESC`
-  ).all(desde, hasta);
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   // Numero de secuencia individual para cada renglon (independiente del id de la fila),
   // asi cada cargo o descargo queda identificado por su propia posicion en el listado,
@@ -4520,10 +4550,10 @@ ipcMain.handle('reportes:vendedoresEfectividad', (event, { desde, hasta, agrupac
     `SELECT f.usuario, strftime(?, f.created_at) AS periodo,
             COUNT(*) AS cantidadFacturas, SUM(f.total_usd) AS totalUsd
      FROM facturas f
-     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)
+     WHERE f.es_devolucion = 0 AND f.created_at BETWEEN ? AND ?
      GROUP BY f.usuario, periodo
      ORDER BY periodo ASC, totalUsd DESC`
-  ).all(formato, desde, hasta);
+  ).all(formato, `${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const nombres = mapaUsuarios(db);
   const conNombre = filas.map((f) => ({ ...f, nombreVendedor: nombres[f.usuario] || f.usuario || 'Sin asignar' }));
@@ -4557,9 +4587,9 @@ ipcMain.handle('reportes:vendedoresPorCategoria', (event, { desde, hasta }) => {
     `SELECT f.usuario, fi.tipo, SUM(fi.cantidad) AS cantidad, SUM(fi.subtotal_usd) AS totalUsd
      FROM factura_items fi
      JOIN facturas f ON f.id = fi.factura_id
-     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)
+     WHERE f.es_devolucion = 0 AND f.created_at BETWEEN ? AND ?
      GROUP BY f.usuario, fi.tipo`
-  ).all(desde, hasta);
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const nombres = mapaUsuarios(db);
   const tipos = ['equipo', 'simcard', 'usim', 'accesorio'];
@@ -4585,10 +4615,10 @@ ipcMain.handle('reportes:vendedoresEstadisticas', (event, { desde, hasta }) => {
   const filas = db.prepare(
     `SELECT f.usuario, COUNT(*) AS cantidadFacturas, SUM(f.total_usd) AS totalUsd
      FROM facturas f
-     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)
+     WHERE f.es_devolucion = 0 AND f.created_at BETWEEN ? AND ?
      GROUP BY f.usuario
      ORDER BY totalUsd DESC`
-  ).all(desde, hasta);
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const nombres = mapaUsuarios(db);
   const totalGeneral = filas.reduce((acc, f) => acc + f.totalUsd, 0);
@@ -4611,10 +4641,10 @@ ipcMain.handle('reportes:vendedoresPeriodo', (event, { desde, hasta, agrupacion 
   const filas = db.prepare(
     `SELECT strftime(?, f.created_at) AS periodo, f.usuario, COUNT(*) AS cantidadFacturas, SUM(f.total_usd) AS totalUsd
      FROM facturas f
-     WHERE f.es_devolucion = 0 AND date(f.created_at) BETWEEN date(?) AND date(?)
+     WHERE f.es_devolucion = 0 AND f.created_at BETWEEN ? AND ?
      GROUP BY periodo, f.usuario
      ORDER BY periodo ASC`
-  ).all(formato, desde, hasta);
+  ).all(formato, `${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const nombres = mapaUsuarios(db);
   const conNombre = filas.map((f) => ({ ...f, nombreVendedor: nombres[f.usuario] || f.usuario || 'Sin asignar' }));
@@ -4710,10 +4740,10 @@ ipcMain.handle('reportes:ventasTransacciones', (event, { desde, hasta }) => {
     `SELECT date(created_at) AS fecha, COUNT(*) AS cantidadFacturas,
             SUM(total_usd) AS totalUsd, SUM(total_bs) AS totalBs
      FROM facturas
-     WHERE es_devolucion = 0 AND date(created_at) BETWEEN date(?) AND date(?)
+     WHERE es_devolucion = 0 AND created_at BETWEEN ? AND ?
      GROUP BY fecha
      ORDER BY fecha ASC`
-  ).all(desde, hasta);
+  ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const totales = filas.reduce(
     (acc, f) => ({ cantidadFacturas: acc.cantidadFacturas + f.cantidadFacturas, totalUsd: acc.totalUsd + f.totalUsd, totalBs: acc.totalBs + f.totalBs }),
@@ -4726,19 +4756,21 @@ ipcMain.handle('reportes:ventasTransacciones', (event, { desde, hasta }) => {
 // "Cierre de ventas diario": por producto y unidades vendidas, para UN dia especifico.
 ipcMain.handle('reportes:ventasCierreDiario', (event, { fecha }) => {
   const db = getDb();
+  const inicioDia = `${fecha} 00:00:00`;
+  const finDia = `${fecha} 23:59:59`;
   const filas = db.prepare(
     `SELECT fi.descripcion, fi.tipo, fi.codigo, SUM(fi.cantidad) AS unidades, SUM(fi.subtotal_usd) AS totalUsd
      FROM factura_items fi
      JOIN facturas f ON f.id = fi.factura_id
-     WHERE f.es_devolucion = 0 AND date(f.created_at) = date(?)
+     WHERE f.es_devolucion = 0 AND f.created_at BETWEEN ? AND ?
      GROUP BY fi.descripcion, fi.tipo
      ORDER BY totalUsd DESC`
-  ).all(fecha);
+  ).all(inicioDia, finDia);
 
   const resumenFacturas = db.prepare(
     `SELECT COUNT(*) AS cantidadFacturas, COALESCE(SUM(total_usd), 0) AS totalUsd, COALESCE(SUM(total_bs), 0) AS totalBs
-     FROM facturas WHERE es_devolucion = 0 AND date(created_at) = date(?)`
-  ).get(fecha);
+     FROM facturas WHERE es_devolucion = 0 AND created_at BETWEEN ? AND ?`
+  ).get(inicioDia, finDia);
 
   const totalUnidades = filas.reduce((acc, f) => acc + f.unidades, 0);
 
@@ -4754,10 +4786,10 @@ ipcMain.handle('reportes:ventasRelacion', (event, { desde, hasta, agrupacion }) 
             SUM(subtotal_usd) AS subtotalUsd, SUM(iva_usd) AS ivaUsd, SUM(total_usd) AS totalUsd,
             SUM(subtotal_bs) AS subtotalBs, SUM(iva_bs) AS ivaBs, SUM(total_bs) AS totalBs
      FROM facturas
-     WHERE es_devolucion = 0 AND date(created_at) BETWEEN date(?) AND date(?)
+     WHERE es_devolucion = 0 AND created_at BETWEEN ? AND ?
      GROUP BY periodo
      ORDER BY periodo ASC`
-  ).all(formato, desde, hasta);
+  ).all(formato, `${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   return { ok: true, desde, hasta, agrupacion: agrupacion || 'dia', filas };
 });
@@ -4783,8 +4815,8 @@ ipcMain.handle('reportes:dashboardInicio', () => {
      FROM factura_items fi
      JOIN facturas f ON f.id = fi.factura_id
      WHERE f.es_devolucion = 0 AND fi.es_devolucion = 0
-       AND date(f.created_at) BETWEEN date(?) AND date(?)`
-  ).all(desdeStr, hastaStr);
+       AND f.created_at BETWEEN ? AND ?`
+  ).all(`${desdeStr} 00:00:00`, `${hastaStr} 23:59:59`);
 
   // Serie completa de los 30 dias (con 0 en los dias sin ventas, para que la linea no tenga huecos).
   const porDiaMapa = new Map();
