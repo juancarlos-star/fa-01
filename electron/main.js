@@ -2269,9 +2269,27 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
     if (!product) return { ok: false, message: `Producto no encontrado (id ${item.product_id})` };
     if (product.tipo === 'accesorio') {
+      const cantidadPedida = parseInt(item.cantidad, 10) || 0;
       const stockEnDeposito = obtenerStockDeposito(db, product.id, depositoId) || 0;
-      if ((parseInt(item.cantidad, 10) || 0) > stockEnDeposito) {
+      if (cantidadPedida > stockEnDeposito) {
         return { ok: false, message: `Stock insuficiente de "${product.nombre}" en el deposito "${deposito.nombre}" (disponible: ${stockEnDeposito})` };
+      }
+      // Igual que con equipos/SIM/USIM: si esta venta no es para completar un apartado que ya
+      // reservo parte de este stock, no dejar que se venda la porcion que esta comprometida con
+      // un apartado activo distinto.
+      const apartadoReservado = obtenerCantidadApartada(db, product.id, depositoId);
+      if (apartadoReservado > 0) {
+        let reservadoPorEsteApartado = 0;
+        if (apartadoOrigenValido) {
+          const filaApartado = db.prepare(
+            'SELECT COALESCE(SUM(cantidad), 0) AS c FROM apartado_items WHERE apartado_id = ? AND product_id = ?'
+          ).get(apartadoOrigenValido.id, product.id);
+          reservadoPorEsteApartado = filaApartado.c || 0;
+        }
+        const reservaDeOtrosApartados = Math.max(0, apartadoReservado - reservadoPorEsteApartado);
+        if (cantidadPedida > stockEnDeposito - reservaDeOtrosApartados) {
+          return { ok: false, message: `"${product.nombre}" no tiene suficiente stock libre: parte esta reservada por apartados activos` };
+        }
       }
     } else {
       if (!item.unit_id) return { ok: false, message: `Falta seleccionar el codigo (IMEI/SIM/USIM) de "${product.nombre}"` };
@@ -2281,6 +2299,29 @@ ipcMain.handle('facturas:crear', (event, payload) => {
       }
       if (unit.deposito_id !== depositoId) {
         return { ok: false, message: `El codigo "${unit.codigo}" no pertenece al deposito "${deposito.nombre}"` };
+      }
+      // Los apartados activos "reservan" una CANTIDAD de este producto (no un IMEI puntual en
+      // concreto, ya que apartado_items no guarda unit_id) -- si esta venta no es para completar
+      // ESE apartado, hay que asegurarse de no vender una unidad que le corresponde a otro
+      // apartado activo, aunque su estado siga siendo 'disponible' en inventory_units.
+      const apartadoReservado = obtenerCantidadApartada(db, product.id, depositoId);
+      if (apartadoReservado > 0) {
+        let reservadoPorEsteApartado = 0;
+        if (apartadoOrigenValido) {
+          const filaApartado = db.prepare(
+            'SELECT COALESCE(SUM(cantidad), 0) AS c FROM apartado_items WHERE apartado_id = ? AND product_id = ?'
+          ).get(apartadoOrigenValido.id, product.id);
+          reservadoPorEsteApartado = filaApartado.c || 0;
+        }
+        const reservaDeOtrosApartados = Math.max(0, apartadoReservado - reservadoPorEsteApartado);
+        if (reservaDeOtrosApartados > 0) {
+          const totalDisponible = db.prepare(
+            "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
+          ).get(product.id, depositoId).c;
+          if (totalDisponible - reservaDeOtrosApartados < 1) {
+            return { ok: false, message: `"${product.nombre}" no tiene unidades libres: las que quedan estan reservadas por apartados activos` };
+          }
+        }
       }
     }
   }
