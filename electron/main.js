@@ -1997,6 +1997,13 @@ ipcMain.handle('traslados:crear', (event, { depositoOrigenId, depositoDestinoId,
       if (disponible < item.cantidad) {
         return { ok: false, message: `No hay suficiente stock de "${item.descripcion}" en ${origen.nombre} (disponible: ${disponible})` };
       }
+      // Un traslado nunca "completa" un apartado (eso solo pasa en Facturacion), asi que toda
+      // la cantidad reservada por apartados activos en el deposito de origen es intocable: no se
+      // puede mover a otro deposito, o el apartado se queda sin como cumplirse.
+      const apartadoReservado = obtenerCantidadApartada(db, item.productId, depositoOrigenId);
+      if (apartadoReservado > 0 && disponible - apartadoReservado < item.cantidad) {
+        return { ok: false, message: `No se puede trasladar "${item.descripcion}": parte del stock en ${origen.nombre} esta reservada por apartados activos (disponible libre: ${Math.max(0, disponible - apartadoReservado)})` };
+      }
     } else {
       if (!Array.isArray(item.unitIds) || item.unitIds.length === 0) {
         return { ok: false, message: `Selecciona al menos una unidad de "${item.descripcion}" para trasladar` };
@@ -2009,6 +2016,20 @@ ipcMain.handle('traslados:crear', (event, { depositoOrigenId, depositoDestinoId,
         }
         if (Number(unidad.deposito_id) !== Number(depositoOrigenId)) {
           return { ok: false, message: `La unidad ${unidad.codigo} de "${item.descripcion}" no esta en ${origen.nombre}` };
+        }
+      }
+      // Los apartados activos reservan una CANTIDAD de este producto en este deposito (no un
+      // IMEI puntual, ver obtenerCantidadApartada), asi que aunque cada unidad puntual siga
+      // 'disponible', hay que asegurarse de que despues de sacar estas unidades del deposito
+      // sigan quedando al menos tantas unidades 'disponible' como reserven los apartados.
+      const apartadoReservado = obtenerCantidadApartada(db, item.productId, depositoOrigenId);
+      if (apartadoReservado > 0) {
+        const totalDisponible = db.prepare(
+          "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
+        ).get(item.productId, depositoOrigenId).c;
+        const quedarianDisponibles = totalDisponible - item.unitIds.length;
+        if (quedarianDisponibles < apartadoReservado) {
+          return { ok: false, message: `No se puede trasladar "${item.descripcion}": dejaria menos unidades en ${origen.nombre} de las que estan reservadas por apartados activos` };
         }
       }
     }
@@ -3744,6 +3765,15 @@ ipcMain.handle('compras:crearDevolucion', (event, payload) => {
         }
         const disponible = lineaOriginal.cantidad - yaDevuelta;
         if (cantidad > disponible) return { ok: false, message: `Solo puedes devolver ${disponible} unidad(es) de "${lineaOriginal.descripcion}"` };
+        // Devolver al proveedor saca el producto del inventario para siempre (igual que un
+        // Traslado saca stock del deposito de origen): si parte de este stock esta comprometido
+        // con un apartado activo, no se puede devolver esa porcion o el apartado se queda sin
+        // como cumplirse.
+        const stockActual = obtenerStockDeposito(db, item.product_id, lineaOriginal.deposito_id) || 0;
+        const apartadoReservado = obtenerCantidadApartada(db, item.product_id, lineaOriginal.deposito_id);
+        if (apartadoReservado > 0 && stockActual - apartadoReservado < cantidad) {
+          return { ok: false, message: `No se puede devolver "${lineaOriginal.descripcion}": parte del stock esta reservada por apartados activos (disponible libre: ${Math.max(0, stockActual - apartadoReservado)})` };
+        }
       } else {
         const codigos = Array.isArray(item.codigos) ? item.codigos.map((c) => (c || '').trim()).filter(Boolean) : [];
         if (codigos.length === 0) return { ok: false, message: `Selecciona los codigos/IMEI a devolver de "${lineaOriginal.descripcion}"` };
@@ -3753,6 +3783,20 @@ ipcMain.handle('compras:crearDevolucion', (event, payload) => {
           ).get(codigo, compraEncabezadoId, item.product_id);
           if (!unidad) return { ok: false, message: `El codigo "${codigo}" no pertenece a esta compra` };
           if (unidad.estado !== 'disponible') return { ok: false, message: `El codigo "${codigo}" ya fue vendido o devuelto anteriormente, no se puede devolver de nuevo` };
+        }
+        // Mismo caso que arriba, pero por unidad puntual: los apartados reservan una CANTIDAD
+        // de este producto en el deposito (no un IMEI en concreto), asi que aunque cada codigo
+        // siga 'disponible', hay que dejar al menos tantas unidades disponibles como reserven
+        // los apartados activos.
+        const apartadoReservado = obtenerCantidadApartada(db, item.product_id, lineaOriginal.deposito_id);
+        if (apartadoReservado > 0) {
+          const totalDisponible = db.prepare(
+            "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
+          ).get(item.product_id, lineaOriginal.deposito_id).c;
+          const quedarianDisponibles = totalDisponible - codigos.length;
+          if (quedarianDisponibles < apartadoReservado) {
+            return { ok: false, message: `No se puede devolver "${lineaOriginal.descripcion}": dejaria menos unidades disponibles de las que estan reservadas por apartados activos` };
+          }
         }
       }
     }
