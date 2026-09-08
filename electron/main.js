@@ -669,18 +669,56 @@ ipcMain.handle('categories:delete', (event, { id }) => {
     if (!categoria) return { ok: false, message: 'Categoria no encontrada' };
 
     const productos = db.prepare('SELECT * FROM products WHERE categoria = ?').all(categoria.nombre);
+    const productIds = productos.map((p) => p.id);
 
+    // Bloquea la eliminacion COMPLETA si cualquier producto de esta categoria esta comprometido
+    // con un apartado que todavia no se cierra (activo o listo_para_entregar): el cliente ya
+    // abono parte del precio y esta esperando ese producto puntual -borrarlo rompería el
+    // apartado sin ningun aviso.
+    if (productIds.length > 0) {
+      const placeholders = productIds.map(() => '?').join(',');
+      const apartadosPendientes = db.prepare(
+        `SELECT COUNT(*) AS c FROM apartado_items ai
+         JOIN apartados a ON a.id = ai.apartado_id
+         WHERE ai.product_id IN (${placeholders}) AND a.estado IN ('activo', 'listo_para_entregar')`
+      ).get(...productIds).c;
+      if (apartadosPendientes > 0) {
+        return {
+          ok: false,
+          message: `No se puede eliminar "${categoria.nombre}": hay ${apartadosPendientes} apartado(s) sin cerrar con productos de esta categoria. Cierra esos apartados primero (Apartados → completar o cancelar).`
+        };
+      }
+    }
+
+    // Por cada producto: misma regla de seguridad que ya usa products:delete (no se borra si
+    // tiene unidades de inventario registradas -serian IMEI/ICCID historicos-). Los productos
+    // bloqueados quedan intactos y la categoria NO se termina de eliminar en ese caso, para que
+    // sus productos no queden "sueltos" con una categoria que ya no existe.
+    //
+    // A proposito, aqui NUNCA se borran filas de 'compras' ni 'descargos': son registros
+    // contables (ya guardan su propio costo, y 'compras' tambien su propia descripcion) que
+    // deben sobrevivir aunque el producto se elimine -borrarlos alteraria retroactivamente
+    // reportes de periodos ya cerrados (Libro de Compras IVA, Ganancias, etc.).
+    const bloqueados = [];
     const transaccion = db.transaction(() => {
       for (const p of productos) {
-        db.prepare('DELETE FROM inventory_units WHERE product_id = ?').run(p.id);
-        db.prepare('DELETE FROM descargos WHERE product_id = ?').run(p.id);
-        db.prepare('DELETE FROM compras WHERE product_id = ?').run(p.id);
+        const unidades = db.prepare('SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ?').get(p.id).c;
+        if (unidades > 0) { bloqueados.push(p.nombre); continue; }
         db.prepare('DELETE FROM products WHERE id = ?').run(p.id);
       }
-      db.prepare('DELETE FROM categorias WHERE id = ?').run(id);
+      if (bloqueados.length === 0) {
+        db.prepare('DELETE FROM categorias WHERE id = ?').run(id);
+      }
     });
     transaccion();
 
+    if (bloqueados.length > 0) {
+      return {
+        ok: true,
+        parcial: true,
+        message: `Se eliminaron los productos de "${categoria.nombre}" que no tenían unidades registradas. Estos siguen existiendo porque tienen unidades (IMEI/ICCID) en su historial: ${bloqueados.join(', ')}. La categoría no se eliminó porque todavía tiene productos.`
+      };
+    }
     return { ok: true };
   } catch (err) {
     console.error('Error en categories:delete', err);
