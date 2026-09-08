@@ -503,6 +503,18 @@ ipcMain.handle('users:update', (event, { id, username, full_name, role, newPassw
   const duplicado = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(usuarioLimpio, id);
   if (duplicado) return { ok: false, message: 'Ese nombre de usuario ya esta en uso por otro usuario' };
 
+  // Misma proteccion que en users:toggleActive, pero por la otra puerta: si este usuario es
+  // administrador activo y se le esta por cambiar el rol a "vendedor", hay que asegurarse de
+  // que quede al menos otro administrador activo.
+  if (user.active && user.role === 'administrador' && role !== 'administrador') {
+    const otrosAdminsActivos = db.prepare(
+      "SELECT COUNT(*) AS c FROM users WHERE role = 'administrador' AND active = 1 AND id != ?"
+    ).get(id).c;
+    if (otrosAdminsActivos === 0) {
+      return { ok: false, message: 'Debe quedar al menos un administrador activo. Crea o activa otro administrador antes de quitarle ese rol a este usuario.' };
+    }
+  }
+
   if (newPassword && newPassword.trim()) {
     const hash = bcrypt.hashSync(newPassword.trim(), 10);
     db.prepare('UPDATE users SET username = ?, full_name = ?, role = ?, password_hash = ? WHERE id = ?')
@@ -518,8 +530,22 @@ ipcMain.handle('users:toggleActive', (event, { id }) => {
   const chequeo = requireAdmin();
   if (chequeo) return chequeo;
   const db = getDb();
-  const user = db.prepare('SELECT active FROM users WHERE id = ?').get(id);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!user) return { ok: false, message: 'Usuario no encontrado' };
+
+  // Si se esta a punto de DESACTIVAR a un administrador activo, hay que asegurarse de que
+  // quede al menos otro administrador activo despues -de lo contrario, nadie podria volver a
+  // entrar a Usuarios/Configuracion/Gastos para reactivar a nadie (todas esas pantallas exigen
+  // sesion de administrador), dejando la tienda bloqueada de esas funciones para siempre.
+  if (user.active && user.role === 'administrador') {
+    const otrosAdminsActivos = db.prepare(
+      "SELECT COUNT(*) AS c FROM users WHERE role = 'administrador' AND active = 1 AND id != ?"
+    ).get(id).c;
+    if (otrosAdminsActivos === 0) {
+      return { ok: false, message: 'Debe quedar al menos un administrador activo. Crea o activa otro administrador antes de desactivar este.' };
+    }
+  }
+
   const newValue = user.active ? 0 : 1;
   db.prepare('UPDATE users SET active = ? WHERE id = ?').run(newValue, id);
   return { ok: true, active: newValue };
