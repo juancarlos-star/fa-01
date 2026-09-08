@@ -2,42 +2,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
 import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
 import BuscadorProductoInput from '../components/BuscadorProductoInput.jsx';
+import CodigosNuevosModal from '../components/CodigosNuevosModal.jsx';
+import CodigosExistentesModal from '../components/CodigosExistentesModal.jsx';
 import { generarCargoDescargoDocumentoPDF } from '../utils/generarCargoDescargoPDF.js';
 import { fmt } from '../utils/format.js';
-
-const TIPOS = [
-  { key: 'equipo', label: 'Teléfonos (IMEI)' },
-  { key: 'simcard', label: 'SIM Cards' },
-  { key: 'usim', label: 'USIM' },
-  { key: 'accesorio', label: 'Accesorios' }
-];
-
-// Copia liviana (sin tocar la base de datos) de calcularRango() en electron/main.js, usada
-// solo por la herramienta de "agregar por rango" al dar de baja (descargo), para generar la
-// lista completa de codigos del rango y despues buscarlos entre las unidades disponibles del
-// producto seleccionado. Para el CARGO no hace falta esta funcion: se usa directamente el
-// handler compras:calcularRango, que ya hace este mismo calculo en el proceso principal.
-function calcularCodigosRango(codigoInicio, codigoFin) {
-  const partirDigitosFinales = (s) => {
-    let i = s.length;
-    while (i > 0 && /\d/.test(s[i - 1])) i--;
-    return { prefijo: s.slice(0, i), digitos: s.slice(i) };
-  };
-  const a = (codigoInicio || '').trim();
-  const b = (codigoFin || '').trim();
-  if (!a || !b) return null;
-  const pa = partirDigitosFinales(a);
-  const pb = partirDigitosFinales(b);
-  if (pa.prefijo !== pb.prefijo || !pa.digitos || !pb.digitos) return null;
-  const numA = parseInt(pa.digitos, 10);
-  const numB = parseInt(pb.digitos, 10);
-  if (isNaN(numA) || isNaN(numB) || numA > numB) return null;
-  if (numB - numA + 1 > 5000) return null;
-  const ancho = Math.max(pa.digitos.length, pb.digitos.length);
-  const codigos = [];
-  for (let n = numA; n <= numB; n++) codigos.push(pa.prefijo + String(n).padStart(ancho, '0'));
-  return codigos;
-}
 
 let contadorKeyItem = 0;
 function nuevaKeyItem() {
@@ -45,31 +13,53 @@ function nuevaKeyItem() {
   return `item-${Date.now()}-${contadorKeyItem}`;
 }
 
-export default function CargosDescargos({ currentUser }) {
-  // 'nuevo' | 'historial' -- igual que en Traslados, esta pantalla tiene dos vistas: armar un
-  // documento nuevo, o consultar el historial de documentos ya registrados.
-  const [vista, setVista] = useState('nuevo');
+// Pantalla de Cargo (agregar stock) y Descargo (dar de baja stock), con el MISMO diseno de tres
+// columnas + tabla de captura que "Compras Telf/Acces", ya que ambas son formas de meter/sacar
+// mercancia del inventario. A diferencia de Compras:
+//   - No hay Proveedor ni Documento de compra (no aplica: esto no es una compra a un tercero,
+//     es un ajuste interno de inventario -su trazabilidad es Usuario + Deposito + Motivo, no
+//     factura de proveedor).
+//   - No hay IVA (nunca alimenta los reportes de Impuestos, que solo miran Ventas y Compras).
+//   - El campo de busqueda de producto NO se limita a ninguna categoria: se puede cargar o
+//     descargar cualquier producto (Telefono, SIM, USIM, Accesorio, o cualquier categoria nueva
+//     que se cree), y tambien se puede crear un producto nuevo de cualquier categoria sin salir
+//     de esta pantalla.
+//   - "Vendedor" siempre es el usuario que tiene la sesion abierta (igual que en Compras).
+//   - El tipo de documento (Cargo o Descargo) ya NO se elige con un boton dentro de esta misma
+//     pantalla: se elige desde el submenu del menu lateral ("Cargos y Descargos" > Cargo /
+//     Descargo), y llega fijo en la prop "tipoInicial". Cada uno tiene su propio numero de
+//     documento consecutivo (cargosDescargos:proximoNumero / crearDocumento ya calculan el
+//     consecutivo POR SEPARADO para 'cargo' y para 'descargo', igual que hace Compras con su
+//     propio consecutivo independiente).
+//   - El historial y los reportes de Cargo/Descargo ya no viven aqui: se consultan desde
+//     Reportes > Inventario > "Historial de Cargos" / "Historial de Descargos".
+export default function CargosDescargos({ currentUser, tipoInicial }) {
+  const tipoDocumento = tipoInicial === 'descargo' ? 'descargo' : 'cargo';
+  const esCargo = tipoDocumento === 'cargo';
 
-  // ---- El documento que se esta armando: puede incluir varios productos y tipos distintos
-  // (equipos, simcards, usim y accesorios mezclados) en un mismo procedimiento. Nada se
-  // guarda en la base de datos hasta que se presiona "Registrar documento": todo lo de abajo
-  // es solo un borrador en memoria. ----
-  const [tipoDocumento, setTipoDocumento] = useState('cargo'); // 'cargo' | 'descargo'
   const [itemsDocumento, setItemsDocumento] = useState([]);
   const [motivoDocumento, setMotivoDocumento] = useState('');
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
-  const [confirmacion, setConfirmacion] = useState(null); // { encabezadoId, registros, tipoDocumento }
+  const [confirmacion, setConfirmacion] = useState(null); // { encabezadoId, numeroDocumento, registros, tipoDocumento }
   const [comprobanteAbierto, setComprobanteAbierto] = useState(null); // una linea del documento ya emitido
   const [generandoPDF, setGenerandoPDF] = useState(false);
 
-  // Deposito de esta operacion: TODO el documento (cargo o descargo) aplica a un solo
-  // deposito. Se elige aqui arriba, antes de agregar articulos, e igual que en Facturacion y
-  // Compras, cambiarlo a mitad de documento vacia lo que ya se habia agregado (pertenece al
-  // deposito anterior).
+  // Deposito de esta operacion: TODO el documento aplica a un solo deposito, igual que en
+  // Facturacion y Compras. Cambiarlo a mitad de documento vacia lo que ya se habia agregado.
   const [depositos, setDepositos] = useState([]);
   const [depositoId, setDepositoId] = useState('');
+
+  // Numero de documento que se le asignaria a esta operacion si se registrara ahora mismo (solo
+  // de vista previa, en el panel derecho -igual que "Compra N° ......" en Compras). El numero
+  // definitivo se recalcula dentro de la transaccion en el backend, por si dos personas registran
+  // al mismo tiempo.
+  const [proximoNumero, setProximoNumero] = useState(null);
+  const cargarProximoNumero = useCallback(() => {
+    window.api.proximoNumeroCargoDescargo(tipoDocumento).then((res) => setProximoNumero(res.proximoNumero));
+  }, [tipoDocumento]);
+  useEffect(() => { cargarProximoNumero(); }, [cargarProximoNumero]);
 
   useEffect(() => { window.api.getSettings().then(setSettings); }, []);
 
@@ -79,6 +69,15 @@ export default function CargosDescargos({ currentUser }) {
       if (data.length > 0) setDepositoId(String(data[0].id));
     });
   }, []);
+
+  // Catalogo de productos para el buscador de la fila de captura: TODOS, sin filtrar por
+  // categoria (a diferencia de Compras Telf/Acces, que solo trae equipo/accesorio). Se recarga
+  // cuando cambia el deposito, para que "stock_disponible" refleje el deposito correcto.
+  const [productos, setProductos] = useState([]);
+  const cargarProductos = useCallback(() => {
+    window.api.listProducts(undefined, undefined, depositoId ? Number(depositoId) : undefined).then(setProductos);
+  }, [depositoId]);
+  useEffect(() => { cargarProductos(); }, [cargarProductos]);
 
   const hayItems = itemsDocumento.length > 0;
 
@@ -91,45 +90,21 @@ export default function CargosDescargos({ currentUser }) {
     setError('');
   };
 
-  const cambiarTipoDocumento = (valor) => {
-    if (valor === tipoDocumento) return;
-    if (hayItems && !window.confirm('Cambiar de Cargo a Descargo (o viceversa) vacia el documento que estas armando. ¿Deseas continuar?')) {
-      return;
-    }
-    setTipoDocumento(valor);
-    setItemsDocumento([]);
-    setMotivoDocumento('');
-    setError('');
-  };
-
   const quitarItem = (key) => {
     setItemsDocumento((prev) => prev.filter((it) => it.key !== key));
   };
 
-  const agregarItem = (item) => {
+  // Agrega una o varias lineas ya armadas por la fila de captura (una sola linea para
+  // accesorios; varias -una por codigo/IMEI- para equipo/simcard/usim).
+  const agregarItems = (nuevos) => {
     setError('');
-    setItemsDocumento((prev) => {
-      // Al escanear el mismo codigo de barras de un accesorio varias veces (descargo), en vez
-      // de crear una linea nueva por cada escaneo, se suma 1 a la cantidad de la linea ya
-      // existente para ese mismo producto.
-      if (item._incrementable) {
-        const idx = prev.findIndex((it) => it.esAccesorio && it.productId === item.productId && it._incrementable);
-        if (idx !== -1) {
-          const copia = [...prev];
-          copia[idx] = { ...copia[idx], cantidad: (parseInt(copia[idx].cantidad, 10) || 0) + 1 };
-          return copia;
-        }
-      }
-      return [...prev, { key: nuevaKeyItem(), ...item }];
-    });
+    setItemsDocumento((prev) => [...prev, ...nuevos.map((it) => ({ key: nuevaKeyItem(), ...it }))]);
   };
 
-  const totalDocumentoUsd = itemsDocumento.reduce((acc, it) => {
-    if (tipoDocumento !== 'cargo') return acc;
-    const costo = parseFloat(it.costoUnitario) || 0;
-    const cantidad = it.esAccesorio ? (parseInt(it.cantidad, 10) || 0) : 1;
-    return acc + costo * cantidad;
-  }, 0);
+  const totalDocumentoUsd = esCargo
+    ? itemsDocumento.reduce((acc, it) => acc + (parseFloat(it.costoUnitario) || 0) * (it.cantidad || 1), 0)
+    : 0;
+  const totalPiezas = itemsDocumento.reduce((acc, it) => acc + (parseInt(it.cantidad, 10) || 1), 0);
 
   const handleRegistrarDocumento = async () => {
     setError('');
@@ -137,7 +112,7 @@ export default function CargosDescargos({ currentUser }) {
       setError('Agrega al menos un articulo al documento antes de registrarlo');
       return;
     }
-    if (tipoDocumento === 'descargo' && !motivoDocumento.trim()) {
+    if (!esCargo && !motivoDocumento.trim()) {
       setError('Indica el motivo del descargo (aplica a todo el documento)');
       return;
     }
@@ -152,14 +127,26 @@ export default function CargosDescargos({ currentUser }) {
         motivo: motivoDocumento.trim(),
         usuario: currentUser?.username,
         depositoId: Number(depositoId),
-        items: itemsDocumento.map((it) => ({
-          productId: it.productId,
-          esAccesorio: it.esAccesorio,
-          cantidad: it.esAccesorio ? it.cantidad : undefined,
-          codigo: !it.esAccesorio && tipoDocumento === 'cargo' ? it.codigo : undefined,
-          unitId: !it.esAccesorio && tipoDocumento === 'descargo' ? it.unitId : undefined,
-          costoUnitario: tipoDocumento === 'cargo' ? it.costoUnitario : undefined
-        }))
+        // Cada linea del documento en pantalla puede representar VARIAS unidades (equipo/
+        // simcard/usim agrupados por el mismo codigo corto de producto, igual que en Compras);
+        // aqui se "aplanan" a un renglon por unidad, que es lo que espera el backend.
+        items: itemsDocumento.flatMap((it) => {
+          if (it.esAccesorio) {
+            return [{
+              productId: it.productId,
+              esAccesorio: true,
+              cantidad: it.cantidad,
+              costoUnitario: esCargo ? it.costoUnitario : undefined
+            }];
+          }
+          return (it.codigos || []).map((cod) => ({
+            productId: it.productId,
+            esAccesorio: false,
+            codigo: esCargo ? cod.codigo : undefined,
+            unitId: !esCargo ? cod.unitId : undefined,
+            costoUnitario: esCargo ? it.costoUnitario : undefined
+          }));
+        })
       };
       const res = await window.api.crearDocumentoCargoDescargo(payload);
       if (!res.ok) {
@@ -168,15 +155,11 @@ export default function CargosDescargos({ currentUser }) {
       }
       setItemsDocumento([]);
       setMotivoDocumento('');
-      // El comprobante consolidado (con todos los articulos del documento, aunque sean de
-      // productos distintos) se genera e imprime automaticamente, sin que el usuario tenga
-      // que pedirlo aparte. Esto se hace ANTES de mostrar la pantalla de "Documento
-      // registrado" (setConfirmacion) a proposito: esa pantalla tiene el boton "Descargar PDF
-      // del documento" habilitado de inmediato, y si se mostrara antes de que termine esta
-      // impresion automatica, el usuario podia alcanzar a presionar ese boton pensando que no
-      // se habia generado, creando el PDF DOS VECES para el mismo documento (con el mismo
-      // problema de archivos duplicados " (1)" y visor de PDF confundido que se corrigio en
-      // Facturacion).
+      cargarProductos();
+      cargarProximoNumero();
+      // El comprobante consolidado se genera e imprime automaticamente, ANTES de mostrar la
+      // pantalla de "Documento registrado" -por la misma razon que en Facturacion/Compras: si se
+      // mostrara antes, el usuario podria alcanzar a pedir el PDF el mismo, duplicandolo.
       try {
         await generarCargoDescargoDocumentoPDF(res.encabezadoId, res.registros, tipoDocumento, settings, { imprimir: true, numeroDocumento: res.numeroDocumento });
       } catch (errImpresion) {
@@ -197,7 +180,7 @@ export default function CargosDescargos({ currentUser }) {
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.key === 'F10' && !e.repeat && vista === 'nuevo' && !confirmacion) {
+      if (e.key === 'F10' && !e.repeat && !confirmacion) {
         e.preventDefault();
         handleRegistrarDocumento();
       }
@@ -217,8 +200,8 @@ export default function CargosDescargos({ currentUser }) {
   }
 
   if (confirmacion) {
-    const esCargo = confirmacion.tipoDocumento === 'cargo';
-    const prefijoDoc = esCargo ? 'Cargo' : 'Descargo';
+    const esCargoConfirmado = confirmacion.tipoDocumento === 'cargo';
+    const prefijoDoc = esCargoConfirmado ? 'Cargo' : 'Descargo';
     const totalConfirmacion = confirmacion.registros.reduce((acc, r) => acc + (r.total_usd || 0), 0);
     return (
       <div className="pos-receipt">
@@ -235,7 +218,7 @@ export default function CargosDescargos({ currentUser }) {
             <span>Artículos incluidos</span>
             <strong>{confirmacion.registros.length}</strong>
           </div>
-          {esCargo && (
+          {esCargoConfirmado && (
             <div className="pos-receipt-row">
               <span>Total del documento</span>
               <strong>${fmt(totalConfirmacion)}</strong>
@@ -251,7 +234,6 @@ export default function CargosDescargos({ currentUser }) {
           </ul>
         </div>
         <div className="pos-receipt-actions">
-          <button className="btn-ghost" onClick={() => setVista('historial')}>Ver historial</button>
           <button
             className="btn-ghost"
             disabled={generandoPDF}
@@ -268,34 +250,28 @@ export default function CargosDescargos({ currentUser }) {
           </button>
           <button className="btn-primary" onClick={nuevoDocumento}>Hacer otro documento</button>
         </div>
+        <p style={{ textAlign: 'center', fontSize: '0.78rem', color: '#98a2b3', marginTop: '10px' }}>
+          El historial completo de {prefijoDoc.toLowerCase()}s se consulta en Reportes → Inventario.
+        </p>
       </div>
     );
   }
 
-  if (vista === 'historial') {
-    return <HistorialCargosDescargos onVolver={() => setVista('nuevo')} settings={settings} />;
-  }
-
-  const esCargoActivo = tipoDocumento === 'cargo';
+  const numeroPreview = proximoNumero != null ? String(proximoNumero).padStart(6, '0') : '------';
+  const depositoActivo = depositos.find((d) => String(d.id) === String(depositoId));
 
   return (
     <div className="pos-page">
       <div className="pos-topbar">
         <span className="pos-topbar-side">MODULO DE INVENTARIO</span>
-        <span className="pos-topbar-center">{esCargoActivo ? 'CARGO' : 'DESCARGO'} DE INVENTARIO</span>
-        <button
-          type="button"
-          onClick={() => setVista('historial')}
-          style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', borderRadius: '4px', padding: '4px 10px', fontSize: '0.8rem', cursor: 'pointer' }}
-        >
-          Ver historial
-        </button>
+        <span className="pos-topbar-center">{esCargo ? 'CARGO' : 'DESCARGO'} DE INVENTARIO</span>
+        <span className="pos-topbar-side">MODO: NORMAL</span>
       </div>
 
       <div className="pos-panels">
         <div className="pos-left">
           <div className="pos-field">
-            <label>Depósito de esta operación <span className="required-mark">*</span></label>
+            <label>Depósito <span className="required-mark">*</span></label>
             <select value={depositoId} onChange={(e) => cambiarDeposito(e.target.value)}>
               {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
               {depositos.map((d) => (
@@ -305,43 +281,17 @@ export default function CargosDescargos({ currentUser }) {
           </div>
 
           <div className="pos-field">
-            <label>Tipo de documento</label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button
-                type="button"
-                onClick={() => cambiarTipoDocumento('cargo')}
-                style={{
-                  padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
-                  backgroundColor: tipoDocumento === 'cargo' ? '#027a48' : '#e2e8f0', color: tipoDocumento === 'cargo' ? '#fff' : '#111'
-                }}
-              >
-                Cargo (agregar stock)
-              </button>
-              <button
-                type="button"
-                onClick={() => cambiarTipoDocumento('descargo')}
-                style={{
-                  padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
-                  backgroundColor: tipoDocumento === 'descargo' ? '#b42318' : '#e2e8f0', color: tipoDocumento === 'descargo' ? '#fff' : '#111'
-                }}
-              >
-                Descargo (dar de baja)
-              </button>
-            </div>
-          </div>
-
-          <div className="pos-field">
-            <label>Usuario</label>
+            <label>Vendedor <span className="required-mark">*</span></label>
             <input value={currentUser?.username || ''} disabled />
           </div>
 
-          {tipoDocumento === 'descargo' && (
+          {!esCargo && (
             <div className="pos-field">
               <label>Motivo del descargo <span className="required-mark">*</span></label>
               <textarea
                 value={motivoDocumento}
                 onChange={(e) => setMotivoDocumento(e.target.value)}
-                rows={2}
+                rows={3}
                 style={{ width: '100%', fontFamily: 'inherit', resize: 'vertical' }}
                 placeholder="Ej: dañado, perdido, robado, ajuste de inventario"
               />
@@ -350,46 +300,41 @@ export default function CargosDescargos({ currentUser }) {
         </div>
 
         <div className="pos-mid">
-          {depositoId ? (
-            <div className="pos-stripe">
-              Depósito: {depositos.find((d) => String(d.id) === String(depositoId))?.nombre || '—'}
-            </div>
+          {depositoActivo ? (
+            <div className="pos-stripe">{depositoActivo.nombre}</div>
           ) : (
             <div className="pos-stripe placeholder">Elige el depósito de la operación</div>
           )}
           <div className="pos-stripe">
-            {esCargoActivo ? 'Cargo: se agrega stock nuevo al inventario' : 'Descargo: se da de baja stock existente'}
+            {esCargo ? 'Cargo: se agrega stock nuevo al inventario' : 'Descargo: se da de baja stock existente'}
           </div>
         </div>
 
         <div className="pos-right">
-          <div className="pos-right-header">Documento</div>
-          <div className="pos-right-row total-final">
-            <span>Artículos</span>
-            <span>{itemsDocumento.length}</span>
-          </div>
-          {esCargoActivo && (
-            <div className="pos-right-footer">
-              <span>Total del documento</span>
+          <div className="pos-right-header">{esCargo ? 'Cargo' : 'Descargo'} N° {numeroPreview}</div>
+          {esCargo && (
+            <div className="pos-right-row total-final">
+              <span>Total</span>
               <span>${fmt(totalDocumentoUsd)}</span>
             </div>
           )}
+          <div className="pos-right-footer">
+            <span>Total cantidad de Items</span>
+            <span>{totalPiezas}</span>
+          </div>
         </div>
       </div>
 
       {error && <div className="pos-error-banner">{error}</div>}
 
-      {tipoDocumento === 'cargo' ? (
-        <AgregarItemsCargo onAgregar={agregarItem} itemsDocumento={itemsDocumento} depositoId={depositoId} />
-      ) : (
-        <AgregarItemsDescargo onAgregar={agregarItem} itemsDocumento={itemsDocumento} depositoId={depositoId} />
-      )}
-
-      <DocumentoDraft
+      <TablaCargoDescargo
         tipoDocumento={tipoDocumento}
-        items={itemsDocumento}
+        productos={productos}
+        depositoId={depositoId}
+        itemsDocumento={itemsDocumento}
+        onAgregar={agregarItems}
         onQuitar={quitarItem}
-        totalUsd={totalDocumentoUsd}
+        onProductoCreado={(p) => setProductos((prev) => [...prev, p])}
       />
 
       <div className="pos-footer-actions">
@@ -401,851 +346,327 @@ export default function CargosDescargos({ currentUser }) {
   );
 }
 
-// ---------------- Tabla del documento en borrador ----------------
+// ---------------- Tabla de captura + documento en borrador (misma estructura que Compras Telf/Acces) ----------------
 
-function DocumentoDraft({ tipoDocumento, items, onQuitar, totalUsd }) {
+function TablaCargoDescargo({ tipoDocumento, productos, depositoId, itemsDocumento, onAgregar, onQuitar, onProductoCreado }) {
   const esCargo = tipoDocumento === 'cargo';
-  return (
-    <div className="pos-table-wrap" style={{ marginTop: '1rem', maxHeight: 'none' }}>
-      <table className="pos-table">
-        <thead>
-          <tr>
-            <th>Producto</th>
-            <th style={{ width: '14%' }}>Tipo</th>
-            <th style={{ width: '22%' }}>Código / Cantidad</th>
-            {esCargo && <th style={{ width: '12%' }}>Costo unit.</th>}
-            {esCargo && <th style={{ width: '12%' }}>Subtotal</th>}
-            <th style={{ width: '48px' }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.length === 0 ? (
-            <tr>
-              <td colSpan={esCargo ? 6 : 4} style={{ textAlign: 'center', color: '#98a2b3', padding: '1.2rem' }}>
-                Todavía no has agregado ningún artículo a este documento.
-              </td>
-            </tr>
-          ) : (
-            items.map((it) => {
-              const cantidad = it.esAccesorio ? (parseInt(it.cantidad, 10) || 0) : 1;
-              const costo = parseFloat(it.costoUnitario) || 0;
-              return (
-                <tr key={it.key}>
-                  <td>{it.productoNombre}</td>
-                  <td>{it.tipo}</td>
-                  <td>{it.esAccesorio ? `x${it.cantidad}` : it.codigo}</td>
-                  {esCargo && <td>${costo.toFixed(2)}</td>}
-                  {esCargo && <td>${(costo * cantidad).toFixed(2)}</td>}
-                  <td><button type="button" className="pos-remove-btn" onClick={() => onQuitar(it.key)}>×</button></td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-      {esCargo && items.length > 0 && (
-        <p style={{ textAlign: 'right', fontWeight: 'bold', padding: '0.6rem 1rem' }}>
-          Total del documento: ${totalUsd.toFixed(2)}
-        </p>
-      )}
-    </div>
-  );
-}
 
-// ---------------- Agregar items: CARGO (equipo/simcard/usim/accesorio) ----------------
-
-function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
-  const [tipoActivo, setTipoActivo] = useState('equipo');
-  const [productos, setProductos] = useState([]);
-  const [productoId, setProductoId] = useState('');
-  const [busquedaProducto, setBusquedaProducto] = useState('');
-  const [costo, setCosto] = useState('');
-  const [codigo, setCodigo] = useState('');
-  const [cantidad, setCantidad] = useState('');
-  const [codigoBarras, setCodigoBarras] = useState('');
-  const [errorLocal, setErrorLocal] = useState('');
-
-  const [mostrarRango, setMostrarRango] = useState(false);
-  const [codigoInicio, setCodigoInicio] = useState('');
-  const [codigoFin, setCodigoFin] = useState('');
-  const [cantidadRango, setCantidadRango] = useState('');
-  const [procesandoRango, setProcesandoRango] = useState(false);
-
-  // Igual que en Compras: si el producto que se quiere cargar todavia no existe en el sistema,
-  // se puede crear "al vuelo" sin salir de esta pantalla, con la misma ventana (ProductoRapidoModal).
-  // A diferencia de Compras (que si limita a categorias propias de ese modulo), aqui se deja
-  // elegir CUALQUIER categoria -Telefono (IMEI), SIM, USIM, Accesorios, o cualquier otra que se
-  // cree despues- sin importar la pestana activa en este momento.
+  const [filaCodigo, setFilaCodigo] = useState('');
+  const [buscandoCodigo, setBuscandoCodigo] = useState(false);
+  const [filaProducto, setFilaProducto] = useState(null);
+  const [filaCosto, setFilaCosto] = useState('');
+  const [filaCantidad, setFilaCantidad] = useState(1);
+  const [errorFila, setErrorFila] = useState('');
   const [mostrarModalProductoNuevo, setMostrarModalProductoNuevo] = useState(false);
+  const [mostrarModalCodigos, setMostrarModalCodigos] = useState(false);
 
-  const codigoInputRef = useRef(null);
-  const busquedaInputRef = useRef(null);
-  const esAccesorio = tipoActivo === 'accesorio';
-  const permiteRango = tipoActivo === 'simcard' || tipoActivo === 'usim';
-  const producto = productos.find((p) => p.id === Number(productoId));
+  const codigoRef = useRef(null);
+  const cantidadRef = useRef(null);
 
-  // Al elegir un producto (ya sea uno existente o uno recien creado con "+ Crear producto
-  // nuevo"), se precarga el Costo con lo que ya trae registrado ese producto
-  // (costo_promedio_usd): si es un producto ya existente, es su ultimo costo conocido; si
-  // se acaba de crear, es el costo que se le puso en el modal. En ambos casos el campo sigue
-  // siendo editable por si hay que corregirlo antes de agregar el codigo/cantidad. Al quitar
-  // la seleccion (boton "Cambiar") se limpia, para no arrastrar el costo de un producto al
-  // siguiente.
-  useEffect(() => {
-    setCosto(producto ? String(producto.costo_promedio_usd ?? '0') : '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [producto?.id]);
-
-  // Quita el producto seleccionado y devuelve el foco al buscador de inmediato, para poder
-  // escribir el nombre de otro producto (o de uno nuevo) sin tener que hacer un segundo click.
-  // Antes de este cambio, al elegir un producto el campo "Producto" quedaba reemplazado por un
-  // recuadro fijo (sin input), y la unica forma de volver a escribir ahi era este boton -que
-  // ademas no enfocaba el campo, por lo que parecia "trabado" hasta salir y volver a entrar al
-  // modulo.
-  const volverABuscarProducto = () => {
-    setProductoId('');
-    setCosto('');
-    setCodigo('');
-    setCantidad('');
-    setCodigoBarras('');
-    setErrorLocal('');
-    requestAnimationFrame(() => busquedaInputRef.current?.focus());
+  const limpiarFila = () => {
+    setFilaCodigo('');
+    setFilaProducto(null);
+    setFilaCosto('');
+    setFilaCantidad(1);
+    setErrorFila('');
+    setMostrarModalCodigos(false);
   };
 
-  // Cuando se crea un producto de OTRA categoria a la de la pestana activa (ver
-  // handleProductoNuevoCreado mas abajo), se cambia de pestana y eso dispara este mismo
-  // cargarProductos por el efecto de abajo (ligado a tipoActivo) -que por defecto siempre limpia
-  // la seleccion (setProductoId(''))-. Este ref le avisa "la proxima carga debe dejar
-  // seleccionado este producto en vez de limpiar", para no competir entre dos cargas a la vez.
-  const productoIdAConservarRef = useRef(null);
+  const prefillCosto = (p) => String(p.costo_promedio_usd != null ? Number(p.costo_promedio_usd) : 0);
 
-  const cargarProductos = useCallback(async () => {
-    const data = await window.api.listProducts(tipoActivo, undefined, depositoId ? Number(depositoId) : undefined);
-    setProductos(data);
-    if (productoIdAConservarRef.current) {
-      setProductoId(String(productoIdAConservarRef.current));
-      productoIdAConservarRef.current = null;
-    } else {
-      setProductoId('');
-    }
-    setBusquedaProducto('');
-  }, [tipoActivo, depositoId]);
-
-  useEffect(() => { cargarProductos(); }, [cargarProductos]);
-
-  const seleccionarTab = (key) => {
-    setTipoActivo(key);
-    setErrorLocal('');
-    setMostrarRango(false);
+  const seleccionarProductoEnFila = (p) => {
+    setFilaProducto(p);
+    setFilaCosto(prefillCosto(p));
+    setFilaCantidad(1);
+    setTimeout(() => { cantidadRef.current?.focus(); cantidadRef.current?.select(); }, 0);
   };
 
-  const handleProductoNuevoCreado = (productoCreado) => {
-    setMostrarModalProductoNuevo(false);
-    setBusquedaProducto('');
-    productoIdAConservarRef.current = productoCreado.id;
-    if (productoCreado.tipo !== tipoActivo) {
-      // Cambia de pestana al tipo del producto recien creado (ej. se creo un Accesorio estando
-      // en la pestana de Telefonos); el cambio de tipoActivo dispara el efecto de arriba, que
-      // recarga la lista de ESE tipo y deja seleccionado el producto gracias al ref de arriba.
-      setTipoActivo(productoCreado.tipo);
-    } else {
-      cargarProductos();
-    }
-  };
-
-  // Enter en el buscador de producto SIN ninguna sugerencia resaltada en el desplegable: busca
-  // una coincidencia EXACTA (nombre o codigo) dentro de la lista ya cargada de este tipo; si no
-  // hay ninguna, abre "Crear producto nuevo" con lo que se escribio precargado.
-  const buscarProductoPorNombreEnter = () => {
-    setErrorLocal('');
-    const texto = busquedaProducto.trim().toLowerCase();
+  // Igual que en Compras Telf/Acces: se busca por codigo/IMEI/nombre entre TODOS los productos
+  // (sin restringir por categoria -esa es la diferencia principal con Compras Telf/Acces, que
+  // solo admite equipo/accesorio).
+  const buscarProductoPorCodigoEnter = async () => {
+    setErrorFila('');
+    const texto = filaCodigo.trim();
     if (!texto) return;
-    const encontrado = productos.find(
-      (p) => p.nombre.toLowerCase() === texto || (p.codigo_producto || '').toLowerCase() === texto
-    );
-    if (encontrado) {
-      setProductoId(String(encontrado.id));
-      setBusquedaProducto('');
-    } else {
-      setMostrarModalProductoNuevo(true);
-    }
-  };
-
-  // El input de codigo/IMEI se enfoca de nuevo automaticamente, tanto al elegir producto como
-  // despues de cada "+ Agregar codigo", para poder seguir escaneando sin usar el mouse.
-  useEffect(() => {
-    if (!esAccesorio && productoId && codigoInputRef.current) {
-      codigoInputRef.current.focus();
-    }
-  }, [productoId, esAccesorio]);
-
-  const handleAgregarAccesorio = (e) => {
-    e.preventDefault();
-    setErrorLocal('');
-    if (!productoId) { setErrorLocal('Selecciona un producto'); return; }
-    const n = parseInt(cantidad, 10);
-    if (!n || n <= 0) { setErrorLocal('Indica la cantidad a cargar'); return; }
-    const c = parseFloat(costo);
-    if (isNaN(c) || c < 0) { setErrorLocal('Indica el costo unitario'); return; }
-    onAgregar({
-      productId: producto.id, productoNombre: producto.nombre, tipo: producto.tipo,
-      esAccesorio: true, cantidad: n, costoUnitario: c, codigoBarras: codigoBarras.trim() || null
-    });
-    setCantidad(''); setCodigoBarras('');
-  };
-
-  const handleAgregarCodigo = (e) => {
-    e.preventDefault();
-    setErrorLocal('');
-    if (!productoId) { setErrorLocal('Selecciona un producto'); return; }
-    const texto = codigo.trim();
-    if (!texto) return;
-    const c = parseFloat(costo);
-    if (isNaN(c) || c < 0) { setErrorLocal('Indica el costo de compra antes de agregar codigos'); return; }
-    const yaEnDocumento = itemsDocumento.some((it) => !it.esAccesorio && it.codigo && it.codigo.toLowerCase() === texto.toLowerCase());
-    if (yaEnDocumento) { setErrorLocal('Ese codigo ya fue agregado a este documento'); setCodigo(''); return; }
-    onAgregar({
-      productId: producto.id, productoNombre: producto.nombre, tipo: producto.tipo,
-      esAccesorio: false, codigo: texto, costoUnitario: c
-    });
-    setCodigo('');
-    // El foco vuelve de una vez al mismo campo para poder seguir escaneando el siguiente
-    // codigo sin tener que hacer click otra vez.
-    requestAnimationFrame(() => codigoInputRef.current?.focus());
-  };
-
-  const handleAgregarRango = async (e) => {
-    e.preventDefault();
-    setErrorLocal('');
-    if (!productoId) { setErrorLocal('Selecciona un producto'); return; }
-    if (!codigoInicio.trim() || !codigoFin.trim()) { setErrorLocal('Escanea o escribe el primer y el ultimo codigo de la caja'); return; }
-    const cantidadDeclarada = parseInt(cantidadRango, 10);
-    if (!cantidadDeclarada || cantidadDeclarada <= 0) { setErrorLocal('Indica la cantidad de items que contiene este rango'); return; }
-    const c = parseFloat(costo);
-    if (isNaN(c) || c < 0) { setErrorLocal('Indica el costo unitario del lote'); return; }
-    setProcesandoRango(true);
+    setBuscandoCodigo(true);
     try {
-      const res = await window.api.calcularRangoCompra(codigoInicio.trim(), codigoFin.trim());
-      if (!res.ok) { setErrorLocal(res.message); return; }
-      if (res.total !== cantidadDeclarada) {
-        setErrorLocal(`La cantidad indicada (${cantidadDeclarada}) no coincide con el rango escaneado (${res.total} codigos). Verifica antes de continuar.`);
+      const p = await window.api.buscarProductoPorCodigo(texto, depositoId ? Number(depositoId) : undefined);
+      if (!p) {
+        setMostrarModalProductoNuevo(true);
         return;
       }
-      const yaEnDocumento = new Set(
-        itemsDocumento.filter((it) => !it.esAccesorio && it.codigo).map((it) => it.codigo.toLowerCase())
-      );
-      let agregados = 0;
-      for (const cod of res.disponibles) {
-        if (yaEnDocumento.has(cod.toLowerCase())) continue;
-        onAgregar({
-          productId: producto.id, productoNombre: producto.nombre, tipo: producto.tipo,
-          esAccesorio: false, codigo: cod, costoUnitario: c
-        });
-        agregados++;
+      if (p.multiplesCoincidencias) {
+        setErrorFila(`Hay ${p.cantidad} productos que coinciden con "${texto}". Se mas especifico o usa el codigo exacto.`);
+        return;
       }
-      const saltados = res.total - agregados;
-      setErrorLocal(
-        saltados > 0
-          ? `Se agregaron ${agregados} codigos al documento. Se saltaron ${saltados} (ya registrados en el inventario o repetidos en este documento).`
-          : `Se agregaron los ${agregados} codigos al documento.`
-      );
-      setCodigoInicio(''); setCodigoFin(''); setCantidadRango('');
+      if (p.noDisponible || p.otroDeposito) {
+        setErrorFila(`"${texto}" corresponde a un codigo/IMEI individual ya registrado, no a un producto. Escribe el codigo o nombre del producto.`);
+        return;
+      }
+      seleccionarProductoEnFila(p);
     } finally {
-      setProcesandoRango(false);
+      setBuscandoCodigo(false);
     }
   };
 
+  const handleProductoNuevoCreado = (producto) => {
+    setMostrarModalProductoNuevo(false);
+    onProductoCreado(producto);
+    seleccionarProductoEnFila(producto);
+  };
+
+  const costoUsdFila = () => (filaProducto ? (parseFloat(filaCosto) || 0) : 0);
+  const totalFila = () => costoUsdFila() * (parseInt(filaCantidad, 10) || 0);
+
+  // Unidades (equipo/simcard/usim) ya elegidas en ESTE documento para el producto de la fila
+  // actual -se usa para no ofrecer dos veces la misma unidad en el Descargo, y para no repetir
+  // el mismo codigo nuevo dos veces en el Cargo.
+  const unitIdsYaEnDocumento = () => itemsDocumento
+    .filter((it) => !it.esAccesorio && filaProducto && it.productId === filaProducto.id)
+    .flatMap((it) => (it.codigos || []).map((c) => c.unitId))
+    .filter(Boolean);
+
+  const confirmarFila = () => {
+    setErrorFila('');
+    const cant = parseInt(filaCantidad, 10);
+    if (!cant || cant <= 0) { setErrorFila('Cantidad invalida'); return; }
+    if (esCargo) {
+      const costo = parseFloat(filaCosto);
+      if (isNaN(costo) || costo < 0) { setErrorFila('Costo invalido'); return; }
+    }
+
+    if (filaProducto.tipo === 'accesorio') {
+      if (!esCargo && cant > filaProducto.stock_disponible) {
+        setErrorFila(`Solo hay ${filaProducto.stock_disponible} disponible(s) de "${filaProducto.nombre}" en este deposito`);
+        return;
+      }
+      onAgregar([{
+        productId: filaProducto.id,
+        tipo: 'accesorio',
+        esAccesorio: true,
+        descripcion: filaProducto.nombre,
+        producto_codigo: filaProducto.codigo_producto || null,
+        costoUnitario: esCargo ? costoUsdFila() : undefined,
+        cantidad: cant
+      }]);
+      limpiarFila();
+      setTimeout(() => codigoRef.current?.focus(), 0);
+    } else {
+      // Equipo / SIM / USIM (o cualquier otra categoria que lleve codigo/IMEI individual):
+      // se abre la ventana para elegir/ingresar los N codigos exactos -codigos NUEVOS si es un
+      // Cargo (misma ventana que usa Compras), o codigos YA EXISTENTES en el deposito si es un
+      // Descargo.
+      setMostrarModalCodigos(true);
+    }
+  };
+
+  const confirmarCodigosNuevos = (codigosNuevos) => {
+    onAgregar([{
+      productId: filaProducto.id,
+      tipo: filaProducto.tipo,
+      esAccesorio: false,
+      descripcion: filaProducto.nombre,
+      producto_codigo: filaProducto.codigo_producto || null,
+      costoUnitario: costoUsdFila(),
+      cantidad: codigosNuevos.length,
+      codigos: codigosNuevos.map((cod) => ({ codigo: cod }))
+    }]);
+    limpiarFila();
+    setTimeout(() => codigoRef.current?.focus(), 0);
+  };
+
+  const confirmarCodigosExistentes = (seleccionados) => {
+    onAgregar([{
+      productId: filaProducto.id,
+      tipo: filaProducto.tipo,
+      esAccesorio: false,
+      descripcion: filaProducto.nombre,
+      producto_codigo: filaProducto.codigo_producto || null,
+      cantidad: seleccionados.length,
+      codigos: seleccionados
+    }]);
+    limpiarFila();
+    setTimeout(() => codigoRef.current?.focus(), 0);
+  };
+
+  const [keyPendienteQuitar, setKeyPendienteQuitar] = useState(null);
+
   return (
-    <div className="form-box" style={{ maxWidth: '600px' }}>
-      <h3>Agregar articulo al documento (Cargo)</h3>
-      <div style={{ display: 'flex', gap: '0.5rem', margin: '0 0 0.75rem 0', flexWrap: 'wrap' }}>
-        {TIPOS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => seleccionarTab(t.key)}
-            style={{
-              padding: '0.4rem 0.8rem',
-              backgroundColor: tipoActivo === t.key ? '#0b4f9e' : '#e2e8f0',
-              color: tipoActivo === t.key ? '#fff' : '#111',
-              border: 'none', borderRadius: '4px', cursor: 'pointer'
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
+    <>
+      <div className="pos-table-wrap">
+        <table className="pos-table">
+          <thead>
+            <tr>
+              <th style={{ width: '13%' }}>Código</th>
+              <th>Descripción</th>
+              <th style={{ width: '8%' }}>Cantidad</th>
+              <th style={{ width: '6%' }}>Und</th>
+              {esCargo && <th style={{ width: '11%', textAlign: 'right' }}>Costo Und ($)</th>}
+              {esCargo && <th style={{ width: '11%', textAlign: 'right' }}>Total ($)</th>}
+              <th style={{ width: '17%' }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="fila-entrada">
+              <td>
+                {!filaProducto ? (
+                  <BuscadorProductoInput
+                    inputRef={codigoRef}
+                    placeholder="Código o nombre + Enter"
+                    value={filaCodigo}
+                    onChangeValue={setFilaCodigo}
+                    productos={productos}
+                    onSeleccionar={(p) => { setFilaCodigo(''); seleccionarProductoEnFila(p); }}
+                    onEnterSinSeleccion={buscarProductoPorCodigoEnter}
+                    disabled={buscandoCodigo}
+                  />
+                ) : (
+                  <span>{filaProducto.codigo_producto || '—'}</span>
+                )}
+              </td>
+              <td>{filaProducto ? filaProducto.nombre : <span style={{ color: '#98a2b3' }}>—</span>}</td>
+              <td>
+                {filaProducto ? (
+                  <input
+                    ref={cantidadRef}
+                    type="number"
+                    min="1"
+                    value={filaCantidad}
+                    onChange={(e) => setFilaCantidad(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); }
+                      if (e.key === 'Escape') { e.preventDefault(); limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }
+                    }}
+                  />
+                ) : <span></span>}
+              </td>
+              <td>{filaProducto ? 'UND' : ''}</td>
+              {esCargo && (
+                <td className="text-right">
+                  {filaProducto ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={filaCosto}
+                      onChange={(e) => setFilaCosto(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarFila(); } }}
+                      style={{ width: '90px', textAlign: 'right' }}
+                    />
+                  ) : ''}
+                </td>
+              )}
+              {esCargo && <td className="text-right">{filaProducto ? `$${fmt(totalFila())}` : ''}</td>}
+              <td>
+                <div className="pos-entrada-acciones">
+                  {filaProducto && (
+                    <button type="button" className="pos-agregar-btn" onClick={confirmarFila}>
+                      {filaProducto.tipo === 'accesorio' ? 'Agregar' : 'Elegir códigos'}
+                    </button>
+                  )}
+                  {filaProducto && (
+                    <button type="button" className="pos-remove-btn" onClick={() => { limpiarFila(); setTimeout(() => codigoRef.current?.focus(), 0); }}>×</button>
+                  )}
+                  {!filaProducto && (
+                    <button type="button" onClick={() => setMostrarModalProductoNuevo(true)} style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>
+                      + Crear producto
+                    </button>
+                  )}
+                </div>
+              </td>
+            </tr>
+
+            {itemsDocumento.length === 0 ? (
+              <tr>
+                <td colSpan={esCargo ? 7 : 5} style={{ textAlign: 'center', color: '#98a2b3', padding: '18px' }}>
+                  Aun no has agregado productos.
+                </td>
+              </tr>
+            ) : (
+              itemsDocumento.map((item) => (
+                <tr key={item.key}>
+                  <td>{item.producto_codigo || '—'}</td>
+                  <td>
+                    <div>{item.descripcion}</div>
+                    {item.codigos && item.codigos.length > 0 && (
+                      <div style={codigosListStyle}>
+                        {item.codigos.map((cod) => (
+                          <div key={cod.codigo} style={codigoLineStyle}>{cod.codigo}</div>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td>{item.cantidad}</td>
+                  <td>UND</td>
+                  {esCargo && <td className="text-right">${fmt(item.costoUnitario)}</td>}
+                  {esCargo && <td className="text-right">${fmt((item.costoUnitario || 0) * item.cantidad)}</td>}
+                  <td>
+                    {keyPendienteQuitar === item.key ? (
+                      <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+                        <button type="button" className="pos-confirm-btn yes" onClick={() => { onQuitar(item.key); setKeyPendienteQuitar(null); }}>Si</button>
+                        <button type="button" className="pos-confirm-btn no" onClick={() => setKeyPendienteQuitar(null)}>No</button>
+                      </span>
+                    ) : (
+                      <button type="button" className="pos-remove-btn" onClick={() => setKeyPendienteQuitar(item.key)}>×</button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
-      <label>Producto</label>
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-        {producto ? (
-          // Todo el recuadro es clickeable (no solo el texto "Limpiar"): al pinchar en
-          // cualquier parte se borra el producto seleccionado y se puede escribir/buscar otro
-          // de inmediato, igual que si nunca se hubiera elegido uno. El texto "Limpiar" de la
-          // derecha es solo la pista visual de que se puede hacer click ahi.
-          // NOTA: el color del texto se fija explicito (no se deja heredar) porque la regla
-          // ".form-box button" del CSS global pone TODOS los botones con texto blanco -pensada
-          // para los botones solidos azules del formulario- y como este boton en particular
-          // tiene fondo blanco, el texto quedaba blanco sobre blanco (invisible): ese era el
-          // "rectangulo vacio" que se veia al lado del campo Producto.
-          <div
-            onClick={volverABuscarProducto}
-            title="Click para quitar este producto y buscar/escribir otro"
-            style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              gap: '0.5rem', padding: '0.4rem 0.6rem', border: '1px solid #d0d5dd', borderRadius: '4px',
-              background: '#f9fafb', cursor: 'pointer'
-            }}
-          >
-            <span style={{ color: '#111' }}>{producto.nombre} <span style={{ color: '#667085', fontSize: '0.85rem' }}>(stock: {producto.stock_disponible})</span></span>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); volverABuscarProducto(); }}
-              style={{ fontSize: '0.78rem', padding: '2px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', color: '#0b4f9e', cursor: 'pointer' }}
-            >
-              Limpiar ×
-            </button>
-          </div>
-        ) : (
-          <div style={{ flex: 1 }}>
-            <BuscadorProductoInput
-              inputRef={busquedaInputRef}
-              placeholder="Nombre o código del producto + Enter"
-              value={busquedaProducto}
-              onChangeValue={setBusquedaProducto}
-              productos={productos}
-              onSeleccionar={(p) => { setProductoId(String(p.id)); setBusquedaProducto(''); }}
-              onEnterSinSeleccion={buscarProductoPorNombreEnter}
-            />
-          </div>
-        )}
-        <button type="button" onClick={() => setMostrarModalProductoNuevo(true)} style={{ whiteSpace: 'nowrap' }}>
-          + Crear producto nuevo
-        </button>
-      </div>
-      <p style={{ fontSize: '0.78rem', color: '#667085', margin: '0.3rem 0 0' }}>
-        ¿El producto que vas a cargar todavía no existe? Créalo aquí mismo, sin salir de esta pantalla.
-      </p>
+      {errorFila && <div className="pos-error-banner">{errorFila}</div>}
 
       {mostrarModalProductoNuevo && (
         <ProductoRapidoModal
-          codigoInicial={busquedaProducto}
+          codigoInicial={filaCodigo}
           tiposPermitidos={['equipo', 'simcard', 'usim', 'accesorio']}
           onConfirm={handleProductoNuevoCreado}
           onCancel={() => setMostrarModalProductoNuevo(false)}
         />
       )}
 
-      {productoId && esAccesorio && (
-        <form onSubmit={handleAgregarAccesorio} style={{ marginTop: '0.6rem' }}>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div>
-              <label style={{ fontSize: '0.8rem' }}>Cantidad *</label><br />
-              <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} autoFocus style={{ width: '110px' }} />
-            </div>
-            <div>
-              <label style={{ fontSize: '0.8rem' }}>Costo unitario (USD) *</label><br />
-              <input type="number" step="0.01" value={costo} onChange={(e) => setCosto(e.target.value)} style={{ width: '110px' }} />
-            </div>
-            <div>
-              <label style={{ fontSize: '0.8rem' }}>Codigo de barras (opcional)</label><br />
-              <input value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} placeholder="Si aplica" />
-            </div>
-            <button type="submit">+ Agregar accesorio</button>
-          </div>
-        </form>
+      {mostrarModalCodigos && filaProducto && esCargo && (
+        <CodigosNuevosModal
+          nombreProducto={filaProducto.nombre}
+          tipo={filaProducto.tipo}
+          cantidadNecesaria={parseInt(filaCantidad, 10) || 1}
+          onConfirm={confirmarCodigosNuevos}
+          onCancel={() => setMostrarModalCodigos(false)}
+        />
       )}
 
-      {productoId && !esAccesorio && (
-        <div style={{ marginTop: '0.6rem' }}>
-          <label style={{ fontSize: '0.8rem' }}>Costo de compra unitario (USD) *</label><br />
-          <input type="number" step="0.01" value={costo} onChange={(e) => setCosto(e.target.value)} style={{ width: '140px', marginBottom: '0.5rem' }} />
-          <form onSubmit={handleAgregarCodigo}>
-            <label style={{ fontSize: '0.8rem', display: 'block' }}>
-              Codigo / IMEI — escanea con la pistola o escribe y presiona Enter, uno a la vez
-            </label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <input
-                ref={codigoInputRef}
-                type="text"
-                value={codigo}
-                onChange={(e) => setCodigo(e.target.value)}
-                placeholder="Dispara la pistola aqui o escribe el codigo y presiona Enter"
-                style={{ flex: 1 }}
-              />
-              <button type="submit">+ Agregar codigo</button>
-            </div>
-          </form>
-
-          {permiteRango && (
-            <div style={{ marginTop: '0.6rem' }}>
-              <button type="button" onClick={() => setMostrarRango((v) => !v)} style={{ fontSize: '0.8rem' }}>
-                {mostrarRango ? 'Ocultar' : 'Agregar por rango (caja completa)'}
-              </button>
-              {mostrarRango && (
-                <form onSubmit={handleAgregarRango} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-                  <div>
-                    <label style={{ fontSize: '0.8rem' }}>Primer codigo</label><br />
-                    <input value={codigoInicio} onChange={(e) => setCodigoInicio(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.8rem' }}>Ultimo codigo</label><br />
-                    <input value={codigoFin} onChange={(e) => setCodigoFin(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.8rem' }}>Cantidad de items *</label><br />
-                    <input type="number" min="1" value={cantidadRango} onChange={(e) => setCantidadRango(e.target.value)} style={{ width: '140px' }} />
-                  </div>
-                  <button type="submit" disabled={procesandoRango}>
-                    {procesandoRango ? 'Procesando...' : 'Agregar rango al documento'}
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
-        </div>
+      {mostrarModalCodigos && filaProducto && !esCargo && (
+        <CodigosExistentesModal
+          nombreProducto={filaProducto.nombre}
+          tipo={filaProducto.tipo}
+          productId={filaProducto.id}
+          depositoId={depositoId}
+          itemsYaEnDocumento={unitIdsYaEnDocumento()}
+          cantidadNecesaria={parseInt(filaCantidad, 10) || 1}
+          onConfirm={confirmarCodigosExistentes}
+          onCancel={() => setMostrarModalCodigos(false)}
+        />
       )}
-
-      {errorLocal && <p style={{ color: errorLocal.startsWith('Se agregaron') ? 'green' : 'red', fontSize: '0.85rem', marginTop: '0.5rem' }}>{errorLocal}</p>}
-    </div>
-  );
-}
-
-// ---------------- Agregar items: DESCARGO (equipo/simcard/usim por escaneo global + accesorio por cantidad) ----------------
-
-function AgregarItemsDescargo({ onAgregar, itemsDocumento, depositoId }) {
-  const [scanTexto, setScanTexto] = useState('');
-  const [buscando, setBuscando] = useState(false);
-  const [errorScan, setErrorScan] = useState('');
-  const scanRef = useRef(null);
-
-  const [productos, setProductos] = useState([]);
-  const [productoId, setProductoId] = useState('');
-  const [cantidad, setCantidad] = useState('');
-  const [errorAccesorio, setErrorAccesorio] = useState('');
-
-  const [mostrarRango, setMostrarRango] = useState(false);
-  const [productoRangoId, setProductoRangoId] = useState('');
-  const [productosRango, setProductosRango] = useState([]);
-  const [tipoRango, setTipoRango] = useState('simcard');
-  const [codigoInicio, setCodigoInicio] = useState('');
-  const [codigoFin, setCodigoFin] = useState('');
-  const [cantidadRango, setCantidadRango] = useState('');
-  const [errorRango, setErrorRango] = useState('');
-  const [procesandoRango, setProcesandoRango] = useState(false);
-
-  useEffect(() => { scanRef.current?.focus(); }, []);
-
-  const cargarProductosAccesorio = useCallback(async () => {
-    const data = await window.api.listProducts('accesorio', undefined, depositoId ? Number(depositoId) : undefined);
-    setProductos(data);
-    setProductoId('');
-  }, [depositoId]);
-  useEffect(() => { cargarProductosAccesorio(); }, [cargarProductosAccesorio]);
-
-  const cargarProductosRango = useCallback(async () => {
-    const data = await window.api.listProducts(tipoRango, undefined, depositoId ? Number(depositoId) : undefined);
-    setProductosRango(data);
-    setProductoRangoId('');
-  }, [tipoRango, depositoId]);
-  useEffect(() => { if (mostrarRango) cargarProductosRango(); }, [mostrarRango, cargarProductosRango]);
-
-  // Escaneo/escritura de un solo codigo (IMEI, ICCID, codigo USIM o codigo de barras de
-  // accesorio) que identifica automaticamente el producto correspondiente, sin tener que
-  // elegir pestaña ni producto a mano. Cada Enter (o click en "Agregar") agrega el articulo al
-  // documento y el foco vuelve de inmediato al mismo campo para seguir escaneando.
-  const handleEscanear = async (e) => {
-    e.preventDefault();
-    const texto = scanTexto.trim();
-    setErrorScan('');
-    if (!texto) return;
-    setBuscando(true);
-    try {
-      const res = await window.api.buscarPorCodigo(texto);
-      if (!res.ok) {
-        setErrorScan(res.message);
-        setScanTexto('');
-        return;
-      }
-      if (res.tipoResultado === 'unidad') {
-        if (res.unit.estado !== 'disponible') {
-          setErrorScan(`El codigo "${res.unit.codigo}" no esta disponible (estado actual: ${res.unit.estado})`);
-          setScanTexto('');
-          return;
-        }
-        if (depositoId && res.unit.deposito_id && res.unit.deposito_id !== Number(depositoId)) {
-          setErrorScan(`El codigo "${res.unit.codigo}" no pertenece al deposito seleccionado`);
-          setScanTexto('');
-          return;
-        }
-        const yaEnDocumento = itemsDocumento.some((it) => !it.esAccesorio && it.unitId === res.unit.id);
-        if (yaEnDocumento) {
-          setErrorScan('Ese codigo ya fue agregado a este documento');
-          setScanTexto('');
-          return;
-        }
-        onAgregar({
-          productId: res.product_id, productoNombre: res.producto_nombre, tipo: res.tipo,
-          esAccesorio: false, unitId: res.unit.id, codigo: res.unit.codigo
-        });
-      } else {
-        // Codigo de barras de un accesorio: cada escaneo suma 1 a la cantidad de ese
-        // producto dentro del documento (si ya tenia una linea, la incrementa).
-        onAgregar({
-          productId: res.product_id, productoNombre: res.producto_nombre, tipo: 'accesorio',
-          esAccesorio: true, cantidad: 1, _incrementable: true
-        });
-      }
-      setScanTexto('');
-    } catch (err) {
-      setErrorScan('Error buscando el codigo: ' + (err?.message || String(err)));
-    } finally {
-      setBuscando(false);
-      requestAnimationFrame(() => scanRef.current?.focus());
-    }
-  };
-
-  const handleAgregarAccesorio = (e) => {
-    e.preventDefault();
-    setErrorAccesorio('');
-    if (!productoId) { setErrorAccesorio('Selecciona un producto'); return; }
-    const n = parseInt(cantidad, 10);
-    if (!n || n <= 0) { setErrorAccesorio('Indica la cantidad a descargar'); return; }
-    const producto = productos.find((p) => p.id === Number(productoId));
-    if (n > producto.stock_disponible) { setErrorAccesorio(`Solo hay ${producto.stock_disponible} disponible(s)`); return; }
-    onAgregar({
-      productId: producto.id, productoNombre: producto.nombre, tipo: producto.tipo,
-      esAccesorio: true, cantidad: n
-    });
-    setCantidad('');
-  };
-
-  const handleAgregarRango = async (e) => {
-    e.preventDefault();
-    setErrorRango('');
-    if (!productoRangoId) { setErrorRango('Selecciona un producto'); return; }
-    if (!codigoInicio.trim() || !codigoFin.trim()) { setErrorRango('Escanea o escribe el primer y el ultimo codigo'); return; }
-    const cantidadDeclarada = parseInt(cantidadRango, 10);
-    if (!cantidadDeclarada || cantidadDeclarada <= 0) { setErrorRango('Indica la cantidad de items que contiene este rango'); return; }
-    const codigos = calcularCodigosRango(codigoInicio.trim(), codigoFin.trim());
-    if (!codigos) { setErrorRango('Revisa el primer y el ultimo codigo: no se pudo calcular el rango'); return; }
-    if (codigos.length !== cantidadDeclarada) {
-      setErrorRango(`La cantidad indicada (${cantidadDeclarada}) no coincide con el rango escaneado (${codigos.length} codigos). Verifica antes de continuar.`);
-      return;
-    }
-    setProcesandoRango(true);
-    try {
-      const producto = productosRango.find((p) => p.id === Number(productoRangoId));
-      const unidades = await window.api.listUnits(producto.id, depositoId ? Number(depositoId) : undefined);
-      const disponiblesPorCodigo = new Map(
-        unidades.filter((u) => u.estado === 'disponible').map((u) => [u.codigo.toLowerCase(), u])
-      );
-      const yaEnDocumento = new Set(
-        itemsDocumento.filter((it) => !it.esAccesorio && it.unitId).map((it) => it.unitId)
-      );
-      let agregados = 0;
-      for (const cod of codigos) {
-        const u = disponiblesPorCodigo.get(cod.toLowerCase());
-        if (!u || yaEnDocumento.has(u.id)) continue;
-        onAgregar({
-          productId: producto.id, productoNombre: producto.nombre, tipo: producto.tipo,
-          esAccesorio: false, unitId: u.id, codigo: u.codigo
-        });
-        yaEnDocumento.add(u.id);
-        agregados++;
-      }
-      const saltados = codigos.length - agregados;
-      setErrorRango(
-        saltados > 0
-          ? `Se agregaron ${agregados} codigos al documento. Se saltaron ${saltados} (no disponibles o ya en el documento).`
-          : `Se agregaron los ${agregados} codigos al documento.`
-      );
-      setCodigoInicio(''); setCodigoFin(''); setCantidadRango('');
-    } finally {
-      setProcesandoRango(false);
-    }
-  };
-
-  return (
-    <>
-      <div className="form-box" style={{ maxWidth: '600px' }}>
-        <h3>Agregar articulo al documento (Descargo)</h3>
-        <label>Escanear o escribir IMEI, codigo (SIM/USIM) o codigo de barras</label>
-        <form onSubmit={handleEscanear} style={{ display: 'flex', gap: '0.5rem' }}>
-          <input
-            ref={scanRef}
-            value={scanTexto}
-            onChange={(e) => setScanTexto(e.target.value)}
-            placeholder="Dispara la pistola aqui o escribe el codigo y presiona Enter"
-            style={{ flex: 1 }}
-          />
-          <button type="submit" disabled={buscando || !scanTexto.trim()}>
-            {buscando ? 'Buscando...' : '+ Agregar'}
-          </button>
-        </form>
-        <p style={{ margin: '0.3rem 0 0 0', fontSize: '0.75rem', color: '#888' }}>
-          Identifica el producto automaticamente y lo agrega al documento. El foco vuelve aqui
-          despues de cada uno para seguir escaneando sin usar el mouse.
-        </p>
-        {errorScan && <p style={{ color: 'red', fontSize: '0.85rem' }}>{errorScan}</p>}
-
-        <div style={{ marginTop: '0.6rem' }}>
-          <button type="button" onClick={() => setMostrarRango((v) => !v)} style={{ fontSize: '0.8rem' }}>
-            {mostrarRango ? 'Ocultar' : 'Agregar por rango (caja completa de SIM/USIM)'}
-          </button>
-          {mostrarRango && (
-            <form onSubmit={handleAgregarRango} style={{ marginTop: '0.5rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                {[{ key: 'simcard', label: 'SIM Card' }, { key: 'usim', label: 'USIM' }].map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => setTipoRango(t.key)}
-                    style={{
-                      padding: '0.3rem 0.7rem', fontSize: '0.8rem', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                      backgroundColor: tipoRango === t.key ? '#0b4f9e' : '#e2e8f0', color: tipoRango === t.key ? '#fff' : '#111'
-                    }}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-              <label style={{ fontSize: '0.8rem' }}>Producto</label>
-              <select value={productoRangoId} onChange={(e) => setProductoRangoId(e.target.value)} style={{ display: 'block', marginBottom: '0.5rem' }}>
-                <option value="">-- Selecciona --</option>
-                {productosRango.map((p) => (
-                  <option key={p.id} value={p.id}>{p.nombre} (disponibles: {p.stock_disponible})</option>
-                ))}
-              </select>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                <div>
-                  <label style={{ fontSize: '0.8rem' }}>Primer codigo</label><br />
-                  <input value={codigoInicio} onChange={(e) => setCodigoInicio(e.target.value)} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.8rem' }}>Ultimo codigo</label><br />
-                  <input value={codigoFin} onChange={(e) => setCodigoFin(e.target.value)} />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.8rem' }}>Cantidad de items *</label><br />
-                  <input type="number" min="1" value={cantidadRango} onChange={(e) => setCantidadRango(e.target.value)} style={{ width: '140px' }} />
-                </div>
-                <button type="submit" disabled={procesandoRango}>
-                  {procesandoRango ? 'Procesando...' : 'Agregar rango al documento'}
-                </button>
-              </div>
-              {errorRango && <p style={{ color: errorRango.startsWith('Se agregaron') ? 'green' : 'red', fontSize: '0.85rem' }}>{errorRango}</p>}
-            </form>
-          )}
-        </div>
-      </div>
-
-      <div className="form-box" style={{ maxWidth: '600px' }}>
-        <h3>Agregar accesorio por cantidad</h3>
-        <p style={{ fontSize: '0.8rem', color: '#666', margin: '0 0 0.5rem 0' }}>
-          Para accesorios sin codigo de barras a mano: elige el producto y la cantidad.
-        </p>
-        <form onSubmit={handleAgregarAccesorio} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div>
-            <label style={{ fontSize: '0.8rem' }}>Producto</label><br />
-            <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
-              <option value="">-- Selecciona --</option>
-              {productos.map((p) => (
-                <option key={p.id} value={p.id}>{p.nombre} (disponible: {p.stock_disponible})</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize: '0.8rem' }}>Cantidad *</label><br />
-            <input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} style={{ width: '110px' }} />
-          </div>
-          <button type="submit">+ Agregar accesorio</button>
-        </form>
-        {errorAccesorio && <p style={{ color: 'red', fontSize: '0.85rem' }}>{errorAccesorio}</p>}
-      </div>
     </>
   );
 }
 
-// ---------------- Historial de documentos de Cargo/Descargo ----------------
+const codigosListStyle = {
+  marginTop: '4px',
+  maxHeight: '110px',
+  overflowY: 'auto',
+  border: '1px solid #eef0f3',
+  borderRadius: '4px',
+  padding: '4px 6px',
+  background: '#fafbfc'
+};
 
-function HistorialCargosDescargos({ onVolver, settings }) {
-  const [documentos, setDocumentos] = useState([]);
-  const [cargando, setCargando] = useState(true);
-  const [filtroTipo, setFiltroTipo] = useState('');
-  const [detalle, setDetalle] = useState(null);
-  const [comprobanteAbierto, setComprobanteAbierto] = useState(null);
-  const [generandoPDF, setGenerandoPDF] = useState(false);
-
-  const cargar = useCallback(() => {
-    setCargando(true);
-    window.api.listarCargosDescargos({ tipoDocumento: filtroTipo || undefined }).then((data) => {
-      setDocumentos(data);
-      setCargando(false);
-    });
-  }, [filtroTipo]);
-
-  useEffect(() => { cargar(); }, [cargar]);
-
-  const verDetalle = async (id) => {
-    const res = await window.api.detalleCargoDescargo(id);
-    if (res.ok) setDetalle(res);
-  };
-
-  if (comprobanteAbierto) {
-    return (
-      <CargoDescargoDetalle
-        registro={comprobanteAbierto}
-        tipoDocumento={detalle?.encabezado?.tipo_documento}
-        onVolver={() => setComprobanteAbierto(null)}
-      />
-    );
-  }
-
-  return (
-    <div>
-      <div className="pos-topbar">
-        <span className="pos-topbar-side">MODULO DE INVENTARIO</span>
-        <span className="pos-topbar-center">HISTORIAL DE CARGOS Y DESCARGOS</span>
-        <button
-          type="button"
-          onClick={onVolver}
-          style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', borderRadius: '4px', padding: '4px 10px', fontSize: '0.8rem', cursor: 'pointer' }}
-        >
-          + Nuevo documento
-        </button>
-      </div>
-
-      <div style={{ background: '#fff', border: '1px solid #d0d5dd', borderTop: 'none', padding: '16px' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-          {[{ key: '', label: 'Todos' }, { key: 'cargo', label: 'Cargos' }, { key: 'descargo', label: 'Descargos' }].map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFiltroTipo(f.key)}
-              style={{
-                padding: '0.35rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem',
-                backgroundColor: filtroTipo === f.key ? '#0b4f9e' : '#e2e8f0', color: filtroTipo === f.key ? '#fff' : '#111'
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {cargando ? (
-          <p style={{ color: '#98a2b3' }}>Cargando...</p>
-        ) : documentos.length === 0 ? (
-          <p style={{ color: '#98a2b3' }}>Aún no se ha registrado ningún documento.</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ padding: '6px 4px' }}>Tipo</th>
-                <th style={{ padding: '6px 4px' }}>N°</th>
-                <th style={{ padding: '6px 4px' }}>Fecha</th>
-                <th style={{ padding: '6px 4px' }}>Depósito</th>
-                <th style={{ padding: '6px 4px' }}>Artículos</th>
-                <th style={{ padding: '6px 4px' }}>Total</th>
-                <th style={{ padding: '6px 4px' }}>Usuario</th>
-                <th style={{ padding: '6px 4px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {documentos.map((d) => {
-                const esCargo = d.tipo_documento === 'cargo';
-                return (
-                  <tr key={d.id} style={{ borderBottom: '1px solid #eef0f3' }}>
-                    <td style={{ padding: '6px 4px' }}>
-                      <span style={{
-                        padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600,
-                        background: esCargo ? '#ecfdf3' : '#fef3f2', color: esCargo ? '#027a48' : '#b42318'
-                      }}>
-                        {esCargo ? 'Cargo' : 'Descargo'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '6px 4px' }}>{String(d.numero_documento ?? d.id).padStart(6, '0')}</td>
-                    <td style={{ padding: '6px 4px' }}>{d.created_at}</td>
-                    <td style={{ padding: '6px 4px' }}>{d.deposito_nombre}</td>
-                    <td style={{ padding: '6px 4px' }}>{d.total_items}</td>
-                    <td style={{ padding: '6px 4px' }}>{esCargo ? `$${fmt(d.total_usd)}` : '—'}</td>
-                    <td style={{ padding: '6px 4px' }}>{d.usuario}</td>
-                    <td style={{ padding: '6px 4px' }}>
-                      <button type="button" onClick={() => verDetalle(d.id)}>Ver detalle</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {detalle && (
-        <div className="pos-vertodo-overlay" onClick={() => setDetalle(null)}>
-          <div className="pos-vertodo-box" onClick={(e) => e.stopPropagation()}>
-            <div className="pos-vertodo-header">
-              <span>
-                {detalle.encabezado.tipo_documento === 'cargo' ? 'Cargo' : 'Descargo'} N° {String(detalle.encabezado.numero_documento ?? detalle.encabezado.id).padStart(6, '0')}
-              </span>
-              <button type="button" className="pos-vertodo-cerrar" onClick={() => setDetalle(null)}>×</button>
-            </div>
-            <div className="pos-vertodo-body">
-              {detalle.encabezado.motivo && (
-                <p style={{ margin: '0 0 10px', fontSize: '0.9rem', color: '#475467' }}>
-                  Motivo: {detalle.encabezado.motivo}
-                </p>
-              )}
-              <table className="pos-vertodo-table">
-                <thead>
-                  <tr>
-                    <th>Producto</th>
-                    <th>Código</th>
-                    <th>Cantidad</th>
-                    {detalle.encabezado.tipo_documento === 'cargo' && <th>Total</th>}
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detalle.items.map((it) => (
-                    <tr key={it.id}>
-                      <td>{it.producto_nombre}</td>
-                      <td>{it.unidad_codigo || '—'}</td>
-                      <td>{it.cantidad}</td>
-                      {detalle.encabezado.tipo_documento === 'cargo' && <td>${fmt(it.total_usd)}</td>}
-                      <td><button type="button" onClick={() => setComprobanteAbierto(it)}>Ver comprobante</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="pos-vertodo-footer">
-              <button
-                type="button"
-                className="btn-ghost"
-                disabled={generandoPDF}
-                onClick={async () => {
-                  setGenerandoPDF(true);
-                  try {
-                    await generarCargoDescargoDocumentoPDF(
-                      detalle.encabezado.id,
-                      detalle.items,
-                      detalle.encabezado.tipo_documento,
-                      settings,
-                      { numeroDocumento: detalle.encabezado.numero_documento }
-                    );
-                  } finally {
-                    setGenerandoPDF(false);
-                  }
-                }}
-              >
-                {generandoPDF ? 'Generando...' : 'Descargar PDF'}
-              </button>
-              <button type="button" className="btn-primary" onClick={() => setDetalle(null)}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+const codigoLineStyle = {
+  fontFamily: 'monospace',
+  fontSize: '0.78rem',
+  color: '#475467',
+  lineHeight: '1.5'
+};
