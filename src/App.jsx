@@ -210,6 +210,10 @@ export default function App() {
   // categoria activa cada vez que se elige una opcion distinta del submenu.
   const [menuReportesAbierto, setMenuReportesAbierto] = useState(false);
   const [categoriaReportes, setCategoriaReportes] = useState('ventas');
+  // Submenu de Cargos y Descargos (Cargo / Descargo), mismo patron que Facturar y Compras: cada
+  // opcion lleva a su propia vista ('cargo' / 'descargo'), cada una con su propio numero de
+  // documento consecutivo -ya no es un boton unico con un interruptor Cargo/Descargo adentro.
+  const [menuCargoDescargoAbierto, setMenuCargoDescargoAbierto] = useState(false);
   // Submenu de Configuracion: 5 pantallas repartidas (Datos de Tienda, Cotizacion del dia,
   // Configuracion factura, Depositos/almacenes, Bases de datos). "Cotizacion del dia" es la
   // unica que ademas ve el vendedor (no solo el administrador), por eso el boton que abre este
@@ -218,6 +222,7 @@ export default function App() {
   const [menuConfigAbierto, setMenuConfigAbierto] = useState(false);
   const refFacturar = useRef(null);
   const refCompras = useRef(null);
+  const refCargoDescargo = useRef(null);
   const refReportes = useRef(null);
   const refConfig = useRef(null);
 
@@ -252,11 +257,12 @@ export default function App() {
   };
   const vistasFacturacion = ['facturacion', 'devolucionFacturas', 'notaVenta'];
   const vistasCompras = ['compras', 'comprasTelfAcces', 'devolucionCompras', 'traslados'];
-  // Si hay CUALQUIER submenu abierto (Facturar, Compras o Reportes), los botones que no son el
-  // que se abrio deben quedar apagados -- incluyendo los otros botones con submenu, que antes se
-  // quedaban brillantes porque viven dentro de un <div> y no son hijos directos de <nav>, por lo
-  // que la regla CSS que apaga al resto del menu no los alcanzaba.
-  const algunSubmenuAbierto = menuFacturacionAbierto || menuComprasAbierto || menuReportesAbierto || menuConfigAbierto;
+  const vistasCargoDescargo = ['cargo', 'descargo'];
+  // Si hay CUALQUIER submenu abierto (Facturar, Compras, Cargo/Descargo o Reportes), los botones
+  // que no son el que se abrio deben quedar apagados -- incluyendo los otros botones con
+  // submenu, que antes se quedaban brillantes porque viven dentro de un <div> y no son hijos
+  // directos de <nav>, por lo que la regla CSS que apaga al resto del menu no los alcanzaba.
+  const algunSubmenuAbierto = menuFacturacionAbierto || menuComprasAbierto || menuCargoDescargoAbierto || menuReportesAbierto || menuConfigAbierto;
   const vistasConfig = ['configDatosTienda', 'configCotizacion', 'configFactura', 'configDepositos', 'configBaseDatos', 'configEmailReportes'];
   const irAReporte = (catKey) => {
     setCategoriaReportes(catKey);
@@ -348,7 +354,29 @@ export default function App() {
           </div>
           <hr className="sidebar-section-divider" />
           <button className={view === 'categorias' ? 'active' : ''} onClick={() => setView('categorias')}><MIcon.Categorias />Categorias</button>
-          <button className={view === 'cargosDescargos' ? 'active' : ''} onClick={() => setView('cargosDescargos')}><MIcon.CargosDescargos />Cargos y Descargos</button>
+          <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuCargoDescargoAbierto ? ' dimmed' : ''}`}>
+            <button
+              ref={refCargoDescargo}
+              className={vistasCargoDescargo.includes(view) ? 'active' : ''}
+              onClick={() => setMenuCargoDescargoAbierto((v) => !v)}
+            >
+              <MIcon.CargosDescargos />Cargos y Descargos
+            </button>
+            <SidebarSubmenu open={menuCargoDescargoAbierto} anchorRef={refCargoDescargo} onClose={() => setMenuCargoDescargoAbierto(false)}>
+                  <button
+                    className={view === 'cargo' ? 'active' : ''}
+                    onClick={() => { setView('cargo'); setMenuCargoDescargoAbierto(false); }}
+                  >
+                    ⬆ Cargo (agregar stock)
+                  </button>
+                  <button
+                    className={view === 'descargo' ? 'active' : ''}
+                    onClick={() => { setView('descargo'); setMenuCargoDescargoAbierto(false); }}
+                  >
+                    ⬇ Descargo (dar de baja)
+                  </button>
+            </SidebarSubmenu>
+          </div>
           {user.role === 'administrador' && (
             <button className={view === 'gastos' ? 'active' : ''} onClick={() => setView('gastos')}><MIcon.Gastos />Gastos</button>
           )}
@@ -454,7 +482,8 @@ export default function App() {
         {view === 'traslados' && <Traslados currentUser={user} />}
         {view === 'apartados' && <Apartados currentUser={user} onIrAFacturar={irAFacturarDesdeApartado} />}
         {view === 'categorias' && <CategoriasAdmin />}
-        {view === 'cargosDescargos' && <CargosDescargos currentUser={user} />}
+        {view === 'cargo' && <CargosDescargos key="cargo" currentUser={user} tipoInicial="cargo" />}
+        {view === 'descargo' && <CargosDescargos key="descargo" currentUser={user} tipoInicial="descargo" />}
         {view === 'gastos' && user.role === 'administrador' && <Gastos currentUser={user} />}
         {view === 'reportes' && <Reportes key={categoriaReportes} currentUser={user} categoriaInicial={categoriaReportes} />}
         {view === 'configDatosTienda' && user.role === 'administrador' && <Configuracion seccion="datosTienda" />}
