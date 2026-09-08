@@ -4673,6 +4673,15 @@ ipcMain.handle('metas:list', () => {
 });
 
 ipcMain.handle('metas:actualizar', (event, { usuario, meta_mensual_usd, comision_pct }) => {
+  // Bug de seguridad encontrado en la Parte 4 de la prueba de estrés: este handler no tenia
+  // requireAdmin(), a pesar de que el propio diseño (ver comentario en Reportes.jsx) dice que
+  // el vendedor solo puede VER metas y comisiones, nunca editarlas. El frontend ya ocultaba los
+  // controles de edicion para el vendedor, pero eso no protege nada por si solo: cualquiera
+  // podia invocar 'metas:actualizar' directo desde la consola del navegador (DevTools) y
+  // subirse su propio % de comision o su propia meta, sin pasar por la UI. Con este chequeo,
+  // el backend lo bloquea igual que ya hace con el resto de canales sensibles a dinero.
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const metaNum = parseFloat(meta_mensual_usd);
   const comisionNum = parseFloat(comision_pct);
