@@ -1645,6 +1645,17 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
   return { ok: true, encabezadoId, numeroDocumento, registros };
 });
 
+// ---------- IPC: numero de documento consecutivo (independiente para Cargo y para Descargo,
+// igual patron que compras:proximoNumero) ----------
+ipcMain.handle('cargosDescargos:proximoNumero', (event, { tipoDocumento } = {}) => {
+  const db = getDb();
+  if (!['cargo', 'descargo'].includes(tipoDocumento)) return { proximoNumero: null };
+  const fila = db.prepare(
+    'SELECT COALESCE(MAX(numero_documento), 0) + 1 AS proximo FROM cargos_descargos_encabezado WHERE tipo_documento = ?'
+  ).get(tipoDocumento);
+  return { proximoNumero: fila.proximo };
+});
+
 // ---------- IPC: Historial de documentos de Cargo/Descargo (por encabezado, no por renglon) ----------
 ipcMain.handle('cargosDescargos:listar', (event, { desde, hasta, tipoDocumento } = {}) => {
   const db = getDb();

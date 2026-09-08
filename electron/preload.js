@@ -51,6 +51,11 @@ contextBridge.exposeInMainWorld('api', {
   // Documento de Cargo/Descargo con varios items (incluso de productos distintos, mezclados
   // en un mismo procedimiento).
   crearDocumentoCargoDescargo: (payload) => ipcRenderer.invoke('cargosDescargos:crearDocumento', payload),
+  // Numero de documento consecutivo, independiente para Cargo y para Descargo (mismo patron
+  // que proximoNumeroCompra), usado solo para MOSTRAR el numero que se va a asignar antes de
+  // registrar -el numero real y definitivo se calcula de nuevo, dentro de la transaccion, en
+  // cargosDescargos:crearDocumento.
+  proximoNumeroCargoDescargo: (tipoDocumento) => ipcRenderer.invoke('cargosDescargos:proximoNumero', { tipoDocumento }),
   // Configuracion
   licenciaEstado: () => ipcRenderer.invoke('licencia:estado'),
   licenciaActivar: (codigo) => ipcRenderer.invoke('licencia:activar', { codigo }),
