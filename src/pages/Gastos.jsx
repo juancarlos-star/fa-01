@@ -36,7 +36,11 @@ export default function Gastos({ currentUser }) {
 
   const handleEliminar = async (id) => {
     if (!confirm('¿Eliminar este gasto?')) return;
-    await window.api.deleteGasto(id);
+    const res = await window.api.deleteGasto(id);
+    if (res && res.ok === false) {
+      alert(res.message || 'No se pudo eliminar el gasto');
+      return;
+    }
     cargar();
   };
 
