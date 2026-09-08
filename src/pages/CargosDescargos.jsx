@@ -479,9 +479,38 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
   const [mostrarModalProductoNuevo, setMostrarModalProductoNuevo] = useState(false);
 
   const codigoInputRef = useRef(null);
+  const busquedaInputRef = useRef(null);
   const esAccesorio = tipoActivo === 'accesorio';
   const permiteRango = tipoActivo === 'simcard' || tipoActivo === 'usim';
   const producto = productos.find((p) => p.id === Number(productoId));
+
+  // Al elegir un producto (ya sea uno existente o uno recien creado con "+ Crear producto
+  // nuevo"), se precarga el Costo con lo que ya trae registrado ese producto
+  // (costo_promedio_usd): si es un producto ya existente, es su ultimo costo conocido; si
+  // se acaba de crear, es el costo que se le puso en el modal. En ambos casos el campo sigue
+  // siendo editable por si hay que corregirlo antes de agregar el codigo/cantidad. Al quitar
+  // la seleccion (boton "Cambiar") se limpia, para no arrastrar el costo de un producto al
+  // siguiente.
+  useEffect(() => {
+    setCosto(producto ? String(producto.costo_promedio_usd ?? '0') : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [producto?.id]);
+
+  // Quita el producto seleccionado y devuelve el foco al buscador de inmediato, para poder
+  // escribir el nombre de otro producto (o de uno nuevo) sin tener que hacer un segundo click.
+  // Antes de este cambio, al elegir un producto el campo "Producto" quedaba reemplazado por un
+  // recuadro fijo (sin input), y la unica forma de volver a escribir ahi era este boton -que
+  // ademas no enfocaba el campo, por lo que parecia "trabado" hasta salir y volver a entrar al
+  // modulo.
+  const volverABuscarProducto = () => {
+    setProductoId('');
+    setCosto('');
+    setCodigo('');
+    setCantidad('');
+    setCodigoBarras('');
+    setErrorLocal('');
+    requestAnimationFrame(() => busquedaInputRef.current?.focus());
+  };
 
   // Cuando se crea un producto de OTRA categoria a la de la pestana activa (ver
   // handleProductoNuevoCreado mas abajo), se cambia de pestana y eso dispara este mismo
@@ -655,13 +684,14 @@ function AgregarItemsCargo({ onAgregar, itemsDocumento, depositoId }) {
             gap: '0.5rem', padding: '0.4rem 0.6rem', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#f9fafb'
           }}>
             <span>{producto.nombre} <span style={{ color: '#667085', fontSize: '0.85rem' }}>(stock: {producto.stock_disponible})</span></span>
-            <button type="button" onClick={() => setProductoId('')} style={{ fontSize: '0.78rem', padding: '2px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', cursor: 'pointer' }}>
+            <button type="button" onClick={volverABuscarProducto} style={{ fontSize: '0.78rem', padding: '2px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', background: '#fff', cursor: 'pointer' }}>
               Cambiar
             </button>
           </div>
         ) : (
           <div style={{ flex: 1 }}>
             <BuscadorProductoInput
+              inputRef={busquedaInputRef}
               placeholder="Nombre o código del producto + Enter"
               value={busquedaProducto}
               onChangeValue={setBusquedaProducto}
