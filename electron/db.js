@@ -605,6 +605,20 @@ function crearIndicesSiHacenFalta(database) {
   `);
 }
 
+// Los descargos (bajas de inventario por perdida/daño) no guardaban el costo de lo dado de baja,
+// asi que ni el propio reporte de Cargos y Descargos ni el de Ganancias podian reflejar esa
+// perdida en dinero -la Ganancia Neta quedaba sobrevalorada cada vez que se descargaba algo.
+// Los descargos viejos (anteriores a esta migracion) se quedan con costo 0 porque ese dato nunca
+// se capturo y no hay forma confiable de reconstruirlo; solo los descargos nuevos en adelante
+// quedan con su costo real.
+function migrarCostoDescargosSiHaceFalta(database) {
+  const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='descargos'").get();
+  if (!existe) return;
+  if (!tieneColumna(database, 'descargos', 'costo_unitario_usd')) {
+    database.exec('ALTER TABLE descargos ADD COLUMN costo_unitario_usd REAL NOT NULL DEFAULT 0');
+  }
+}
+
 // no perder la reserva de stock que ya tenian.
 function migrarApartadosSiHaceFalta(database) {
   const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='apartados'").get();
@@ -875,6 +889,7 @@ function initDb() {
   migrarTasaCambioComprasSiHaceFalta(database);
   migrarNotaVentaSiHaceFalta(database);
   migrarApartadosSiHaceFalta(database);
+  migrarCostoDescargosSiHaceFalta(database);
   crearIndicesSiHacenFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

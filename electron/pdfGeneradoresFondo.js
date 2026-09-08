@@ -823,6 +823,7 @@ function generarPDFGananciasFondo(reporte, desde, hasta, settings) {
     ['Costo de lo vendido', `$${fmt(reporte.costoVendidoUsd)}`],
     ['Ganancia bruta', `$${fmt(reporte.gananciaBrutaUsd)}`],
     ['Gastos del periodo', `$${fmt(reporte.gastosTotalUsd)}`],
+    ['Perdida por descargos', `$${fmt(reporte.costoDescargadoUsd)}`],
     ['Ganancia neta', `$${fmt(reporte.gananciaNetaUsd)}`]
   ];
   lineas.forEach(([label, valor]) => {

@@ -1541,11 +1541,15 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
       } else {
         if (product.tipo === 'accesorio') {
           const n = parseInt(it.cantidad, 10);
+          // Los accesorios no tienen costo por unidad puntual (no son serializados), asi que se
+          // usa el costo promedio del producto AL MOMENTO de dar de baja -es el mejor estimado
+          // disponible de cuanto valia ese stock que se perdio.
+          const costoUnitario = product.costo_promedio_usd || 0;
           ajustarStockDeposito(db, product.id, depositoId, -n);
           const descargoId = db.prepare(
-            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id, deposito_id)
-             VALUES (?, NULL, ?, ?, ?, datetime('now','localtime'), ?, ?)`
-          ).run(product.id, n, (motivo || '').trim(), usuario || '', encabezadoId, depositoId).lastInsertRowid;
+            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id, deposito_id, costo_unitario_usd)
+             VALUES (?, NULL, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)`
+          ).run(product.id, n, (motivo || '').trim(), usuario || '', encabezadoId, depositoId, costoUnitario).lastInsertRowid;
           registros.push(
             db.prepare(
               `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo FROM descargos d LEFT JOIN products p ON p.id = d.product_id WHERE d.id = ?`
@@ -1553,11 +1557,14 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
           );
         } else {
           const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(it.unitId);
+          // Los equipos/SIM/USIM si tienen costo real guardado por unidad puntual (desde que se
+          // compraron) -se usa ese, no el promedio, porque es el dato exacto de esa unidad.
+          const costoUnitario = unit.costo_unitario_usd || 0;
           db.prepare("UPDATE inventory_units SET estado = 'de_baja' WHERE id = ?").run(unit.id);
           const descargoId = db.prepare(
-            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id, deposito_id)
-             VALUES (?, ?, 1, ?, ?, datetime('now','localtime'), ?, ?)`
-          ).run(product.id, unit.id, (motivo || '').trim(), usuario || '', encabezadoId, depositoId).lastInsertRowid;
+            `INSERT INTO descargos (product_id, unit_id, cantidad, motivo, usuario, created_at, encabezado_id, deposito_id, costo_unitario_usd)
+             VALUES (?, ?, 1, ?, ?, datetime('now','localtime'), ?, ?, ?)`
+          ).run(product.id, unit.id, (motivo || '').trim(), usuario || '', encabezadoId, depositoId, costoUnitario).lastInsertRowid;
           registros.push(
             db.prepare(
               `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo
@@ -2935,8 +2942,19 @@ function calcularReporteGanancias(db, desde, hasta) {
   ).all(desdeInicio, hastaFin);
   const gastosTotalUsd = gastos.reduce((acc, g) => acc + g.monto_usd, 0);
 
+  // Lo dado de baja en Cargos y Descargos (equipos dañados, accesorios vencidos/robados, etc.)
+  // es una perdida real de inventario, igual de real que un gasto en efectivo -antes no se
+  // restaba en ningun lado porque el costo ni siquiera se guardaba (ver migracion
+  // migrarCostoDescargosSiHaceFalta). Los descargos de ANTES de esa migracion quedan en costo 0
+  // (nunca se capturo), asi que este numero puede quedar por debajo del real si el rango
+  // incluye descargos viejos.
+  const descargos = db.prepare(
+    "SELECT cantidad, costo_unitario_usd FROM descargos WHERE created_at >= ? AND created_at <= ?"
+  ).all(desdeInicio, hastaFin);
+  const costoDescargadoUsd = descargos.reduce((acc, d) => acc + (d.costo_unitario_usd || 0) * d.cantidad, 0);
+
   const gananciaBrutaUsd = ventasSubtotalUsd - costoVendidoUsd;
-  const gananciaNetaUsd = gananciaBrutaUsd - gastosTotalUsd;
+  const gananciaNetaUsd = gananciaBrutaUsd - gastosTotalUsd - costoDescargadoUsd;
 
   return {
     ok: true,
@@ -2947,6 +2965,7 @@ function calcularReporteGanancias(db, desde, hasta) {
     ivaCobradoUsd,
     ventasTotalUsd,
     costoVendidoUsd,
+    costoDescargadoUsd,
     gananciaBrutaUsd,
     gastosTotalUsd,
     gananciaNetaUsd,
@@ -4190,12 +4209,19 @@ function calcularReporteMargenPorProducto(db, desde, hasta) {
   // aparte en el reporte de devoluciones. La ganancia de cada linea es precio de venta menos
   // costo unitario AL MOMENTO DE VENDER (costo_unitario_usd, guardado en cada factura_items),
   // no el costo actual del producto -asi el margen historico no cambia si el costo sube despues.
+  // Antes esto excluia las devoluciones (f.es_devolucion = 0) con la idea de "no restar dos
+  // veces", pero eso dejaba a este reporte y al de Ganancias calculando la ganancia del mismo
+  // periodo con criterios distintos: Ganancias SI neta las devoluciones (venta y costo se
+  // restan), asi que sus totales nunca coincidian con la suma de este reporte cuando habia
+  // alguna devolucion en el rango. Ahora se incluyen TODOS los factura_items del periodo (ventas
+  // y sus devoluciones) y se usa el signo de "es_devolucion" a nivel de renglon -igual que en
+  // calcularReporteGanancias- para que ambos reportes siempre cuadren entre si.
   const items = db.prepare(
     `SELECT fi.product_id, fi.descripcion, fi.tipo, fi.cantidad,
-            fi.precio_unitario_usd, fi.costo_unitario_usd, fi.subtotal_usd
+            fi.precio_unitario_usd, fi.costo_unitario_usd, fi.subtotal_usd, fi.es_devolucion
      FROM factura_items fi
      JOIN facturas f ON f.id = fi.factura_id
-     WHERE f.es_devolucion = 0 AND f.created_at BETWEEN ? AND ?`
+     WHERE f.created_at BETWEEN ? AND ?`
   ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const porProducto = new Map();
@@ -4209,8 +4235,12 @@ function calcularReporteMargenPorProducto(db, desde, hasta) {
       };
       porProducto.set(key, r);
     }
-    const costoLinea = (it.costo_unitario_usd || 0) * it.cantidad;
-    r.cantidad += it.cantidad;
+    const signo = it.es_devolucion ? -1 : 1;
+    // fi.subtotal_usd ya viene NEGATIVO en los renglones de devolucion (se guardo asi desde
+    // facturas:crearDevolucion), asi que no se le aplica signo aparte -solo al costo, que se
+    // guarda siempre positivo sea venta o devolucion.
+    const costoLinea = (it.costo_unitario_usd || 0) * it.cantidad * signo;
+    r.cantidad += it.cantidad * signo;
     r.ventasUsd += it.subtotal_usd;
     r.costoUsd += costoLinea;
     r.gananciaUsd += (it.subtotal_usd - costoLinea);
@@ -4635,6 +4665,10 @@ ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
   const conSecuencia = (filas) => filas.map((f, i) => ({ ...f, secuencia: i + 1 }));
 
   const totalCargosUsd = cargos.reduce((acc, c) => acc + c.total_usd, 0);
+  // costo_unitario_usd solo existe desde la migracion de costo de descargos: los descargos
+  // hechos antes de esa fecha quedan en 0 (nunca se les guardo el costo), asi que este total
+  // puede quedar por debajo del valor real si el rango de fechas incluye descargos viejos.
+  const totalDescargosUsd = descargos.reduce((acc, d) => acc + (d.costo_unitario_usd || 0) * d.cantidad, 0);
   return {
     ok: true,
     desde,
@@ -4642,6 +4676,7 @@ ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
     cargos: conSecuencia(cargos),
     descargos: conSecuencia(descargos),
     totalCargosUsd,
+    totalDescargosUsd,
     cantidadCargos: cargos.length,
     cantidadDescargos: descargos.length
   };
