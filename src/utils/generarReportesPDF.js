@@ -61,6 +61,7 @@ export async function generarPDFGanancias(reporte, desde, hasta, opciones = {}) 
     ['Costo de lo vendido', `$${fmt(reporte.costoVendidoUsd)}`],
     ['Ganancia bruta', `$${fmt(reporte.gananciaBrutaUsd)}`],
     ['Gastos del periodo', `$${fmt(reporte.gastosTotalUsd)}`],
+    ['Perdida por descargos', `$${fmt(reporte.costoDescargadoUsd)}`],
     ['Ganancia neta', `$${fmt(reporte.gananciaNetaUsd)}`]
   ];
   let y = 34;
@@ -249,11 +250,11 @@ export async function generarPDFCargosDescargos(reporte, desde, hasta, opciones 
 
   const finalY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 10;
   doc.setFont('helvetica', 'bold');
-  doc.text(`Descargos: ${reporte.cantidadDescargos}`, 10, finalY);
+  doc.text(`Descargos: ${reporte.cantidadDescargos}   —   Total perdido: $${fmt(reporte.totalDescargosUsd)}`, 10, finalY);
 
   autoTable(doc, {
     startY: finalY + 6,
-    head: [['N°', 'Fecha', 'Producto', 'Tipo', 'Codigo', 'Cantidad', 'Motivo', 'Usuario']],
+    head: [['N°', 'Fecha', 'Producto', 'Tipo', 'Codigo', 'Cantidad', 'Costo unit.', 'Total perdido', 'Motivo', 'Usuario']],
     body: reporte.descargos.map((d) => [
       `#${String(d.id).padStart(5, '0')}`,
       d.created_at,
@@ -261,6 +262,8 @@ export async function generarPDFCargosDescargos(reporte, desde, hasta, opciones 
       d.producto_tipo,
       d.unidad_codigo || '—',
       String(d.cantidad),
+      `$${fmt(d.costo_unitario_usd)}`,
+      `$${fmt((d.costo_unitario_usd || 0) * d.cantidad)}`,
       d.motivo,
       d.usuario || '—'
     ]),
