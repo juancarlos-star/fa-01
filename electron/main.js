@@ -1428,6 +1428,41 @@ ipcMain.handle('cargosDescargos:crearDocumento', (event, { tipoDocumento, motivo
     }
   }
 
+  // Un descargo saca stock del inventario para siempre (igual que un Traslado o una Devolucion
+  // de Compra): si parte de lo que se quiere descargar esta comprometido con un apartado activo,
+  // no se puede permitir o el apartado se queda sin como cumplirse. Se agrupa por producto porque
+  // un mismo documento puede traer varios renglones (varias unidades) del mismo producto.
+  if (tipoDocumento === 'descargo') {
+    const cantidadPorProducto = new Map(); // productId -> cantidad total que se quiere descargar
+    for (const it of items) {
+      const product = getProducto(it.productId);
+      if (product.tipo === 'accesorio') {
+        const n = parseInt(it.cantidad, 10) || 0;
+        cantidadPorProducto.set(product.id, (cantidadPorProducto.get(product.id) || 0) + n);
+      } else {
+        cantidadPorProducto.set(product.id, (cantidadPorProducto.get(product.id) || 0) + 1);
+      }
+    }
+    for (const [productId, cantidadPedida] of cantidadPorProducto) {
+      const product = getProducto(productId);
+      const apartadoReservado = obtenerCantidadApartada(db, productId, depositoId);
+      if (apartadoReservado <= 0) continue;
+      if (product.tipo === 'accesorio') {
+        const stockEnDeposito = obtenerStockDeposito(db, productId, depositoId) || 0;
+        if (stockEnDeposito - apartadoReservado < cantidadPedida) {
+          return { ok: false, message: `No se puede descargar "${product.nombre}": parte del stock esta reservada por apartados activos (disponible libre: ${Math.max(0, stockEnDeposito - apartadoReservado)})` };
+        }
+      } else {
+        const totalDisponible = db.prepare(
+          "SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ? AND estado = 'disponible' AND deposito_id = ?"
+        ).get(productId, depositoId).c;
+        if (totalDisponible - cantidadPedida < apartadoReservado) {
+          return { ok: false, message: `No se puede descargar "${product.nombre}": dejaria menos unidades disponibles de las que estan reservadas por apartados activos` };
+        }
+      }
+    }
+  }
+
   // Validaciones cruzadas dentro del propio documento (codigos/unidades repetidos entre
   // renglones), y contra lo que ya existe en la base de datos.
   if (tipoDocumento === 'cargo') {
