@@ -47,11 +47,17 @@ export default function UsersAdmin() {
   };
 
   const handleToggle = async (id) => {
+    setError('');
     try {
-      await window.api.toggleUserActive(id);
+      const result = await window.api.toggleUserActive(id);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
       await loadUsers();
     } catch (err) {
       console.error('Error al cambiar estado del usuario:', err);
+      setError('Ocurrio un error inesperado al cambiar el estado del usuario: ' + (err?.message || String(err)));
     }
   };
 
