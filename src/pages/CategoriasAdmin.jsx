@@ -65,7 +65,7 @@ export default function CategoriasAdmin() {
     if (impacto.productos > 0) {
       mensaje += `\n\nATENCION: esta categoria tiene ${impacto.productos} producto(s) registrados`;
       mensaje += ` con un total de ${impacto.unidades} unidad(es) en stock.`;
-      mensaje += `\n\nSi continuas, se ELIMINARAN esos productos de forma permanente, junto con la pestaña correspondiente en Inventario. Esta accion no se puede deshacer.`;
+      mensaje += `\n\nSe eliminaran los productos que NO tengan unidades (IMEI/ICCID) registradas en su historial. Los que sí tengan quedaran intactos, y en ese caso la categoria tampoco se terminara de eliminar. Esta accion no se puede deshacer.`;
     }
     if (!window.confirm(mensaje)) return;
 
@@ -73,6 +73,9 @@ export default function CategoriasAdmin() {
     if (!res.ok) {
       alert(res.message);
       return;
+    }
+    if (res.parcial) {
+      alert(res.message);
     }
     cargar();
   };
