@@ -337,6 +337,11 @@ function generarPDFCompraFondo(encabezado, items, settings) {
     doc.setFontSize(9);
     doc.text(`$${fmt(total)}`, 195, y + 26, { align: 'right' });
     doc.setTextColor(0, 0, 0);
+
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`(tasa del día usada: ${fmt(tasaCambio)} Bs/USD)`, 130, y + 30);
+    doc.setTextColor(0, 0, 0);
   } else {
     doc.setFont('helvetica', 'normal');
     doc.text(`$${fmt(baseImponible)}`, 195, y, { align: 'right' });
