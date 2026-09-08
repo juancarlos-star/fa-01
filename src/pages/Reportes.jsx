@@ -235,6 +235,12 @@ function ReporteGanancias({ desde, hasta }) {
         <p>Costo de lo vendido: <strong>${fmt(reporte.costoVendidoUsd)}</strong></p>
         <p style={{ color: '#027a48' }}>Ganancia bruta: <strong>${fmt(reporte.gananciaBrutaUsd)}</strong></p>
         <p>Gastos del periodo: <strong>${fmt(reporte.gastosTotalUsd)}</strong></p>
+        <p>
+          Perdida por descargos (dañado/vencido/robado): <strong>${fmt(reporte.costoDescargadoUsd)}</strong>
+          {reporte.costoDescargadoUsd === 0 && (
+            <span style={{ color: '#98a2b3', fontSize: '0.85rem' }}> — o no hubo descargos, o son de antes de que el sistema empezara a guardar su costo</span>
+          )}
+        </p>
         <p style={{ color: reporte.gananciaNetaUsd >= 0 ? '#027a48' : '#b42318', fontSize: '1.1rem' }}>
           <strong>Ganancia neta: ${fmt(reporte.gananciaNetaUsd)}</strong>
         </p>
@@ -948,44 +954,56 @@ function ReporteCargosDescargos({ desde, hasta }) {
       )}
 
       {subtab === 'descargos' && (
-        reporte.descargos.length === 0 ? (
-          <p>No hay descargos registrados en este rango de fechas.</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-                <th style={{ padding: '0.5rem' }}>N°</th>
-                <th>Fecha</th>
-                <th>Producto</th>
-                <th>Tipo</th>
-                <th>Codigo</th>
-                <th>Cantidad</th>
-                <th>Motivo</th>
-                <th>Usuario</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {reporte.descargos.map((d) => (
-                <tr key={d.id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.5rem' }}>#{String(d.secuencia ?? d.id).padStart(5, '0')}</td>
-                  <td>{d.created_at}</td>
-                  <td>{d.producto_nombre}</td>
-                  <td>{d.producto_tipo}</td>
-                  <td>{d.unidad_codigo || '—'}</td>
-                  <td>{d.cantidad}</td>
-                  <td>{d.motivo}</td>
-                  <td>{d.usuario || '—'}</td>
-                  <td>
-                    <button onClick={() => setDetalleDocumento({ registro: d, tipoDocumento: 'descargo' })}>
-                      Ver
-                    </button>
-                  </td>
+        <>
+          <p>
+            Total perdido en el periodo: <strong style={{ color: '#b42318' }}>${fmt(reporte.totalDescargosUsd)}</strong>
+            {reporte.totalDescargosUsd === 0 && reporte.descargos.length > 0 && (
+              <span style={{ color: '#98a2b3', fontSize: '0.85rem' }}> — estos descargos son de antes de que el sistema empezara a guardar su costo, por eso salen en $0</span>
+            )}
+          </p>
+          {reporte.descargos.length === 0 ? (
+            <p>No hay descargos registrados en este rango de fechas.</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+                  <th style={{ padding: '0.5rem' }}>N°</th>
+                  <th>Fecha</th>
+                  <th>Producto</th>
+                  <th>Tipo</th>
+                  <th>Codigo</th>
+                  <th>Cantidad</th>
+                  <th>Costo unit.</th>
+                  <th>Total perdido</th>
+                  <th>Motivo</th>
+                  <th>Usuario</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )
+              </thead>
+              <tbody>
+                {reporte.descargos.map((d) => (
+                  <tr key={d.id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '0.5rem' }}>#{String(d.secuencia ?? d.id).padStart(5, '0')}</td>
+                    <td>{d.created_at}</td>
+                    <td>{d.producto_nombre}</td>
+                    <td>{d.producto_tipo}</td>
+                    <td>{d.unidad_codigo || '—'}</td>
+                    <td>{d.cantidad}</td>
+                    <td>${fmt(d.costo_unitario_usd)}</td>
+                    <td>${fmt((d.costo_unitario_usd || 0) * d.cantidad)}</td>
+                    <td>{d.motivo}</td>
+                    <td>{d.usuario || '—'}</td>
+                    <td>
+                      <button onClick={() => setDetalleDocumento({ registro: d, tipoDocumento: 'descargo' })}>
+                        Ver
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </div>
   );
