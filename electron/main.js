@@ -1971,6 +1971,34 @@ ipcMain.handle('depositos:toggleActive', (event, { id }) => {
   if (deposito.activo) {
     const activos = db.prepare('SELECT COUNT(*) AS c FROM depositos WHERE activo = 1').get().c;
     if (activos <= 1) return { ok: false, message: 'Debe quedar al menos un deposito activo' };
+
+    // Un deposito desactivado desaparece de TODOS los desplegables del sistema (Facturacion,
+    // Compras, Compras Telf/Acces, Cargos y Descargos, Traslados, Apartados y Reportes, que
+    // listan depositos con listDepositos(true) = "solo activos"). Si todavia tiene unidades
+    // disponibles, stock de accesorios, o apartados sin cerrar, ese inventario/compromiso
+    // quedaria existiendo en la base de datos pero practicamente inaccesible -no se podria
+    // vender, ni ajustar, ni trasladar desde ninguna pantalla-. Se bloquea la desactivacion en
+    // ese caso, con el detalle de que es lo que falta resolver primero.
+    const unidadesDisponibles = db.prepare(
+      "SELECT COUNT(*) AS c FROM inventory_units WHERE deposito_id = ? AND estado = 'disponible'"
+    ).get(id).c;
+    const stockAccesorios = db.prepare(
+      'SELECT COALESCE(SUM(cantidad), 0) AS c FROM product_stock_deposito WHERE deposito_id = ? AND cantidad > 0'
+    ).get(id).c;
+    const apartadosPendientes = db.prepare(
+      "SELECT COUNT(*) AS c FROM apartados WHERE deposito_id = ? AND estado IN ('activo','listo_para_entregar')"
+    ).get(id).c;
+
+    if (unidadesDisponibles > 0 || stockAccesorios > 0 || apartadosPendientes > 0) {
+      const detalles = [];
+      if (unidadesDisponibles > 0) detalles.push(`${unidadesDisponibles} unidad(es) de equipo/SIM/USIM disponibles`);
+      if (stockAccesorios > 0) detalles.push(`${stockAccesorios} unidad(es) de accesorios en stock`);
+      if (apartadosPendientes > 0) detalles.push(`${apartadosPendientes} apartado(s) sin cerrar`);
+      return {
+        ok: false,
+        message: `No se puede desactivar "${deposito.nombre}": todavia tiene ${detalles.join(', ')}. Trasládalo todo a otro depósito (o cierra los apartados) antes de desactivarlo.`
+      };
+    }
   }
   db.prepare('UPDATE depositos SET activo = ? WHERE id = ?').run(deposito.activo ? 0 : 1, id);
 
