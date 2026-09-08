@@ -1248,6 +1248,8 @@ ipcMain.handle('units:addBatch', (event, { product_id, codigos, costoUnitario, u
 });
 
 ipcMain.handle('units:updateCosto', (event, { id, costoUnitario }) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
   const db = getDb();
   const costo = parseFloat(costoUnitario);
   if (isNaN(costo) || costo < 0) return { ok: false, message: 'Costo invalido' };
