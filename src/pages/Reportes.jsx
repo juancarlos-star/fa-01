@@ -44,7 +44,8 @@ const CATEGORIAS = [
       { key: 'stockBajo', label: 'Stock Bajo' },
       { key: 'stockMuerto', label: 'Stock muerto' },
       { key: 'catalogoWhatsapp', label: 'Catálogo para WhatsApp' },
-      { key: 'cargosDescargos', label: 'Cargos y descargos de inventario' }
+      { key: 'historialCargos', label: 'Historial de Cargos' },
+      { key: 'historialDescargos', label: 'Historial de Descargos' }
     ]
   },
   {
@@ -172,7 +173,8 @@ export default function Reportes({ currentUser, categoriaInicial }) {
       {tab === 'facturas' && <ReporteFacturas desde={desde} hasta={hasta} />}
       {tab === 'devolucionesFacturas' && <ReporteDevolucionesFacturas desde={desde} hasta={hasta} />}
       {tab === 'productosVendidos' && <ReporteProductosVendidos desde={desde} hasta={hasta} />}
-      {tab === 'cargosDescargos' && <ReporteCargosDescargos desde={desde} hasta={hasta} />}
+      {tab === 'historialCargos' && <ReporteCargosDescargos desde={desde} hasta={hasta} tipoForzado="cargos" />}
+      {tab === 'historialDescargos' && <ReporteCargosDescargos desde={desde} hasta={hasta} tipoForzado="descargos" />}
       {tab === 'clientes' && <ReporteClientes />}
       {tab === 'clientesFrecuentes' && <ReporteClientesFrecuentes />}
       {tab === 'inventarioProductos' && <ReporteInventarioProductos />}
@@ -843,10 +845,15 @@ function ReporteProductosVendidos({ desde, hasta }) {
 
 // ---------------- Cargos y descargos de inventario ----------------
 
-function ReporteCargosDescargos({ desde, hasta }) {
+function ReporteCargosDescargos({ desde, hasta, tipoForzado }) {
   const [reporte, setReporte] = useState(null);
   const [cargando, setCargando] = useState(false);
-  const [subtab, setSubtab] = useState('cargos');
+  // "tipoForzado" llega fijo cuando esta pestaña se abrió desde "Historial de Cargos" o
+  // "Historial de Descargos" (dos entradas separadas del submenú de Reportes): en ese caso no
+  // tiene sentido mostrar los botones para cambiar de subtab, porque ya se eligió cuál historial
+  // ver desde el menú.
+  const [subtab, setSubtab] = useState(tipoForzado || 'cargos');
+  useEffect(() => { if (tipoForzado) setSubtab(tipoForzado); }, [tipoForzado]);
   const [generandoPDF, setGenerandoPDF] = useState(false);
   // Documento individual (comprobante) seleccionado para ver/imprimir/descargar:
   // { registro, tipoDocumento: 'cargo' | 'descargo' }
@@ -886,26 +893,28 @@ function ReporteCargosDescargos({ desde, hasta }) {
   return (
     <div style={{ marginTop: '1rem' }}>
       <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-        <button
-          onClick={() => setSubtab('cargos')}
-          style={{
-            padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
-            backgroundColor: subtab === 'cargos' ? '#027a48' : '#e2e8f0', color: subtab === 'cargos' ? '#fff' : '#111'
-          }}
-        >
-          Cargos ({reporte.cantidadCargos})
-        </button>
-        <button
-          onClick={() => setSubtab('descargos')}
-          style={{
-            padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
-            backgroundColor: subtab === 'descargos' ? '#b42318' : '#e2e8f0', color: subtab === 'descargos' ? '#fff' : '#111'
-          }}
-        >
-          Descargos ({reporte.cantidadDescargos})
-        </button>
-      </div>
+      {!tipoForzado && (
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          <button
+            onClick={() => setSubtab('cargos')}
+            style={{
+              padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
+              backgroundColor: subtab === 'cargos' ? '#027a48' : '#e2e8f0', color: subtab === 'cargos' ? '#fff' : '#111'
+            }}
+          >
+            Cargos ({reporte.cantidadCargos})
+          </button>
+          <button
+            onClick={() => setSubtab('descargos')}
+            style={{
+              padding: '0.4rem 0.9rem', border: 'none', borderRadius: '4px', cursor: 'pointer',
+              backgroundColor: subtab === 'descargos' ? '#b42318' : '#e2e8f0', color: subtab === 'descargos' ? '#fff' : '#111'
+            }}
+          >
+            Descargos ({reporte.cantidadDescargos})
+          </button>
+        </div>
+      )}
 
       {subtab === 'cargos' && (
         <>
