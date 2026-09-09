@@ -230,16 +230,20 @@ export async function generarPDFCargosDescargos(reporte, desde, hasta, opciones 
   doc.setFont('helvetica', 'bold');
   doc.text(`Cargos: ${reporte.cantidadCargos}   —   Total cargado: $${fmt(reporte.totalCargosUsd)}`, 10, 34);
 
+  // Cada elemento de reporte.cargos/reporte.descargos es ahora UN DOCUMENTO completo (todos los
+  // renglones registrados juntos en una misma gestion, agrupados por encabezado_id), no un
+  // renglon suelto -asi el PDF del listado queda consistente con la pantalla y con el
+  // comprobante individual de cada documento (ambos agrupan igual).
   autoTable(doc, {
     startY: 40,
-    head: [['Fecha', 'Producto', 'Tipo', 'Cantidad', 'Costo unit.', 'Total', 'Usuario']],
+    head: [['N°', 'Fecha', 'Producto', 'Renglones', 'Piezas', 'Total', 'Usuario']],
     body: reporte.cargos.map((c) => [
+      `#${String(c.numeroDocumento ?? c.secuencia).padStart(5, '0')}`,
       c.created_at,
-      c.producto_nombre || c.descripcion,
-      c.tipo,
-      String(c.cantidad),
-      `$${fmt(c.costo_unitario_usd)}`,
-      `$${fmt(c.total_usd)}`,
+      c.productoResumen,
+      String(c.totalRenglones),
+      String(c.totalPiezas),
+      `$${fmt(c.totalUsd)}`,
       c.usuario || '—'
     ]),
     theme: 'grid',
@@ -254,17 +258,15 @@ export async function generarPDFCargosDescargos(reporte, desde, hasta, opciones 
 
   autoTable(doc, {
     startY: finalY + 6,
-    head: [['N°', 'Fecha', 'Producto', 'Tipo', 'Codigo', 'Cantidad', 'Costo unit.', 'Total perdido', 'Motivo', 'Usuario']],
+    head: [['N°', 'Fecha', 'Producto', 'Renglones', 'Piezas', 'Total perdido', 'Motivo', 'Usuario']],
     body: reporte.descargos.map((d) => [
-      `#${String(d.id).padStart(5, '0')}`,
+      `#${String(d.numeroDocumento ?? d.secuencia).padStart(5, '0')}`,
       d.created_at,
-      d.producto_nombre,
-      d.producto_tipo,
-      d.unidad_codigo || '—',
-      String(d.cantidad),
-      `$${fmt(d.costo_unitario_usd)}`,
-      `$${fmt((d.costo_unitario_usd || 0) * d.cantidad)}`,
-      d.motivo,
+      d.productoResumen,
+      String(d.totalRenglones),
+      String(d.totalPiezas),
+      `$${fmt(d.totalUsd)}`,
+      d.motivo || '—',
       d.usuario || '—'
     ]),
     theme: 'grid',
