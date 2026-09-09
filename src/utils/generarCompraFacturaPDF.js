@@ -40,12 +40,16 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   // (un consecutivo APARTE, exclusivo de las devoluciones, independiente del id interno).
   const numeroMostrado = encabezado.es_devolucion ? encabezado.numero_devolucion : encabezado.id;
 
+  const numeroMostradoTexto = encabezado.es_devolucion
+    ? String(numeroMostrado).padStart(6, '0')
+    : `COM-${String(numeroMostrado).padStart(6, '0')}`;
+
   // Todos los valores de este bloque quedan alineados en la misma columna (x=182), con
   // suficiente separacion del titulo mas largo ("DOCUMENTO:"), para que no queden pegados
   // como "DOCUMENTO765436879".
   const xValor = 182;
   doc.setFont('helvetica', 'normal');
-  doc.text(String(numeroMostrado).padStart(6, '0'), xValor, 15);
+  doc.text(numeroMostradoTexto, xValor, 15);
   const [fechaParte, horaParte] = (encabezado.created_at || '').split(' ');
   const fecha = (fechaParte || '').split('-').reverse().join('/');
   doc.text(`${fecha}${horaParte ? '  ' + horaParte : ''}`, xValor, 21);
@@ -161,7 +165,7 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
 
   dibujarPiePaginaEmpresa(doc, settings);
 
-  const nombreArchivo = `${encabezado.es_devolucion ? 'Devolucion' : 'Compra'}-${String(numeroMostrado).padStart(6, '0')}`;
+  const nombreArchivo = `${encabezado.es_devolucion ? 'Devolucion' : 'Compra'}-${numeroMostradoTexto}`;
   if (opciones.imprimir) {
     await guardarAbrirEImprimirPDF(doc, nombreArchivo, 'Compras');
   } else {
