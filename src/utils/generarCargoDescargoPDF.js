@@ -56,6 +56,11 @@ export async function generarCargoDescargoPDF(registro, tipoDocumento, settings,
     filas.push(['Total', `$${fmt(registro.total_usd)}`]);
   } else {
     filas.push(['Motivo del descargo', registro.motivo || '—']);
+    // El costo unitario de un descargo no lo escribe el usuario (no se le pide al dar de baja):
+    // el sistema lo toma del costo con el que esa unidad entro al inventario (o del costo
+    // promedio del producto, si es un accesorio), y con eso se calcula cuanto valia lo perdido.
+    filas.push(['Costo unitario', `$${fmt(registro.costo_unitario_usd)}`]);
+    filas.push(['Valor perdido', `$${fmt((registro.costo_unitario_usd || 0) * registro.cantidad)}`]);
   }
 
   let y = 45;
@@ -134,6 +139,9 @@ export async function generarCargoDescargoLotePDF(registros, tipoDocumento, sett
     filasCabecera.push(['Total del lote', `$${fmt(total)}`]);
   } else {
     filasCabecera.push(['Motivo del descargo', primero.motivo || '—']);
+    filasCabecera.push(['Costo unitario', `$${fmt(primero.costo_unitario_usd)}`]);
+    const valorPerdido = registros.reduce((acc, r) => acc + (r.costo_unitario_usd || 0) * (r.cantidad || 1), 0);
+    filasCabecera.push(['Valor perdido del lote', `$${fmt(valorPerdido)}`]);
   }
 
   filasCabecera.forEach(([etiqueta, valor]) => {
@@ -238,7 +246,10 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
   registros.forEach((r) => {
     const producto = r.producto_nombre || r.descripcion || '—';
     const tipoProducto = r.tipo || r.producto_tipo || '—';
-    const costoUnitario = esCargo ? (r.costo_unitario_usd || 0) : 0;
+    // El costo unitario de un descargo no lo escribe el usuario (no se pide al dar de baja): el
+    // sistema lo toma del costo con el que esa unidad entro al inventario (o del costo promedio
+    // del producto, si es un accesorio) -por eso se lee igual que en cargo, r.costo_unitario_usd-.
+    const costoUnitario = r.costo_unitario_usd || 0;
     const clave = `${producto}\u0001${tipoProducto}\u0001${costoUnitario}`;
     let grupo = indicePorClave.get(clave);
     if (!grupo) {
@@ -247,17 +258,15 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
       grupos.push(grupo);
     }
     grupo.cantidad += r.cantidad != null ? r.cantidad : 1;
-    grupo.total += r.total_usd || 0;
+    // Los cargos (tabla "compras") traen su propio total_usd ya calculado; los descargos (tabla
+    // "descargos") no tienen esa columna, asi que su total se calcula aqui mismo.
+    grupo.total += r.total_usd != null ? r.total_usd : costoUnitario * (r.cantidad != null ? r.cantidad : 1);
     if (r.unidad_codigo) grupo.codigos.push(r.unidad_codigo);
   });
 
-  const numColumnas = esCargo ? 5 : 3;
+  const numColumnas = 5;
   grupos.forEach((g) => {
-    if (esCargo) {
-      filasTabla.push([g.producto, g.tipoProducto, String(g.cantidad), `$${fmt(g.costoUnitario)}`, `$${fmt(g.total)}`]);
-    } else {
-      filasTabla.push([g.producto, g.tipoProducto, String(g.cantidad)]);
-    }
+    filasTabla.push([g.producto, g.tipoProducto, String(g.cantidad), `$${fmt(g.costoUnitario)}`, `$${fmt(g.total)}`]);
     if (g.codigos.length > 0) {
       const codigosOrdenados = [...g.codigos].sort((a, b) =>
         a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
@@ -274,7 +283,7 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
 
   const head = esCargo
     ? [['Producto', 'Tipo', 'Cant.', 'Costo unit.', 'Total']]
-    : [['Producto', 'Tipo', 'Cant.']];
+    : [['Producto', 'Tipo', 'Cant.', 'Costo unit.', 'Valor perdido']];
 
   autoTable(doc, {
     startY: y,
@@ -286,12 +295,12 @@ export async function generarCargoDescargoDocumentoPDF(encabezadoId, registros, 
     margin: { left: 10, right: 10 }
   });
 
-  if (esCargo) {
-    const total = registros.reduce((acc, r) => acc + (r.total_usd || 0), 0);
+  {
+    const total = grupos.reduce((acc, g) => acc + g.total, 0);
     const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : y + 20;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    doc.text(`Total del documento: $${fmt(total)}`, 200, finalY, { align: 'right' });
+    doc.text(`${esCargo ? 'Total del documento' : 'Valor perdido del documento'}: $${fmt(total)}`, 200, finalY, { align: 'right' });
   }
 
   doc.setFontSize(8);
