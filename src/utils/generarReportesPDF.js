@@ -238,7 +238,7 @@ export async function generarPDFCargosDescargos(reporte, desde, hasta, opciones 
     startY: 40,
     head: [['N°', 'Fecha', 'Producto', 'Renglones', 'Piezas', 'Total', 'Usuario']],
     body: reporte.cargos.map((c) => [
-      `#${String(c.numeroDocumento ?? c.secuencia).padStart(5, '0')}`,
+      c.documentoTexto,
       c.created_at,
       c.productoResumen,
       String(c.totalRenglones),
@@ -260,7 +260,7 @@ export async function generarPDFCargosDescargos(reporte, desde, hasta, opciones 
     startY: finalY + 6,
     head: [['N°', 'Fecha', 'Producto', 'Renglones', 'Piezas', 'Total perdido', 'Motivo', 'Usuario']],
     body: reporte.descargos.map((d) => [
-      `#${String(d.numeroDocumento ?? d.secuencia).padStart(5, '0')}`,
+      d.documentoTexto,
       d.created_at,
       d.productoResumen,
       String(d.totalRenglones),
