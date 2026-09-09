@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { generarCompraFacturaPDF } from '../utils/generarCompraFacturaPDF.js';
 import { fmt } from '../utils/format.js';
 
-const IVA_TASA = 0.16;
+const IVA_TASA_DEFECTO = 0.16;
 
 export default function CompraFacturaDetalle({ encabezado, items, devoluciones, resumenDevolucion, onVolver }) {
   const [settings, setSettings] = useState(null);
@@ -12,8 +12,17 @@ export default function CompraFacturaDetalle({ encabezado, items, devoluciones, 
     window.api.getSettings().then(setSettings);
   }, []);
 
+  // El IVA se toma del porcentaje que quedo GUARDADO en esta compra especifica
+  // (encabezado.iva_porcentaje) -0% si se registro por "Compra Tel/Acces", el % normal si se
+  // registro por "Compras"-, nunca de un 16% fijo ni del % configurado actualmente en Ajustes:
+  // ese % pudo cambiar despues, y esta pantalla/PDF debe coincidir siempre con lo que se vio
+  // en pantalla al momento de registrar la compra. Solo si la compra es vieja y nunca guardo
+  // este dato (NULL) se usa como respaldo el % configurado actualmente.
+  const ivaPorcentaje = encabezado.iva_porcentaje !== null && encabezado.iva_porcentaje !== undefined
+    ? parseFloat(encabezado.iva_porcentaje)
+    : (settings && settings.iva_porcentaje != null ? parseFloat(settings.iva_porcentaje) : IVA_TASA_DEFECTO * 100);
   const baseImponible = encabezado.total_usd;
-  const iva = baseImponible * IVA_TASA;
+  const iva = baseImponible * (ivaPorcentaje / 100);
   const subtotal = baseImponible + iva;
 
   const [fechaParte, horaParte] = (encabezado.created_at || '').split(' ');
@@ -163,7 +172,7 @@ export default function CompraFacturaDetalle({ encabezado, items, devoluciones, 
               <span>Base imponible:</span> <strong>${fmt(baseImponible)}</strong>
             </p>
             <p style={{ display: 'flex', justifyContent: 'space-between', margin: '0.2rem 0' }}>
-              <span>I.V.A. ({fmt((IVA_TASA * 100), 0)}%):</span> <strong>${fmt(iva)}</strong>
+              <span>I.V.A. ({fmt(ivaPorcentaje, 0)}%):</span> <strong>${fmt(iva)}</strong>
             </p>
             <p style={{ display: 'flex', justifyContent: 'space-between', margin: '0.2rem 0' }}>
               <span>Subtotal:</span> <strong>${fmt(subtotal)}</strong>
