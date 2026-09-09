@@ -2424,12 +2424,14 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   const numeroSettingKey = esNotaVenta ? 'numero_nota_venta_siguiente' : 'numero_factura_siguiente';
   let siguienteNumero = parseInt(settings[numeroSettingKey], 10);
   if (!siguienteNumero || siguienteNumero < 1) siguienteNumero = 1;
-  // La Nota de Venta lleva el prefijo "NV-" en el mismo campo numero_factura para que nunca
-  // choque con la numeracion de Factura (ambas arrancan en 000001 pero son secuencias
-  // independientes) en ninguna busqueda/reporte que ya exista basado en numero_factura.
+  // La Nota de Venta lleva el prefijo "NV-" y la Factura el prefijo "FAC-", ambos en el mismo
+  // campo numero_factura, para que nunca choquen entre si (ambas secuencias arrancan en 000001
+  // pero son independientes) en ninguna busqueda/reporte basado en numero_factura, y para que
+  // en pantalla/PDF/reportes siempre quede claro de un vistazo que tipo de documento es cada
+  // numero, sin depender de un simbolo "#" que no distingue nada.
   const numeroFacturaStr = esNotaVenta
     ? `NV-${String(siguienteNumero).padStart(6, '0')}`
-    : String(siguienteNumero).padStart(6, '0');
+    : `FAC-${String(siguienteNumero).padStart(6, '0')}`;
 
   for (const item of items) {
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id);
@@ -4823,8 +4825,17 @@ ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
   const descargos = agruparPorDocumento(filasDescargos, false);
 
   // Numero de secuencia de respaldo para documentos viejos que nunca recibieron numero_documento
-  // (se les asigna uno solo para mostrar en pantalla, en orden cronologico).
-  const conSecuencia = (grupos) => grupos.map((g, i) => ({ ...g, secuencia: grupos.length - i }));
+  // (se les asigna uno solo para mostrar en pantalla, en orden cronologico). documentoTexto ya
+  // viene formateado con su prefijo (CAR-/DES-) listo para mostrar en Reportes.jsx y en el PDF,
+  // para no tener que anteponer "#" en el front-end.
+  const conSecuencia = (grupos, esCargo) => grupos.map((g, i) => {
+    const numero = g.numeroDocumento != null ? g.numeroDocumento : (grupos.length - i);
+    return {
+      ...g,
+      secuencia: grupos.length - i,
+      documentoTexto: `${esCargo ? 'CAR' : 'DES'}-${String(numero).padStart(5, '0')}`
+    };
+  });
 
   const totalCargosUsd = cargos.reduce((acc, g) => acc + g.totalUsd, 0);
   const totalDescargosUsd = descargos.reduce((acc, g) => acc + g.totalUsd, 0);
@@ -4832,8 +4843,8 @@ ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
     ok: true,
     desde,
     hasta,
-    cargos: conSecuencia(cargos),
-    descargos: conSecuencia(descargos),
+    cargos: conSecuencia(cargos, true),
+    descargos: conSecuencia(descargos, false),
     totalCargosUsd,
     totalDescargosUsd,
     cantidadCargos: cargos.length,

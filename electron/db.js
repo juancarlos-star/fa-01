@@ -458,6 +458,48 @@ function migrarNotaVentaSiHaceFalta(database) {
   }
 }
 
+// Antes, una Factura normal (no Nota de Venta, no devolucion) guardaba su numero_factura
+// "pelado" (ej. "000001"), mientras que la Nota de Venta ya llevaba su propio prefijo "NV-" en
+// el mismo campo. Se le agrega el prefijo "FAC-" tambien a las facturas YA EMITIDAS que
+// todavia no lo tengan, para que ambos tipos de documento se vean y se busquen igual de
+// consistentes en todo el sistema. La condicion "NOT LIKE 'FAC-%'" hace que esta migracion sea
+// segura de correr de nuevo en cada arranque: las filas que ya quedaron con el prefijo (o que
+// son Nota de Venta/devolucion, que nunca entran en el WHERE) no se vuelven a tocar.
+function migrarPrefijoFacturasSiHaceFalta(database) {
+  const existeFacturas = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facturas'").get();
+  if (!existeFacturas) return;
+  database.prepare(
+    `UPDATE facturas SET numero_factura = 'FAC-' || numero_factura
+     WHERE es_nota_venta = 0 AND es_devolucion = 0
+       AND numero_factura IS NOT NULL AND numero_factura != ''
+       AND numero_factura NOT LIKE 'FAC-%'`
+  ).run();
+  // Las devoluciones de una factura normal guardan su numero_factura como
+  // "DEV-<numero de la factura original>" (ej. antes "DEV-000001"): si la original de arriba
+  // acaba de pasar a "FAC-000001", se actualiza tambien la devolucion para que ambas sigan
+  // siendo congruentes ("DEV-FAC-000001"), igual que ya ocurre de forma natural con las
+  // devoluciones de Nota de Venta ("DEV-NV-000029").
+  database.prepare(
+    `UPDATE facturas SET numero_factura = 'DEV-FAC-' || SUBSTR(numero_factura, 5)
+     WHERE es_devolucion = 1
+       AND numero_factura LIKE 'DEV-%'
+       AND numero_factura NOT LIKE 'DEV-FAC-%'
+       AND numero_factura NOT LIKE 'DEV-NV-%'`
+  ).run();
+  // El historial de auditoria de facturas eliminadas guarda una copia "congelada" del
+  // numero_factura al momento de borrarla; se actualiza igual para que ese historial tambien
+  // muestre el prefijo (si la tabla ya existe en esta base de datos).
+  const existeEliminadas = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='facturas_eliminadas'").get();
+  if (existeEliminadas) {
+    database.prepare(
+      `UPDATE facturas_eliminadas SET numero_factura = 'FAC-' || numero_factura
+       WHERE es_nota_venta = 0
+         AND numero_factura IS NOT NULL AND numero_factura != ''
+         AND numero_factura NOT LIKE 'FAC-%'`
+    ).run();
+  }
+}
+
 // NOTA: aqui existia una migracion "migrarCorreoReportesPorDefectoSiHaceFalta" que rellenaba
 // backup_email_destino/remitente/password con una cuenta de Gmail y su contraseña de aplicacion
 // escritas directo en el codigo, para instalaciones viejas que no tuvieran nada configurado. Se
@@ -888,6 +930,7 @@ function initDb() {
   migrarDevolucionesFacturaSiHaceFalta(database);
   migrarTasaCambioComprasSiHaceFalta(database);
   migrarNotaVentaSiHaceFalta(database);
+  migrarPrefijoFacturasSiHaceFalta(database);
   migrarApartadosSiHaceFalta(database);
   migrarCostoDescargosSiHaceFalta(database);
   crearIndicesSiHacenFalta(database);
