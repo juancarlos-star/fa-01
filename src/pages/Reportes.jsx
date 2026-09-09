@@ -348,7 +348,7 @@ function ReporteCompras({ desde, hasta }) {
           <tbody>
             {reporte.compras.map((c) => (
               <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{c.id}</td>
+                <td style={{ padding: '0.5rem' }}>{`COM-${String(c.id).padStart(6, '0')}`}</td>
                 <td>{c.created_at}</td>
                 <td>{c.proveedor}</td>
                 <td>

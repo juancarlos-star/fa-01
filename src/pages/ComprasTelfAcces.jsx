@@ -304,7 +304,7 @@ export default function ComprasTelfAcces({ currentUser }) {
   const total = baseImponible;
   const totalPiezas = carrito.reduce((acc, i) => acc + (parseInt(i.cantidad, 10) || 0), 0);
 
-  const numeroCompraPreview = proximoNumeroCompra != null ? String(proximoNumeroCompra).padStart(6, '0') : '------';
+  const numeroCompraPreview = proximoNumeroCompra != null ? `COM-${String(proximoNumeroCompra).padStart(6, '0')}` : '------';
 
   const totalizandoRef = useRef(false);
 

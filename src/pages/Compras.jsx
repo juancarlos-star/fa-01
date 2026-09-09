@@ -398,7 +398,7 @@ export default function Compras({ currentUser }) {
     : monedasEnCarrito.size > 1
       ? 'Mixta'
       : [...monedasEnCarrito][0];
-  const numeroCompraPreview = proximoNumeroCompra != null ? String(proximoNumeroCompra).padStart(6, '0') : '------';
+  const numeroCompraPreview = proximoNumeroCompra != null ? `COM-${String(proximoNumeroCompra).padStart(6, '0')}` : '------';
 
   // Mismo guard que en Facturacion: evita que la compra se pueda registrar/imprimir dos veces
   // si se mantiene presionada la tecla F10 o se hace doble clic muy rapido.
