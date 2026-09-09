@@ -3236,7 +3236,7 @@ function recolectarDocumentosDeHoy(db, settings) {
     const detalle = items.map((it) => `${it.cantidad}x ${it.descripcion}`).join(', ') || '—';
     const numeroMostrado = encabezado.es_devolucion ? encabezado.numero_devolucion : encabezado.id;
     resumen.compras.push({
-      numero: `${encabezado.es_devolucion ? 'DEV-' : ''}${String(numeroMostrado).padStart(6, '0')}`,
+      numero: `${encabezado.es_devolucion ? 'DEV-' : 'COM-'}${String(numeroMostrado).padStart(6, '0')}`,
       hora: horaCorta(encabezado.created_at),
       proveedor: encabezado.proveedor || '—',
       detalle,

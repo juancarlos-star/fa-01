@@ -230,7 +230,13 @@ function generarPDFFacturaFondo(factura, items, settings) {
 const IVA_TASA_DEFECTO = 0.16;
 
 function generarPDFCompraFondo(encabezado, items, settings) {
-  const ivaTasa = settings && settings.iva_porcentaje != null ? parseFloat(settings.iva_porcentaje) / 100 : IVA_TASA_DEFECTO;
+  // Mismo bug y misma correccion que en src/utils/generarCompraFacturaPDF.js: el IVA se toma
+  // del porcentaje GUARDADO en esta compra especifica, no del configurado actualmente en
+  // Ajustes (que pudo cambiar despues, o ser 16% mientras esta compra en particular -Tel/Acces-
+  // se registro con 0%).
+  const ivaTasa = encabezado.iva_porcentaje !== null && encabezado.iva_porcentaje !== undefined
+    ? parseFloat(encabezado.iva_porcentaje) / 100
+    : (settings && settings.iva_porcentaje != null ? parseFloat(settings.iva_porcentaje) / 100 : IVA_TASA_DEFECTO);
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
 
   const yEncabezadoEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88 });
@@ -246,10 +252,13 @@ function generarPDFCompraFondo(encabezado, items, settings) {
   doc.text('VENDEDOR:', 145, 45);
 
   const numeroMostrado = encabezado.es_devolucion ? encabezado.numero_devolucion : encabezado.id;
+  const numeroMostradoTexto = encabezado.es_devolucion
+    ? String(numeroMostrado).padStart(6, '0')
+    : `COM-${String(numeroMostrado).padStart(6, '0')}`;
 
   const xValor = 182;
   doc.setFont('helvetica', 'normal');
-  doc.text(String(numeroMostrado).padStart(6, '0'), xValor, 15);
+  doc.text(numeroMostradoTexto, xValor, 15);
   const [fechaParte, horaParte] = (encabezado.created_at || '').split(' ');
   const fecha = (fechaParte || '').split('-').reverse().join('/');
   doc.text(`${fecha}${horaParte ? '  ' + horaParte : ''}`, xValor, 21);
@@ -353,7 +362,7 @@ function generarPDFCompraFondo(encabezado, items, settings) {
 
   dibujarPiePaginaEmpresa(doc, settings);
 
-  const nombreArchivo = `${encabezado.es_devolucion ? 'Devolucion' : 'Compra'}-${String(numeroMostrado).padStart(6, '0')}.pdf`;
+  const nombreArchivo = `${encabezado.es_devolucion ? 'Devolucion' : 'Compra'}-${numeroMostradoTexto}.pdf`;
   return { nombre: nombreArchivo, buffer: docABuffer(doc) };
 }
 
