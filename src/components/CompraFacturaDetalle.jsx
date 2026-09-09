@@ -121,7 +121,7 @@ export default function CompraFacturaDetalle({ encabezado, items, devoluciones, 
           </div>
           <div style={{ textAlign: 'right' }}>
             <p style={{ margin: '0.1rem 0' }}>
-              <strong>{encabezado.es_devolucion ? 'DEVOLUCIÓN N°:' : 'COMPRA N°:'}</strong> {String(numeroMostrado).padStart(6, '0')}
+              <strong>{encabezado.es_devolucion ? 'DEVOLUCIÓN N°:' : 'COMPRA N°:'}</strong> {encabezado.es_devolucion ? String(numeroMostrado).padStart(6, '0') : `COM-${String(numeroMostrado).padStart(6, '0')}`}
             </p>
             <p style={{ margin: '0.1rem 0' }}><strong>FECHA:</strong> {fecha} {horaParte}</p>
             <p style={{ margin: '0.1rem 0' }}><strong>N° FACTURA PROVEEDOR:</strong> {encabezado.numero_factura_compra}</p>
