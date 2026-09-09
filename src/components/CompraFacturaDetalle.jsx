@@ -69,7 +69,7 @@ export default function CompraFacturaDetalle({ encabezado, items, devoluciones, 
             <p style={{ margin: 0, fontWeight: 700 }}>
               ⚠ A esta compra se le hizo una devolución completa
               {devoluciones && devoluciones.length > 0 && (
-                <> — Devolución N° {devoluciones.map((d) => String(d.numero_devolucion).padStart(6, '0')).join(', ')}</>
+                <> — Devolución N° {devoluciones.map((d) => `DEV-COM-${String(d.numero_devolucion).padStart(6, '0')}`).join(', ')}</>
               )}
             </p>
           ) : (
@@ -77,7 +77,7 @@ export default function CompraFacturaDetalle({ encabezado, items, devoluciones, 
               <p style={{ margin: '0 0 0.5rem', fontWeight: 700 }}>
                 ⚠ A esta compra se le hizo una devolución parcial
                 {devoluciones && devoluciones.length > 0 && (
-                  <> — Devolución N° {devoluciones.map((d) => String(d.numero_devolucion).padStart(6, '0')).join(', ')}</>
+                  <> — Devolución N° {devoluciones.map((d) => `DEV-COM-${String(d.numero_devolucion).padStart(6, '0')}`).join(', ')}</>
                 )}
               </p>
               <table style={{ width: '100%', fontSize: '0.85rem', color: '#7a271a' }}>
@@ -121,7 +121,7 @@ export default function CompraFacturaDetalle({ encabezado, items, devoluciones, 
           </div>
           <div style={{ textAlign: 'right' }}>
             <p style={{ margin: '0.1rem 0' }}>
-              <strong>{encabezado.es_devolucion ? 'DEVOLUCIÓN N°:' : 'COMPRA N°:'}</strong> {encabezado.es_devolucion ? String(numeroMostrado).padStart(6, '0') : `COM-${String(numeroMostrado).padStart(6, '0')}`}
+              <strong>{encabezado.es_devolucion ? 'DEVOLUCIÓN N°:' : 'COMPRA N°:'}</strong> {encabezado.es_devolucion ? `DEV-COM-${String(numeroMostrado).padStart(6, '0')}` : `COM-${String(numeroMostrado).padStart(6, '0')}`}
             </p>
             <p style={{ margin: '0.1rem 0' }}><strong>FECHA:</strong> {fecha} {horaParte}</p>
             <p style={{ margin: '0.1rem 0' }}><strong>N° FACTURA PROVEEDOR:</strong> {encabezado.numero_factura_compra}</p>
