@@ -4743,35 +4743,91 @@ ipcMain.handle('reportes:inventarioFisico', (event, { depositoId }) => {
   return obtenerReporteInventarioFisico(db, depositoId);
 });
 
+// Antes este reporte mostraba UN RENGLON POR UNIDAD/ACCESORIO (una fila por cada codigo/IMEI o
+// por cada linea de accesorio), asi que un solo documento de Cargo o Descargo hecho con 4 telefonos
+// en una sola gestion (un solo encabezado_id) aparecia como 4 filas sueltas con numeros de folio
+// distintos -y el boton "Ver" de cada fila generaba un comprobante individual por unidad, en vez
+// de UN solo comprobante para toda la gestion-. Aqui se agrupan los renglones por su
+// encabezado_id (la "gestion" completa que crea cargosDescargos:crearDocumento), igual que ya
+// se hace con compras_encabezado en el reporte de Compras: cada grupo = un documento = una fila
+// en el listado, con todos sus renglones guardados adentro para que "Ver" pueda armar el
+// comprobante consolidado sin otra consulta.
+// Los renglones VIEJOS que no tienen encabezado_id (datos de antes de que existiera este
+// agrupamiento, o descargos hechos por el flujo individual de "dar de baja") no se inventan un
+// grupo que nunca existio: cada uno se muestra como su propio documento de un solo renglon.
 ipcMain.handle('reportes:cargosDescargos', (event, { desde, hasta }) => {
   const db = getDb();
-  const cargos = db.prepare(
-    `SELECT c.*, p.nombre AS producto_nombre, u.codigo AS unidad_codigo
+  const filasCargos = db.prepare(
+    `SELECT c.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo,
+            e.numero_documento AS doc_numero_documento, e.motivo AS doc_motivo
      FROM compras c
      LEFT JOIN products p ON p.id = c.product_id
      LEFT JOIN inventory_units u ON u.id = c.unit_id
+     LEFT JOIN cargos_descargos_encabezado e ON e.id = c.encabezado_id
      WHERE c.compra_encabezado_id IS NULL AND c.created_at BETWEEN ? AND ?
-     ORDER BY c.created_at DESC`
+     ORDER BY c.created_at ASC, c.id ASC`
   ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
-  const descargos = db.prepare(
-    `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo
+  const filasDescargos = db.prepare(
+    `SELECT d.*, p.nombre AS producto_nombre, p.tipo AS producto_tipo, u.codigo AS unidad_codigo,
+            e.numero_documento AS doc_numero_documento, e.motivo AS doc_motivo
      FROM descargos d
      LEFT JOIN products p ON p.id = d.product_id
      LEFT JOIN inventory_units u ON u.id = d.unit_id
+     LEFT JOIN cargos_descargos_encabezado e ON e.id = d.encabezado_id
      WHERE d.created_at BETWEEN ? AND ?
-     ORDER BY d.created_at DESC`
+     ORDER BY d.created_at ASC, d.id ASC`
   ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
-  // Numero de secuencia individual para cada renglon (independiente del id de la fila),
-  // asi cada cargo o descargo queda identificado por su propia posicion en el listado,
-  // junto con su codigo/IMEI visible (unidad_codigo) cuando corresponde a una unidad serializada.
-  const conSecuencia = (filas) => filas.map((f, i) => ({ ...f, secuencia: i + 1 }));
+  const agruparPorDocumento = (filas, esCargo) => {
+    const grupos = [];
+    const porClave = new Map();
+    filas.forEach((f) => {
+      const clave = f.encabezado_id != null ? `e${f.encabezado_id}` : `r${f.id}`;
+      let g = porClave.get(clave);
+      if (!g) {
+        g = {
+          id: clave,
+          encabezadoId: f.encabezado_id || null,
+          numeroDocumento: f.doc_numero_documento != null ? f.doc_numero_documento : null,
+          motivo: f.doc_motivo || f.motivo || null,
+          usuario: f.usuario,
+          created_at: f.created_at,
+          renglones: [],
+          totalRenglones: 0,
+          totalPiezas: 0,
+          totalUsd: 0
+        };
+        porClave.set(clave, g);
+        grupos.push(g);
+      }
+      g.renglones.push(f);
+      g.totalRenglones += 1;
+      g.totalPiezas += f.cantidad || 0;
+      // costo_unitario_usd de descargos solo existe desde la migracion de costo de descargos:
+      // los descargos hechos antes de esa fecha quedan en 0 (nunca se les guardo el costo), asi
+      // que este total puede quedar por debajo del valor real si el rango incluye descargos viejos.
+      g.totalUsd += esCargo ? (f.total_usd || 0) : (f.costo_unitario_usd || 0) * (f.cantidad || 0);
+    });
+    return grupos
+      .map((g) => {
+        const nombresUnicos = [...new Set(g.renglones.map((r) => r.producto_nombre || r.descripcion || '—'))];
+        return {
+          ...g,
+          productoResumen: nombresUnicos.length === 1 ? nombresUnicos[0] : `${nombresUnicos.length} productos distintos`
+        };
+      })
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0));
+  };
 
-  const totalCargosUsd = cargos.reduce((acc, c) => acc + c.total_usd, 0);
-  // costo_unitario_usd solo existe desde la migracion de costo de descargos: los descargos
-  // hechos antes de esa fecha quedan en 0 (nunca se les guardo el costo), asi que este total
-  // puede quedar por debajo del valor real si el rango de fechas incluye descargos viejos.
-  const totalDescargosUsd = descargos.reduce((acc, d) => acc + (d.costo_unitario_usd || 0) * d.cantidad, 0);
+  const cargos = agruparPorDocumento(filasCargos, true);
+  const descargos = agruparPorDocumento(filasDescargos, false);
+
+  // Numero de secuencia de respaldo para documentos viejos que nunca recibieron numero_documento
+  // (se les asigna uno solo para mostrar en pantalla, en orden cronologico).
+  const conSecuencia = (grupos) => grupos.map((g, i) => ({ ...g, secuencia: grupos.length - i }));
+
+  const totalCargosUsd = cargos.reduce((acc, g) => acc + g.totalUsd, 0);
+  const totalDescargosUsd = descargos.reduce((acc, g) => acc + g.totalUsd, 0);
   return {
     ok: true,
     desde,
