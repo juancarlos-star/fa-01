@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Inventario from './Inventario.jsx';
 import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFecha.jsx';
 import CompraFacturaDetalle from '../components/CompraFacturaDetalle.jsx';
-import CargoDescargoDetalle from '../components/CargoDescargoDetalle.jsx';
+import CargoDescargoDocumentoDetalle from '../components/CargoDescargoDocumentoDetalle.jsx';
 import Facturas from './Facturas.jsx';
 import Etiquetas from './Etiquetas.jsx';
 import SelectorProducto from '../components/SelectorProducto.jsx';
@@ -855,8 +855,9 @@ function ReporteCargosDescargos({ desde, hasta, tipoForzado }) {
   const [subtab, setSubtab] = useState(tipoForzado || 'cargos');
   useEffect(() => { if (tipoForzado) setSubtab(tipoForzado); }, [tipoForzado]);
   const [generandoPDF, setGenerandoPDF] = useState(false);
-  // Documento individual (comprobante) seleccionado para ver/imprimir/descargar:
-  // { registro, tipoDocumento: 'cargo' | 'descargo' }
+  // Documento (grupo de renglones bajo el mismo encabezado_id) seleccionado para ver/imprimir/
+  // descargar: { grupo, tipoDocumento: 'cargo' | 'descargo' }. Ya NO es un renglon individual:
+  // ahora "Ver" muestra TODOS los renglones que se registraron juntos en esa gestion.
   const [detalleDocumento, setDetalleDocumento] = useState(null);
 
   const cargar = useCallback(async () => {
@@ -882,8 +883,8 @@ function ReporteCargosDescargos({ desde, hasta, tipoForzado }) {
 
   if (detalleDocumento) {
     return (
-      <CargoDescargoDetalle
-        registro={detalleDocumento.registro}
+      <CargoDescargoDocumentoDetalle
+        grupo={detalleDocumento.grupo}
         tipoDocumento={detalleDocumento.tipoDocumento}
         onVolver={() => setDetalleDocumento(null)}
       />
@@ -928,10 +929,8 @@ function ReporteCargosDescargos({ desde, hasta, tipoForzado }) {
                   <th style={{ padding: '0.5rem' }}>N°</th>
                   <th>Fecha</th>
                   <th>Producto</th>
-                  <th>Tipo</th>
-                  <th>Codigo</th>
-                  <th>Cantidad</th>
-                  <th>Costo unit.</th>
+                  <th>Renglones</th>
+                  <th>Piezas</th>
                   <th>Total</th>
                   <th>Usuario</th>
                   <th></th>
@@ -940,17 +939,15 @@ function ReporteCargosDescargos({ desde, hasta, tipoForzado }) {
               <tbody>
                 {reporte.cargos.map((c) => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>#{String(c.secuencia ?? c.id).padStart(5, '0')}</td>
+                    <td style={{ padding: '0.5rem' }}>#{String(c.numeroDocumento ?? c.secuencia).padStart(5, '0')}</td>
                     <td>{c.created_at}</td>
-                    <td>{c.producto_nombre || c.descripcion}</td>
-                    <td>{c.tipo}</td>
-                    <td>{c.unidad_codigo || '—'}</td>
-                    <td>{c.cantidad}</td>
-                    <td>${fmt(c.costo_unitario_usd)}</td>
-                    <td>${fmt(c.total_usd)}</td>
+                    <td>{c.productoResumen}</td>
+                    <td>{c.totalRenglones}</td>
+                    <td>{c.totalPiezas}</td>
+                    <td>${fmt(c.totalUsd)}</td>
                     <td>{c.usuario || '—'}</td>
                     <td>
-                      <button onClick={() => setDetalleDocumento({ registro: c, tipoDocumento: 'cargo' })}>
+                      <button onClick={() => setDetalleDocumento({ grupo: c, tipoDocumento: 'cargo' })}>
                         Ver
                       </button>
                     </td>
@@ -979,10 +976,8 @@ function ReporteCargosDescargos({ desde, hasta, tipoForzado }) {
                   <th style={{ padding: '0.5rem' }}>N°</th>
                   <th>Fecha</th>
                   <th>Producto</th>
-                  <th>Tipo</th>
-                  <th>Codigo</th>
-                  <th>Cantidad</th>
-                  <th>Costo unit.</th>
+                  <th>Renglones</th>
+                  <th>Piezas</th>
                   <th>Total perdido</th>
                   <th>Motivo</th>
                   <th>Usuario</th>
@@ -992,18 +987,16 @@ function ReporteCargosDescargos({ desde, hasta, tipoForzado }) {
               <tbody>
                 {reporte.descargos.map((d) => (
                   <tr key={d.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>#{String(d.secuencia ?? d.id).padStart(5, '0')}</td>
+                    <td style={{ padding: '0.5rem' }}>#{String(d.numeroDocumento ?? d.secuencia).padStart(5, '0')}</td>
                     <td>{d.created_at}</td>
-                    <td>{d.producto_nombre}</td>
-                    <td>{d.producto_tipo}</td>
-                    <td>{d.unidad_codigo || '—'}</td>
-                    <td>{d.cantidad}</td>
-                    <td>${fmt(d.costo_unitario_usd)}</td>
-                    <td>${fmt((d.costo_unitario_usd || 0) * d.cantidad)}</td>
-                    <td>{d.motivo}</td>
+                    <td>{d.productoResumen}</td>
+                    <td>{d.totalRenglones}</td>
+                    <td>{d.totalPiezas}</td>
+                    <td>${fmt(d.totalUsd)}</td>
+                    <td>{d.motivo || '—'}</td>
                     <td>{d.usuario || '—'}</td>
                     <td>
-                      <button onClick={() => setDetalleDocumento({ registro: d, tipoDocumento: 'descargo' })}>
+                      <button onClick={() => setDetalleDocumento({ grupo: d, tipoDocumento: 'descargo' })}>
                         Ver
                       </button>
                     </td>
