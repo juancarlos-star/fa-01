@@ -42,7 +42,7 @@ export default function CargoDescargoDocumentoDetalle({ grupo, tipoDocumento, on
   grupo.renglones.forEach((r) => {
     const producto = r.producto_nombre || r.descripcion || '—';
     const tipoProducto = r.tipo || r.producto_tipo || '—';
-    const costoUnitario = esCargo ? (r.costo_unitario_usd || 0) : 0;
+    const costoUnitario = r.costo_unitario_usd || 0;
     const clave = `${producto}\u0001${tipoProducto}\u0001${costoUnitario}`;
     let gp = indicePorClave.get(clave);
     if (!gp) {
@@ -106,8 +106,8 @@ export default function CargoDescargoDocumentoDetalle({ grupo, tipoDocumento, on
               <th style={{ padding: '0.5rem' }}>Producto</th>
               <th>Tipo</th>
               <th>Cant.</th>
-              {esCargo && <th>Costo unit.</th>}
-              {esCargo && <th>Total</th>}
+              <th>Costo unit.</th>
+              <th>{esCargo ? 'Total' : 'Valor perdido'}</th>
             </tr>
           </thead>
           <tbody>
@@ -117,12 +117,12 @@ export default function CargoDescargoDocumentoDetalle({ grupo, tipoDocumento, on
                   <td style={{ padding: '0.5rem' }}>{gp.producto}</td>
                   <td>{gp.tipoProducto}</td>
                   <td>{gp.cantidad}</td>
-                  {esCargo && <td>${fmt(gp.costoUnitario)}</td>}
-                  {esCargo && <td>${fmt(gp.total)}</td>}
+                  <td>${fmt(gp.costoUnitario)}</td>
+                  <td>${fmt(gp.total)}</td>
                 </tr>
                 {gp.codigos.length > 0 && (
                   <tr style={{ borderBottom: '1px solid #eee' }}>
-                    <td colSpan={esCargo ? 5 : 3} style={{ padding: '0 0.5rem 0.5rem', fontSize: '0.78rem', color: '#667085', fontStyle: 'italic', background: '#fafbfc' }}>
+                    <td colSpan={5} style={{ padding: '0 0.5rem 0.5rem', fontSize: '0.78rem', color: '#667085', fontStyle: 'italic', background: '#fafbfc' }}>
                       Codigos / IMEI: {[...gp.codigos].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })).join(', ')}
                     </td>
                   </tr>
@@ -132,11 +132,10 @@ export default function CargoDescargoDocumentoDetalle({ grupo, tipoDocumento, on
           </tbody>
         </table>
 
-        {esCargo ? (
-          <p style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.05rem' }}>
-            Total del documento: ${fmt(grupo.totalUsd)}
-          </p>
-        ) : (
+        <p style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1.05rem', color: esCargo ? '#111' : '#b42318' }}>
+          {esCargo ? 'Total del documento' : 'Valor perdido del documento'}: ${fmt(grupo.totalUsd)}
+        </p>
+        {!esCargo && (
           <p style={{ textAlign: 'right', color: '#98a2b3', fontSize: '0.85rem' }}>
             {grupo.totalRenglones} renglon(es) — {grupo.totalPiezas} pieza(s) dadas de baja
           </p>

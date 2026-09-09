@@ -90,7 +90,14 @@ export default function CargoDescargoDetalle({ registro, tipoDocumento, onVolver
                 <FilaDato etiqueta="Total" valor={`$${fmt(registro.total_usd)}`} destacado />
               </>
             ) : (
-              <FilaDato etiqueta="Motivo del descargo" valor={registro.motivo || '—'} />
+              <>
+                <FilaDato etiqueta="Motivo del descargo" valor={registro.motivo || '—'} />
+                {/* El costo unitario de un descargo no lo escribe el usuario: se toma del costo
+                    con el que esa unidad entro al inventario (o el promedio del producto, si es
+                    un accesorio), para poder mostrar cuanto valia lo que se dio de baja. */}
+                <FilaDato etiqueta="Costo unitario" valor={`$${fmt(registro.costo_unitario_usd)}`} />
+                <FilaDato etiqueta="Valor perdido" valor={`$${fmt((registro.costo_unitario_usd || 0) * registro.cantidad)}`} destacado />
+              </>
             )}
           </tbody>
         </table>
