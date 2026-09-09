@@ -30,7 +30,7 @@ const ESTADO_COLOR = {
 // numero real impreso en el documento (numero_factura), no el id interno de la base de datos.
 function textoDocumento(apartado) {
   if (!apartado.factura_id) return null;
-  if (!apartado.numero_factura) return `Documento interno #${apartado.factura_id}`;
+  if (!apartado.numero_factura) return `Documento interno ${apartado.factura_id}`;
   const numero = String(apartado.numero_factura).padStart(6, '0');
   return apartado.es_nota_venta ? `Nota de venta N° ${numero}` : `Factura N° ${numero}`;
 }
@@ -1039,7 +1039,7 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
             <option value="">— Sin vincular factura —</option>
             {facturasCliente.map((f) => (
               <option key={f.id} value={f.id}>
-                #{f.numero_factura || f.id} — ${fmt(f.total_usd)} — {f.created_at}
+                {f.numero_factura || f.id} — ${fmt(f.total_usd)} — {f.created_at}
               </option>
             ))}
           </select>

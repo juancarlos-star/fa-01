@@ -348,7 +348,7 @@ function ReporteCompras({ desde, hasta }) {
           <tbody>
             {reporte.compras.map((c) => (
               <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>#{c.id}</td>
+                <td style={{ padding: '0.5rem' }}>{c.id}</td>
                 <td>{c.created_at}</td>
                 <td>{c.proveedor}</td>
                 <td>
@@ -433,7 +433,7 @@ function ReporteDevolucionesCompras({ desde, hasta }) {
                 <td style={{ padding: '0.5rem' }}>Devolución N° {String(d.numero_devolucion).padStart(6, '0')}</td>
                 <td>{d.created_at}</td>
                 <td>{d.proveedor}</td>
-                <td>{d.numero_factura_compra_original || `#${d.devuelve_a_encabezado_id}`}</td>
+                <td>{d.numero_factura_compra_original || d.devuelve_a_encabezado_id}</td>
                 <td>${fmt(d.total_usd)}</td>
                 <td><button onClick={() => verDetalle(d.id)}>Ver</button></td>
               </tr>
@@ -555,7 +555,7 @@ function ReporteFacturas({ desde, hasta }) {
           <tbody>
             {reporte.facturas.map((f) => (
               <tr key={f.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>#{f.numero_factura || String(f.id).padStart(6, '0')}</td>
+                <td style={{ padding: '0.5rem' }}>{f.numero_factura || String(f.id).padStart(6, '0')}</td>
                 <td>{f.created_at}</td>
                 <td>
                   {f.cliente_nombre}
@@ -680,7 +680,7 @@ function ReporteDevolucionesFacturas({ desde, hasta }) {
                 <td style={{ padding: '0.5rem' }}>Devolución N° {String(d.numero_devolucion).padStart(6, '0')}</td>
                 <td>{d.created_at}</td>
                 <td>{d.cliente_nombre}</td>
-                <td>{d.numero_factura_original || `#${d.devuelve_a_factura_id}`}</td>
+                <td>{d.numero_factura_original || d.devuelve_a_factura_id}</td>
                 <td>${fmt(d.total_usd)}</td>
                 <td>Bs {fmt(d.total_bs)}</td>
                 <td><button onClick={() => verDetalle(d.id)}>Ver</button></td>
@@ -939,7 +939,7 @@ function ReporteCargosDescargos({ desde, hasta, tipoForzado }) {
               <tbody>
                 {reporte.cargos.map((c) => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>#{String(c.numeroDocumento ?? c.secuencia).padStart(5, '0')}</td>
+                    <td style={{ padding: '0.5rem' }}>{c.documentoTexto}</td>
                     <td>{c.created_at}</td>
                     <td>{c.productoResumen}</td>
                     <td>{c.totalRenglones}</td>
@@ -987,7 +987,7 @@ function ReporteCargosDescargos({ desde, hasta, tipoForzado }) {
               <tbody>
                 {reporte.descargos.map((d) => (
                   <tr key={d.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>#{String(d.numeroDocumento ?? d.secuencia).padStart(5, '0')}</td>
+                    <td style={{ padding: '0.5rem' }}>{d.documentoTexto}</td>
                     <td>{d.created_at}</td>
                     <td>{d.productoResumen}</td>
                     <td>{d.totalRenglones}</td>
@@ -2970,7 +2970,7 @@ function ClienteFichaModal({ clienteId, onClose }) {
                   <div key={f.id} style={{ border: '1px solid #eaecf0', borderRadius: '8px', padding: '8px 10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                       <span>
-                        {f.es_devolucion ? '↩️ Devolución' : '🧾 Factura'} {f.numero_factura ? `#${f.numero_factura}` : ''}
+                        {f.es_devolucion ? '↩️ Devolución' : '🧾 Factura'} {f.numero_factura || ''}
                         <span style={{ color: '#98a2b3' }}> — {f.created_at}</span>
                       </span>
                       <strong>${fmt(f.total_usd)}</strong>

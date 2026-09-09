@@ -123,7 +123,7 @@ export default function Facturas({ currentUser }) {
               {eliminadas.map((e) => (
                 <tr key={e.id} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={{ padding: '0.5rem' }}>
-                    {e.es_nota_venta ? `NV-${e.numero_factura}` : `#${e.numero_factura}`}
+                    {e.numero_factura}
                   </td>
                   <td>{e.cliente_nombre}</td>
                   <td>${fmt(e.total_usd)}</td>
@@ -247,7 +247,7 @@ export default function Facturas({ currentUser }) {
             {facturas.map((f) => (
               <tr key={f.id} style={{ borderBottom: '1px solid #eee', color: f.es_devolucion ? '#b42318' : undefined }}>
                 <td style={{ padding: '0.5rem' }}>
-                  {f.es_devolucion ? `Devolución N° ${String(f.numero_devolucion).padStart(6, '0')}` : `#${f.numero_factura || String(f.id).padStart(6, '0')}`}
+                  {f.es_devolucion ? `Devolución N° ${String(f.numero_devolucion).padStart(6, '0')}` : (f.numero_factura || String(f.id).padStart(6, '0'))}
                   {f.apartado_origen_id && (
                     <span style={{ display: 'block', fontSize: '0.72rem', color: '#175cd3' }}>
                       Apartado N° {f.apartado_origen_numero ?? f.apartado_origen_id}
