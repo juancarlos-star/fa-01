@@ -3236,7 +3236,7 @@ function recolectarDocumentosDeHoy(db, settings) {
     const detalle = items.map((it) => `${it.cantidad}x ${it.descripcion}`).join(', ') || '—';
     const numeroMostrado = encabezado.es_devolucion ? encabezado.numero_devolucion : encabezado.id;
     resumen.compras.push({
-      numero: `${encabezado.es_devolucion ? 'DEV-' : 'COM-'}${String(numeroMostrado).padStart(6, '0')}`,
+      numero: `${encabezado.es_devolucion ? 'DEV-COM-' : 'COM-'}${String(numeroMostrado).padStart(6, '0')}`,
       hora: horaCorta(encabezado.created_at),
       proveedor: encabezado.proveedor || '—',
       detalle,
@@ -3841,7 +3841,7 @@ ipcMain.handle('compras:buscarPorDocumento', (event, { documento }) => {
   if (encabezado.es_devolucion) {
     return {
       ok: false,
-      message: `El documento "${texto}" corresponde a una devolucion (N° ${String(encabezado.numero_devolucion || '').padStart(6, '0')}), no a una compra original`
+      message: `El documento "${texto}" corresponde a una devolucion (N° DEV-COM-${String(encabezado.numero_devolucion || '').padStart(6, '0')}), no a una compra original`
     };
   }
 

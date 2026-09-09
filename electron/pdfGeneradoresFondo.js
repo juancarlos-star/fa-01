@@ -253,7 +253,7 @@ function generarPDFCompraFondo(encabezado, items, settings) {
 
   const numeroMostrado = encabezado.es_devolucion ? encabezado.numero_devolucion : encabezado.id;
   const numeroMostradoTexto = encabezado.es_devolucion
-    ? String(numeroMostrado).padStart(6, '0')
+    ? `DEV-COM-${String(numeroMostrado).padStart(6, '0')}`
     : `COM-${String(numeroMostrado).padStart(6, '0')}`;
 
   const xValor = 182;
