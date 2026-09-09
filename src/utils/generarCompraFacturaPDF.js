@@ -41,7 +41,7 @@ export async function generarCompraFacturaPDF(encabezado, items, settings, opcio
   const numeroMostrado = encabezado.es_devolucion ? encabezado.numero_devolucion : encabezado.id;
 
   const numeroMostradoTexto = encabezado.es_devolucion
-    ? String(numeroMostrado).padStart(6, '0')
+    ? `DEV-COM-${String(numeroMostrado).padStart(6, '0')}`
     : `COM-${String(numeroMostrado).padStart(6, '0')}`;
 
   // Todos los valores de este bloque quedan alineados en la misma columna (x=182), con
