@@ -9,10 +9,15 @@ const IVA_TASA_DEFECTO = 0.16;
 // numero/fecha, bloque de datos a la izquierda -aqui del PROVEEDOR en vez del cliente-, tabla
 // agrupada con los codigos/IMEI debajo de la descripcion, y totales al final).
 export async function generarCompraFacturaPDF(encabezado, items, settings, opciones = {}) {
-  // El IVA se toma de la configuracion de la tienda (igual que en la pantalla de Compras y en
-  // la factura de venta), no de un 16% fijo, para que el PDF siempre coincida con lo que se
-  // vio en pantalla al registrar la compra.
-  const ivaTasa = settings && settings.iva_porcentaje != null ? parseFloat(settings.iva_porcentaje) / 100 : IVA_TASA_DEFECTO;
+  // El IVA se toma del porcentaje que quedo GUARDADO en esta compra especifica
+  // (encabezado.iva_porcentaje) -0% si se registro por "Compra Tel/Acces", el % normal si se
+  // registro por "Compras"-, no del % configurado ACTUALMENTE en Ajustes: ese % pudo cambiar
+  // despues de registrar la compra, y el PDF debe coincidir siempre con lo que se vio en
+  // pantalla al momento de registrarla. Solo si la compra es vieja y nunca guardo este dato
+  // (NULL) se usa como respaldo el % configurado actualmente.
+  const ivaTasa = encabezado.iva_porcentaje !== null && encabezado.iva_porcentaje !== undefined
+    ? parseFloat(encabezado.iva_porcentaje) / 100
+    : (settings && settings.iva_porcentaje != null ? parseFloat(settings.iva_porcentaje) / 100 : IVA_TASA_DEFECTO);
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
 
   // Logo + nombre + RIF + direccion + telefono de LA TIENDA (no del proveedor), arriba a la
