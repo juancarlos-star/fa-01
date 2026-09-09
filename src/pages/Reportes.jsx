@@ -355,7 +355,7 @@ function ReporteCompras({ desde, hasta }) {
                   {c.numero_factura_compra}
                   {c.numerosDevolucion && c.numerosDevolucion.length > 0 && (
                     <div style={{ fontSize: '0.78rem', color: '#b42318', fontWeight: 600 }}>
-                      {c.devueltoTotal ? '⚠ Devuelta por completo' : '⚠ Con devolución parcial'} — N° {c.numerosDevolucion.map((n) => String(n).padStart(6, '0')).join(', ')}
+                      {c.devueltoTotal ? '⚠ Devuelta por completo' : '⚠ Con devolución parcial'} — N° {c.numerosDevolucion.map((n) => `DEV-COM-${String(n).padStart(6, '0')}`).join(', ')}
                     </div>
                   )}
                 </td>
@@ -430,7 +430,7 @@ function ReporteDevolucionesCompras({ desde, hasta }) {
           <tbody>
             {reporte.devoluciones.map((d) => (
               <tr key={d.id} style={{ borderBottom: '1px solid #eee', color: '#b42318' }}>
-                <td style={{ padding: '0.5rem' }}>Devolución N° {String(d.numero_devolucion).padStart(6, '0')}</td>
+                <td style={{ padding: '0.5rem' }}>Devolución N° {`DEV-COM-${String(d.numero_devolucion).padStart(6, '0')}`}</td>
                 <td>{d.created_at}</td>
                 <td>{d.proveedor}</td>
                 <td>{d.numero_factura_compra_original || d.devuelve_a_encabezado_id}</td>
