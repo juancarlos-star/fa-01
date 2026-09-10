@@ -12,3 +12,8 @@ herramientas-privadas/
 # Credenciales del correo que avisa cuando un cliente necesita una clave de activacion. Sin este
 # archivo, esa funcion queda desactivada (no rompe nada), asi que es seguro que no este en git.
 electron/config-correo-privado.js
+
+# Token de solo lectura para revisar actualizaciones (repo movisync-releases). Sin este
+# archivo, la app simplemente no busca actualizaciones (no rompe nada); se genera solo, en el
+# servidor de GitHub Actions, a partir del secreto UPDATER_TOKEN.
+electron/config-updater-privado.js
