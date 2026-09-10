@@ -12,6 +12,7 @@
   "dependencies": {
     "better-sqlite3": "^11.3.0",
     "bcryptjs": "^2.4.3",
+    "electron-updater": "^6.3.9",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "react": "^18.3.1",
@@ -33,6 +34,11 @@
     ],
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "juancarlos-star",
+      "repo": "movisync-releases"
     },
     "win": {
       "target": "nsis",
