@@ -38,7 +38,8 @@
     "publish": {
       "provider": "github",
       "owner": "juancarlos-star",
-      "repo": "movisync-releases"
+      "repo": "movisync-releases",
+      "releaseType": "release"
     },
     "win": {
       "target": "nsis",
