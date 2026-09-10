@@ -42,14 +42,8 @@ jobs:
         env:
           UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
         run: |
-          cat > electron/config-updater-privado.js << EOF
-          // Generado automaticamente por el workflow de GitHub Actions (build.yml) a partir del
-          // secreto UPDATER_TOKEN -- NUNCA se sube al repositorio, solo existe durante la
-          // compilacion y dentro del instalador ya compilado. Es un token de SOLO LECTURA sobre
-          // el repo movisync-releases: la app lo usa para revisar si hay una version nueva.
-          module.exports = {
-            token: '${UPDATER_TOKEN}'
-          };
+          cat > electron/updater-token.json << EOF
+          {"token": "${UPDATER_TOKEN}"}
           EOF
 
       - name: Generar instalador .exe y publicarlo en movisync-releases
