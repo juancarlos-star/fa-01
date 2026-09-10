@@ -1161,31 +1161,78 @@ th {
 }
 
 .reportes-subtabs {
-  display: flex;
-  gap: 0.5rem;
   margin-bottom: 1rem;
   flex-wrap: wrap;
 }
 
-.reportes-subtabs button {
-  padding: 0.45rem 0.9rem;
-  border: 1px solid #d0d5dd;
-  border-radius: 4px;
-  cursor: pointer;
+/* Selector de pestañas segmentado (estilo pedido para Reportes) */
+.tab-container {
+  display: inline-flex;
+  background-color: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  gap: 4px;
+}
+
+.tab-item {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  font-weight: 500;
   font-size: 0.85rem;
-  background: #fff;
-  color: #344054;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.reportes-subtabs button:hover {
-  background: #eef4ff;
+.tab-item:hover {
+  color: #0f172a;
 }
 
-.reportes-subtabs button.active {
-  background: #dbeafe;
-  border-color: #0b4f9e;
-  color: #0b4f9e;
+.tab-item.active {
+  background-color: #ffffff;
+  color: #0d6efd;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Boton primario moderno (para usar mas adelante donde haga falta) */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #2563eb;
+  color: #ffffff;
   font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: none;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn-primary:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+/* Botones secundarios de tabla (para usar mas adelante donde haga falta) */
+.btn-table-action {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-table-action:hover {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 /* Impresion: al imprimir una pantalla que contenga un elemento .print-area (ej: la factura
