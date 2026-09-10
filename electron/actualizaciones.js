@@ -4,10 +4,17 @@
 // del cliente necesita un token de GitHub para poder leerlo -ese token es de SOLO LECTURA
 // (permiso "Contents: Read-only") sobre movisync-releases unicamente. Se genera como token
 // "fine-grained" en GitHub y se guarda en el secreto UPDATER_TOKEN del repositorio de codigo
-// (fa-01). El archivo config-updater-privado.js con ese token se genera automaticamente
-// durante la compilacion en GitHub Actions (ver .github/workflows/build.yml) y NUNCA se sube
-// al repositorio -sin ese archivo (por ejemplo, corriendo "npm run dev" en tu PC), la revision
-// de actualizaciones simplemente queda desactivada, sin romper nada.
+// (fa-01).
+//
+// El token se entrega a la app empaquetada como un "recurso extra" (extraResources en
+// package.json), NO como un archivo .js normal dentro de electron/ -esto ultimo se probo
+// primero pero electron-builder no lo estaba incluyendo dentro del instalador final (por eso
+// el registro decia "no existe" aunque el archivo si se generaba bien en GitHub Actions).
+// Con extraResources, el archivo queda garantizado junto al .exe, en la carpeta "resources",
+// sin pasar por el empaquetado normal del codigo. Se genera durante la compilacion en GitHub
+// Actions (ver .github/workflows/build.yml) y NUNCA se sube al repositorio -sin el (por
+// ejemplo corriendo "npm run dev" en tu PC), la revision de actualizaciones simplemente queda
+// desactivada, sin romper nada.
 const { autoUpdater } = require('electron-updater');
 const { dialog, app } = require('electron');
 const fs = require('fs');
@@ -31,6 +38,21 @@ function log(mensaje) {
   }
 }
 
+// process.resourcesPath apunta a la carpeta "resources" al lado del .exe cuando la app esta
+// instalada/empaquetada, y a una carpeta temporal de Electron cuando corres "npm run dev" (por
+// eso el try/catch: en desarrollo simplemente no existe el archivo, y eso esta bien).
+function leerTokenActualizador() {
+  const ruta = path.join(process.resourcesPath, 'updater-token.json');
+  try {
+    const contenido = fs.readFileSync(ruta, 'utf8');
+    const datos = JSON.parse(contenido);
+    return datos.token || null;
+  } catch (err) {
+    log(`No se pudo leer ${ruta} (normal si corres "npm run dev" en tu PC): ${err.message}`);
+    return null;
+  }
+}
+
 let yaConfigurado = false;
 
 function configurarAutoActualizacion(mainWindow) {
@@ -39,15 +61,9 @@ function configurarAutoActualizacion(mainWindow) {
 
   log(`Iniciando MoviSync version ${app.getVersion()}`);
 
-  let tokenPrivado = null;
-  try {
-    tokenPrivado = require('./config-updater-privado').token;
-  } catch (err) {
-    log('No hay electron/config-updater-privado.js (normal si corres "npm run dev" en tu PC): revision de actualizaciones desactivada.');
-    return;
-  }
+  const tokenPrivado = leerTokenActualizador();
   if (!tokenPrivado) {
-    log('config-updater-privado.js existe pero el campo "token" viene vacio: revision de actualizaciones desactivada.');
+    log('Revision de actualizaciones desactivada: no hay token valido.');
     return;
   }
   log(`Token de actualizaciones cargado (termina en ...${tokenPrivado.slice(-6)}).`);
