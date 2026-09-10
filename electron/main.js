@@ -228,6 +228,10 @@ ipcMain.handle('window:focus', () => {
   return { ok: true };
 });
 
+// Version instalada, para mostrarla en el menu lateral -asi cualquiera puede confirmar a
+// simple vista que version tiene sin ir a buscar el archivo de registro.
+ipcMain.handle('app:version', () => app.getVersion());
+
 // ---------- IPC: cambiar entre "modo acceso" (Activacion/Login: ventana chica, centrada, fija)
 // y "modo app" (una vez adentro: maximizada, redimensionable) ----------
 ipcMain.handle('window:modoAcceso', () => {

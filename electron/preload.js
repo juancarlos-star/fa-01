@@ -182,6 +182,7 @@ contextBridge.exposeInMainWorld('api', {
   verPdfConVisorExterno: (filePath) => ipcRenderer.invoke('pdf:verConVisorExterno', { filePath }),
   // Ventana: forzar el foco a nivel de sistema operativo (usado tras dialogos nativos confirm/alert)
   focusVentana: () => ipcRenderer.invoke('window:focus'),
+  getVersion: () => ipcRenderer.invoke('app:version'),
   modoVentanaAcceso: () => ipcRenderer.invoke('window:modoAcceso'),
   modoVentanaApp: () => ipcRenderer.invoke('window:modoApp')
 });
