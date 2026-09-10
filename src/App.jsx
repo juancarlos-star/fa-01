@@ -185,6 +185,10 @@ export default function App() {
   // consultando; si "activada" es false, se bloquea todo detras de la pantalla de Activacion.
   const [licencia, setLicencia] = useState(null);
   useEffect(() => { window.api.licenciaEstado().then(setLicencia); }, []);
+  // Version instalada, para mostrarla chiquita debajo del logo -asi cualquiera puede confirmar
+  // a simple vista que version tiene sin ir a buscar el archivo de registro de actualizaciones.
+  const [versionApp, setVersionApp] = useState('');
+  useEffect(() => { window.api.getVersion().then(setVersionApp); }, []);
   const [view, setView] = useState('inicio');
   // Datos de un apartado que el usuario decidio facturar (boton "Generar factura" / "Nota de
   // venta" desde la pantalla de Apartados): { apartadoId, depositoId, clienteId, clienteNombre,
@@ -273,6 +277,11 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div style={{ marginBottom: '10px' }}><LogoMoviSync onDark height={41} /></div>
+        {versionApp && (
+          <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '-6px', marginBottom: '0.75rem' }}>
+            Version {versionApp}
+          </p>
+        )}
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
