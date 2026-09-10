@@ -37,8 +37,25 @@ jobs:
           };
           EOF
 
-      - name: Generar instalador .exe
-        run: npm run dist -- --publish=never
+      - name: Crear archivo de credenciales privadas (token de actualizaciones)
+        shell: bash
+        env:
+          UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
+        run: |
+          cat > electron/config-updater-privado.js << EOF
+          // Generado automaticamente por el workflow de GitHub Actions (build.yml) a partir del
+          // secreto UPDATER_TOKEN -- NUNCA se sube al repositorio, solo existe durante la
+          // compilacion y dentro del instalador ya compilado. Es un token de SOLO LECTURA sobre
+          // el repo movisync-releases: la app lo usa para revisar si hay una version nueva.
+          module.exports = {
+            token: '${UPDATER_TOKEN}'
+          };
+          EOF
+
+      - name: Generar instalador .exe y publicarlo en movisync-releases
+        env:
+          GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+        run: npm run dist -- --publish=always
 
       - name: Subir instalador como artefacto
         uses: actions/upload-artifact@v4
