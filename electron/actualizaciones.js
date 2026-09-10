@@ -46,7 +46,7 @@ function leerTokenActualizador() {
   try {
     const contenido = fs.readFileSync(ruta, 'utf8');
     const datos = JSON.parse(contenido);
-    return datos.token || null;
+    return (datos.token || '').trim() || null;
   } catch (err) {
     log(`No se pudo leer ${ruta} (normal si corres "npm run dev" en tu PC): ${err.message}`);
     return null;
