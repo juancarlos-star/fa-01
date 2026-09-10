@@ -62,9 +62,197 @@ body {
   margin-bottom: 10px;
 }
 
+/* ===================== Ventana de acceso (Login) ===================== */
+/* Pantalla completa de fondo (detras de la "ventana" chica y centrada) -en Electron la ventana
+   del SO ya viene del tamano correcto (ver electron/main.js, modo "acceso"), asi que aqui solo
+   hace falta centrar el contenido dentro de esa ventana. */
+.acceso-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  width: 100vw;
+  background: #eef2f6;
+  overflow: hidden;
+}
+
+.acceso-ventana {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+}
+
+.acceso-izquierda {
+  flex: 1.05;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.acceso-izquierda img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+
+.acceso-derecha {
+  flex: 1;
+  min-width: 300px;
+  background: #034895;
+  color: #fff;
+  padding: 28px 40px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  /* Igual que en el menu lateral: se oculta la barra de scroll visualmente en pantallas de
+     menos resolucion (donde el formulario completo no entra en 100vh), sin perder la
+     posibilidad de scrolear con la rueda del mouse si hiciera falta. */
+  scrollbar-width: none;
+}
+
+.acceso-derecha::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+.acceso-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.acceso-label {
+  font-size: 0.85rem;
+  color: #dbe8f7;
+  margin-bottom: 4px;
+}
+
+.acceso-campo {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 6px;
+  padding: 0 10px;
+  margin-bottom: 14px;
+}
+
+.acceso-icono {
+  color: #7a8aa0;
+  display: flex;
+  align-items: center;
+  margin-right: 6px;
+}
+
+.acceso-campo input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 10px 4px;
+  font-size: 0.95rem;
+  color: #1a1a2e;
+  background: transparent;
+  min-width: 0;
+}
+
+.acceso-toggle-clave {
+  background: none;
+  border: none;
+  padding: 4px;
+  margin: 0;
+  color: #7a8aa0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.acceso-toggle-clave:hover {
+  color: #0057a3;
+}
+
+.acceso-error {
+  background: rgba(217, 45, 32, 0.15);
+  border: 1px solid rgba(217, 45, 32, 0.4);
+  color: #ffd7d2;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+}
+
+.acceso-subtitulo {
+  text-align: center;
+  margin: 10px 0 0;
+  font-size: 0.95rem;
+}
+
+.acceso-version {
+  text-align: center;
+  margin: 2px 0 16px;
+  font-size: 0.82rem;
+  color: #bcd2ea;
+}
+
+.acceso-botones {
+  display: flex;
+  gap: 10px;
+  margin-bottom: auto;
+}
+
+.acceso-botones button {
+  flex: 1;
+  padding: 9px;
+  border-radius: 6px;
+  border: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.acceso-botones button[type='submit'] {
+  background: #ffffff;
+  color: #0b2f5c;
+  font-weight: 600;
+}
+
+.acceso-botones button[type='submit']:hover {
+  background: #dbe8f7;
+}
+
+.acceso-botones button[type='button'] {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.acceso-botones button[type='button']:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.acceso-footer {
+  text-align: center;
+  font-size: 0.78rem;
+  color: #a9c2df;
+  margin-top: 18px;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .acceso-izquierda {
+    display: none;
+  }
+}
+
+/* El "cascaron" de la app (sidebar + contenido) se fija al alto de la ventana (100vh) y cada
+   parte con overflow-y:auto propio, en vez de dejar que la pagina completa crezca y haya que
+   scrolear la ventana entera. Asi la barra lateral siempre queda visible, y el contenido de cada
+   pantalla scrolea por su cuenta cuando hace falta (sin alargar la ventana). */
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -72,6 +260,32 @@ body {
   background: #0057a3;
   color: white;
   padding: 1.5rem 1rem;
+  height: 100vh;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* El submenu (Facturar/Compras/Reportes) ya NO vive dentro de este div: se dibuja aparte con un
+   portal directo a document.body, posicionado con "position: fixed" (ver SidebarSubmenu en
+   App.jsx). Por eso aqui ya no hace falta el truco de "overflow-x: visible" -que ademas
+   generaba una barra de scroll horizontal fantasma-: ahora es un overflow normal, sin
+   consecuencias para el submenu porque este ya no esta adentro para que lo recorte. */
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Se oculta la barra de scroll visualmente (en computadoras con menos resolucion vertical el
+     menu no entra completo en 100vh y aparecia una barra fea al lado). El scroll con la rueda
+     del mouse sigue funcionando igual, solo que sin la barra dibujada. */
+  scrollbar-width: none; /* Firefox */
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
 }
 
 .sidebar h2 {
@@ -125,16 +339,20 @@ body {
 
 /* Submenu flotante de "Compras" (Generar Compras / Devolucion de Compras): aparece a la
    derecha del boton, como un pequeno panel flotante, igual que un menu contextual.
-   IMPORTANTE: como este submenu vive DENTRO de <nav> (para que el click-fuera y el overlay
-   funcionen bien), la regla general ".sidebar nav button" (texto blanco, para el menu
-   principal sobre fondo azul) tambien coincide con estos botones y gana por especificidad CSS
-   sobre ".sidebar-submenu button" -> el texto quedaba blanco sobre el fondo blanco del
-   submenu, es decir invisible. Por eso las reglas de abajo usan ".sidebar .sidebar-submenu
-   button" (dos clases) para tener MAS especificidad que ".sidebar nav button" (una clase) y
-   asegurar que ganen siempre, sin importar el orden en que aparezcan en este archivo. */
+   IMPORTANTE: este submenu se dibuja con un portal directo a document.body (ver SidebarSubmenu
+   en App.jsx), NO dentro de ".sidebar"/"nav" -por eso ya no hace falta calificar estas reglas
+   con ".sidebar" adelante: al vivir afuera en el DOM, ninguna regla de ".sidebar nav button"
+   (texto blanco) le llega, asi que un simple ".sidebar-submenu button" alcanza y gana solo. */
 .sidebar-submenu-wrap {
   position: relative;
 }
+
+.sidebar-section-divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 10px 4px;
+}
+
 
 .sidebar-submenu-overlay {
   position: fixed;
@@ -146,16 +364,19 @@ body {
   position: absolute;
   top: 0;
   left: 100%;
-  margin-left: 6px;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.25);
   padding: 6px;
   min-width: 210px;
   z-index: 501;
+  /* Salvavidas para pantallas muy chicas: si aun asi el panel no entra completo en la altura
+     disponible, que se pueda hacer scroll adentro del propio panel en vez de recortarse. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 
-.sidebar .sidebar-submenu button {
+.sidebar-submenu button {
   display: block;
   width: 100%;
   text-align: left;
@@ -170,12 +391,12 @@ body {
   white-space: nowrap;
 }
 
-.sidebar .sidebar-submenu button:hover {
+.sidebar-submenu button:hover {
   background: #eef4ff;
   color: #1d2939;
 }
 
-.sidebar .sidebar-submenu button.active {
+.sidebar-submenu button.active {
   background: #dbeafe;
   color: #0b4f9e;
   font-weight: 600;
@@ -184,6 +405,8 @@ body {
 .content {
   flex: 1;
   padding: 2rem;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 table {
@@ -757,6 +980,32 @@ th {
   background: #eaf1fb;
 }
 
+/* Variante del boton "Ver todo" cuando va DENTRO de la franja azul del encabezado de la tabla
+   (en vez de en la fila de entrada), para que quede bien alineado verticalmente con el resto
+   de los titulos de columna. */
+.pos-ver-todo-btn-header {
+  vertical-align: middle;
+  margin: -2px 0;
+}
+
+/* Boton para confirmar/agregar la fila de entrada a la compra o factura actual. Se usa como
+   alternativa visible y explicita a tener que adivinar que hay que presionar Enter. */
+.pos-agregar-btn {
+  background: #0b8f4e;
+  border: 1px solid #0b8f4e;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-agregar-btn:hover {
+  background: #097a42;
+}
+
 /* ---------- Facturacion: ventana "Ver todo" (vista ampliada de la factura) ---------- */
 .pos-vertodo-overlay {
   position: fixed;
@@ -839,6 +1088,10 @@ th {
   text-align: right;
 }
 
+.pos-vertodo-table th.text-right {
+  text-align: right;
+}
+
 .pos-vertodo-codigos {
   margin-top: 6px;
   font-family: monospace;
@@ -908,31 +1161,214 @@ th {
 }
 
 .reportes-subtabs {
-  display: flex;
-  gap: 0.5rem;
   margin-bottom: 1rem;
   flex-wrap: wrap;
 }
 
-.reportes-subtabs button {
-  padding: 0.45rem 0.9rem;
-  border: 1px solid #d0d5dd;
-  border-radius: 4px;
-  cursor: pointer;
+/* Selector de pestañas segmentado (estilo exacto de la imagen de referencia) */
+.tab-container {
+  display: inline-flex;
+  flex-wrap: wrap;
+  background-color: #dde3ec;
+  padding: 10px 12px;
+  border-radius: 16px;
+  gap: 10px;
+}
+
+.tab-item {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 999px;
+  background-color: #eef1f6;
+  color: #334155;
+  font-weight: 500;
   font-size: 0.85rem;
-  background: #fff;
-  color: #344054;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
-.reportes-subtabs button:hover {
-  background: #eef4ff;
+.tab-item:hover {
+  background-color: #ffffff;
+  color: #0f172a;
 }
 
-.reportes-subtabs button.active {
-  background: #dbeafe;
-  border-color: #0b4f9e;
-  color: #0b4f9e;
+.tab-item.active {
+  background-color: #5b9df5;
+  color: #ffffff;
   font-weight: 600;
+  box-shadow: 0 2px 6px rgba(91, 157, 245, 0.45);
+}
+
+.tab-item.active:hover {
+  background-color: #4c8ef0;
+  color: #ffffff;
+}
+
+/* Selector de filtros claro (Telefonos/SIM/USIM/Accesorios en Gestion de Productos):
+   activo en blanco con texto oscuro en negrita, en vez de azul. */
+.tab-container-claro {
+  display: inline-flex;
+  flex-wrap: wrap;
+  background-color: #dde3ec;
+  padding: 6px;
+  border-radius: 14px;
+  gap: 6px;
+}
+
+.tab-item-claro {
+  padding: 9px 18px;
+  border: none;
+  border-radius: 999px;
+  background-color: transparent;
+  color: #334155;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-item-claro:hover {
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
+.tab-item-claro.active {
+  background-color: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+/* Campo de busqueda tipo pildora con icono de lupa */
+.campo-buscar-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  color: #94a3b8;
+}
+
+.campo-buscar-pill input {
+  border: none;
+  outline: none;
+  flex: 1;
+  font-size: 0.9rem;
+  color: #0f172a;
+  background: transparent;
+}
+
+/* Botones de la columna "Acciones": pildora con icono+texto ("Ver unidades") y botones
+   cuadrados de solo icono (Editar / Eliminar) */
+.btn-accion-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #eef1f6;
+  color: #334155;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btn-accion-pill:hover {
+  background-color: #e2e8f0;
+}
+
+.btn-accion-icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background-color: #eef1f6;
+  color: #334155;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-accion-icono:hover {
+  background-color: #e2e8f0;
+}
+
+.btn-accion-icono-peligro:hover {
+  background-color: #fee2e2;
+  color: #b42318;
+}
+
+/* Estilo base para TODOS los botones del sistema que no tengan ya una clase especifica (los
+   de arriba: tab-item, btn-accion-pill, btn-accion-icono, etc. siguen viendose como ya estan,
+   porque una clase siempre le gana a esta regla general). Esto le da a cualquier boton "simple"
+   del resto de las pantallas (Facturar, Apartados, Compras, Configuracion, etc.) la misma
+   apariencia azul y redondeada de "Crear producto" en la imagen de referencia. Los botones que
+   ya tengan su propio estilo puesto directamente (style={{...}} en el codigo) no cambian con
+   esto -esos hay que ajustarlos pantalla por pantalla.
+*/
+button {
+  background-color: #2e64a1;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.55rem 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+button:hover {
+  background-color: #24507f;
+}
+
+button:disabled {
+  background-color: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+/* Boton primario moderno (para usar mas adelante donde haga falta) */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: none;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn-primary:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+/* Botones secundarios de tabla (para usar mas adelante donde haga falta) */
+.btn-table-action {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-table-action:hover {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 /* Impresion: al imprimir una pantalla que contenga un elemento .print-area (ej: la factura
@@ -954,4 +1390,46 @@ th {
   .no-print {
     display: none !important;
   }
+}
+
+/* Switch (toggle) generico reutilizable, ej: "Sugerir al facturar un equipo" en Gestion de
+   categorias. Envuelve un <input type="checkbox"> real (oculto) para que siga funcionando
+   con el mismo onChange/checked de siempre, solo cambia la apariencia. */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 19px;
+  flex-shrink: 0;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switch-track {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #d0d5dd;
+  border-radius: 999px;
+  transition: background-color 0.15s ease;
+}
+.switch-track::before {
+  content: "";
+  position: absolute;
+  height: 15px;
+  width: 15px;
+  left: 2px;
+  bottom: 2px;
+  background-color: #fff;
+  border-radius: 50%;
+  transition: transform 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.switch input:checked + .switch-track {
+  background-color: #0b8f4e;
+}
+.switch input:checked + .switch-track::before {
+  transform: translateX(15px);
 }
