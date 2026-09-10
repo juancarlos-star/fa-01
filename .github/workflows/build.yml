@@ -42,9 +42,8 @@ jobs:
         env:
           UPDATER_TOKEN: ${{ secrets.UPDATER_TOKEN }}
         run: |
-          cat > electron/updater-token.json << EOF
-          {"token": "${UPDATER_TOKEN}"}
-          EOF
+          TOKEN_LIMPIO=$(printf '%s' "$UPDATER_TOKEN" | tr -d '\n\r')
+          printf '{"token": "%s"}' "$TOKEN_LIMPIO" > electron/updater-token.json
 
       - name: Generar instalador .exe y publicarlo en movisync-releases
         env:
