@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { getDb, initDb, cerrarDb, getDbPath } = require('./db');
 const { enviarCorreoConAdjunto } = require('./mailer');
 const { obtenerMachineId, verificarCodigo } = require('./licencia');
+const { configurarAutoActualizacion } = require('./actualizaciones');
 const {
   generarPDFFacturaFondo,
   generarPDFCompraFondo,
@@ -195,6 +196,7 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     initDb();
     createWindow();
+    configurarAutoActualizacion(mainWindow);
 
     // El visor de PDF integrado de Chromium (usado para mostrar facturas, reportes,
     // devoluciones, cargos/descargos, etc.) trae su propio boton de "Descargar" en la barra de
