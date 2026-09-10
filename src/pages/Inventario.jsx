@@ -14,6 +14,42 @@ async function avisar(mensaje) {
   await window.api.focusVentana();
 }
 
+// Iconos pequeños en SVG (sin depender de ninguna libreria externa) para los botones de la
+// columna "Acciones" y el campo de busqueda, siguiendo el estilo de la imagen de referencia.
+function IconoOjo() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function IconoLapiz() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+}
+
+function IconoX() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+function IconoLupa() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
 // Las 3 primeras son pestañas fijas del sistema (manejan codigos/IMEI por unidad).
 // El resto de las pestañas se generan dinamicamente: una por cada categoria creada en
 // "Gestion de categorias" (todas de tipo 'accesorio'), y se comportan igual que Accesorios.
@@ -189,20 +225,12 @@ export default function Inventario({ currentUser }) {
     <div>
       <h1>Gestión de Productos</h1>
 
-      <div style={{ display: 'flex', gap: '0.5rem', margin: '1rem 0', flexWrap: 'wrap' }}>
+      <div className="tab-container-claro" style={{ margin: '1rem 0' }}>
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTabId(t.id)}
-            style={{
-              padding: '0.5rem 1rem',
-              fontWeight: tab.id === t.id ? 'bold' : 'normal',
-              backgroundColor: tab.id === t.id ? '#0b4f9e' : '#e2e8f0',
-              color: tab.id === t.id ? '#fff' : '#111',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
+            className={tab.id === t.id ? 'tab-item-claro active' : 'tab-item-claro'}
           >
             {t.label}
           </button>
@@ -236,13 +264,15 @@ export default function Inventario({ currentUser }) {
 
 
       <div style={{ margin: '0.75rem 0' }}>
-        <input
-          type="text"
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder={`Buscar por nombre en ${tab.label}...`}
-          style={{ width: '100%', maxWidth: '360px', padding: '0.5rem' }}
-        />
+        <div className="campo-buscar-pill" style={{ maxWidth: '360px' }}>
+          <IconoLupa />
+          <input
+            type="text"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder={`Buscar por nombre en ${tab.label}...`}
+          />
+        </div>
       </div>
 
       {loading ? (
@@ -311,18 +341,24 @@ export default function Inventario({ currentUser }) {
                     {esAdmin && <td style={{ color: margen >= 0 ? '#0b8f4e' : '#b42318' }}>${fmt(margen)}</td>}
                     {esAdmin && <td style={{ color: margen >= 0 ? '#0b8f4e' : '#b42318' }}>{margenPct === null ? '—' : `${fmt(margenPct)}%`}</td>}
                     <td>{p.stock_disponible}</td>
-                    <td style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    <td style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
                       {esAccesorio ? (
                         <span style={{ fontSize: '0.8rem', color: '#666' }}>
                           Ajusta el stock desde Cargos y Descargos
                         </span>
                       ) : (
-                        <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}>
-                          {expandedId === p.id ? 'Ocultar' : 'Ver unidades'}
+                        <button className="btn-accion-pill" onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}>
+                          <IconoOjo /> {expandedId === p.id ? 'Ocultar' : 'Ver unidades'}
                         </button>
                       )}
-                      <button onClick={() => setProductoEnEdicion(p)}>Editar</button>
-                      {esAdmin && <button onClick={() => handleEliminar(p.id)}>Eliminar</button>}
+                      <button className="btn-accion-icono" title="Editar" onClick={() => setProductoEnEdicion(p)}>
+                        <IconoLapiz />
+                      </button>
+                      {esAdmin && (
+                        <button className="btn-accion-icono btn-accion-icono-peligro" title="Eliminar" onClick={() => handleEliminar(p.id)}>
+                          <IconoX />
+                        </button>
+                      )}
                     </td>
                   </tr>
                   {expandedId === p.id && !esAccesorio && (
