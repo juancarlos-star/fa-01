@@ -148,11 +148,11 @@ export default function Reportes({ currentUser, categoriaInicial }) {
     <div>
       <h1>Reportes · {categoriaActiva.label}{tabActiva ? ` · ${tabActiva.label}` : ''}</h1>
 
-      <div className="reportes-subtabs">
+      <div className="tab-container reportes-subtabs">
         {categoriaActiva.items.map((t) => (
           <button
             key={t.key}
-            className={tab === t.key ? 'active' : ''}
+            className={tab === t.key ? 'tab-item active' : 'tab-item'}
             onClick={() => setTab(t.key)}
           >
             {t.label}
