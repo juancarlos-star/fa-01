@@ -1,6 +1,6 @@
 {
   "name": "movisync",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Sistema de facturacion e inventario para tienda Movistar",
   "main": "electron/main.js",
   "scripts": {
