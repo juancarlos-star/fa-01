@@ -1205,6 +1205,104 @@ th {
   color: #ffffff;
 }
 
+/* Selector de filtros claro (Telefonos/SIM/USIM/Accesorios en Gestion de Productos):
+   activo en blanco con texto oscuro en negrita, en vez de azul. */
+.tab-container-claro {
+  display: inline-flex;
+  flex-wrap: wrap;
+  background-color: #dde3ec;
+  padding: 6px;
+  border-radius: 14px;
+  gap: 6px;
+}
+
+.tab-item-claro {
+  padding: 9px 18px;
+  border: none;
+  border-radius: 999px;
+  background-color: transparent;
+  color: #334155;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-item-claro:hover {
+  background-color: rgba(255, 255, 255, 0.5);
+}
+
+.tab-item-claro.active {
+  background-color: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+/* Campo de busqueda tipo pildora con icono de lupa */
+.campo-buscar-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  color: #94a3b8;
+}
+
+.campo-buscar-pill input {
+  border: none;
+  outline: none;
+  flex: 1;
+  font-size: 0.9rem;
+  color: #0f172a;
+  background: transparent;
+}
+
+/* Botones de la columna "Acciones": pildora con icono+texto ("Ver unidades") y botones
+   cuadrados de solo icono (Editar / Eliminar) */
+.btn-accion-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #eef1f6;
+  color: #334155;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btn-accion-pill:hover {
+  background-color: #e2e8f0;
+}
+
+.btn-accion-icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background-color: #eef1f6;
+  color: #334155;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-accion-icono:hover {
+  background-color: #e2e8f0;
+}
+
+.btn-accion-icono-peligro:hover {
+  background-color: #fee2e2;
+  color: #b42318;
+}
+
 /* Boton primario moderno (para usar mas adelante donde haga falta) */
 .btn-primary {
   display: inline-flex;
