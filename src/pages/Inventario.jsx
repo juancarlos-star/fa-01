@@ -241,15 +241,7 @@ export default function Inventario({ currentUser }) {
         <button
           type="button"
           onClick={() => setMostrarModalCrear(true)}
-          style={{
-            padding: '0.6rem 1.2rem',
-            background: '#0b4f9e',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold'
-          }}
+          className="btn-primary"
         >
           + Crear producto
         </button>

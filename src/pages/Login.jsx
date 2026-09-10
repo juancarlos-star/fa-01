@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import LogoMoviSync from '../components/LogoMoviSync.jsx';
 import fotoTienda from '../assets/login-tienda.jpg';
 
@@ -8,6 +8,8 @@ export default function Login({ onLogin }) {
   const [verClave, setVerClave] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [versionApp, setVersionApp] = useState('');
+  useEffect(() => { window.api.getVersion().then(setVersionApp); }, []);
   const refUsuario = useRef(null);
   const refClave = useRef(null);
 
@@ -114,7 +116,7 @@ export default function Login({ onLogin }) {
           {error && <div className="acceso-error">{error}</div>}
 
           <p className="acceso-subtitulo">Módulo Facturación / Inventario</p>
-          <p className="acceso-version">Versión 1.0.0</p>
+          <p className="acceso-version">Versión {versionApp || '...'}</p>
 
           <div className="acceso-botones">
             <button type="submit" disabled={loading}>{loading ? 'Ingresando...' : 'Aceptar'}</button>
