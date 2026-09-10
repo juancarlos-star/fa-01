@@ -1,6 +1,6 @@
 {
   "name": "movisync",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Sistema de facturacion e inventario para tienda Movistar",
   "main": "electron/main.js",
   "scripts": {
@@ -41,6 +41,12 @@
       "repo": "movisync-releases",
       "releaseType": "release"
     },
+    "extraResources": [
+      {
+        "from": "electron/updater-token.json",
+        "to": "updater-token.json"
+      }
+    ],
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico"
