@@ -278,7 +278,7 @@ export default function App() {
       <aside className="sidebar">
         <div style={{ marginBottom: '10px' }}><LogoMoviSync onDark height={41} /></div>
         {versionApp && (
-          <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '-6px', marginBottom: '0.75rem' }}>
+          <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '-6px', marginBottom: '0.75rem', textAlign: 'center' }}>
             Version {versionApp}
           </p>
         )}

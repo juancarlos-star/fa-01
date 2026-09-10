@@ -1303,24 +1303,53 @@ th {
   color: #b42318;
 }
 
+/* Estilo base para TODOS los botones del sistema que no tengan ya una clase especifica (los
+   de arriba: tab-item, btn-accion-pill, btn-accion-icono, etc. siguen viendose como ya estan,
+   porque una clase siempre le gana a esta regla general). Esto le da a cualquier boton "simple"
+   del resto de las pantallas (Facturar, Apartados, Compras, Configuracion, etc.) la misma
+   apariencia azul y redondeada de "Crear producto" en la imagen de referencia. Los botones que
+   ya tengan su propio estilo puesto directamente (style={{...}} en el codigo) no cambian con
+   esto -esos hay que ajustarlos pantalla por pantalla.
+*/
+button {
+  background-color: #2e64a1;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.55rem 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+button:hover {
+  background-color: #24507f;
+}
+
+button:disabled {
+  background-color: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
 /* Boton primario moderno (para usar mas adelante donde haga falta) */
 .btn-primary {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background-color: #2563eb;
+  background-color: #2e64a1;
   color: #ffffff;
-  font-weight: 600;
-  padding: 10px 18px;
-  border-radius: 8px;
+  font-weight: 700;
+  padding: 10px 22px;
+  border-radius: 999px;
   border: none;
-  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 2px 4px rgba(46, 100, 161, 0.25);
   cursor: pointer;
   transition: background-color 0.2s, transform 0.1s;
 }
 
 .btn-primary:hover {
-  background-color: #1d4ed8;
+  background-color: #24507f;
   transform: translateY(-1px);
 }
 
