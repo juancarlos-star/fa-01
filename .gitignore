@@ -15,5 +15,6 @@ electron/config-correo-privado.js
 
 # Token de solo lectura para revisar actualizaciones (repo movisync-releases). Sin este
 # archivo, la app simplemente no busca actualizaciones (no rompe nada); se genera solo, en el
-# servidor de GitHub Actions, a partir del secreto UPDATER_TOKEN.
-electron/config-updater-privado.js
+# servidor de GitHub Actions, a partir del secreto UPDATER_TOKEN. Es JSON (no .js) porque se
+# entrega a la app como "recurso extra" (extraResources), no como parte del codigo empaquetado.
+electron/updater-token.json
