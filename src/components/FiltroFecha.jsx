@@ -67,21 +67,13 @@ export default function FiltroFecha({ desde, hasta, onChange }) {
 
   return (
     <div className="form-box" style={{ maxWidth: '620px', marginBottom: '1rem' }}>
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+      <div className="tab-container-claro" style={{ marginBottom: '0.75rem' }}>
         {PRESETS.map((p) => (
           <button
             key={p.key}
             type="button"
             onClick={() => aplicarPreset(p)}
-            style={{
-              padding: '0.35rem 0.75rem',
-              backgroundColor: presetActivo === p.key ? '#0b4f9e' : '#e2e8f0',
-              color: presetActivo === p.key ? '#fff' : '#111',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '0.85rem'
-            }}
+            className={presetActivo === p.key ? 'tab-item-claro active' : 'tab-item-claro'}
           >
             {p.label}
           </button>
