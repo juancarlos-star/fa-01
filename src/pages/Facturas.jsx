@@ -4,6 +4,17 @@ import { fmt } from '../utils/format.js';
 import PromptModal from '../components/PromptModal.jsx';
 import FiltroFecha, { hoyStr, primerDiaDelMesStr } from '../components/FiltroFecha.jsx';
 
+// Mismo icono de lupa que usa el buscador de "Gestion de Productos" (src/pages/Inventario.jsx),
+// para que el campo de busqueda de esta pantalla se vea exactamente igual.
+function IconoLupa() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
 export default function Facturas({ currentUser }) {
   const [facturas, setFacturas] = useState([]);
   const [detalle, setDetalle] = useState(null);
@@ -207,13 +218,16 @@ export default function Facturas({ currentUser }) {
 
       {!buscarTodoElHistorial && <FiltroFecha desde={desde} hasta={hasta} onChange={(d, h) => { setDesde(d); setHasta(h); }} />}
 
-      <div className="form-box" style={{ maxWidth: '620px', marginBottom: '1rem', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          value={textoBusqueda}
-          onChange={(e) => setTextoBusqueda(e.target.value)}
-          placeholder="Buscar por N°, cliente o cédula/RIF..."
-          style={{ flex: 1, minWidth: 220 }}
-        />
+      <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="campo-buscar-pill" style={{ flex: 1, minWidth: 220, maxWidth: '360px' }}>
+          <IconoLupa />
+          <input
+            type="text"
+            value={textoBusqueda}
+            onChange={(e) => setTextoBusqueda(e.target.value)}
+            placeholder="Buscar por N°, cliente o cédula/RIF..."
+          />
+        </div>
         <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
           <input type="checkbox" checked={buscarTodoElHistorial} onChange={(e) => setBuscarTodoElHistorial(e.target.checked)} />
           Buscar en todo el historial (ignora las fechas)
