@@ -304,13 +304,14 @@ body {
   margin-bottom: 4px;
   border-radius: 6px;
   cursor: pointer;
-  /* Se fija explicitamente la misma fuente del body: los <button> no siempre heredan el
-     font-family del body en todos los navegadores/versiones de Chromium (usan la fuente por
-     defecto de los controles de formulario si no se les indica lo contrario), asi que sin esta
-     linea el menu lateral podia terminar viendose con una tipografia distinta al resto de la
-     app. Tambien se sube el tamano a 0.95rem para que coincida con el tamano original del menu. */
+  /* Se fija explicitamente la misma fuente del body y el tamano/grosor original del menu
+     (0.9rem, normal): la regla generica "button { font-weight: 600; ... }" de mas abajo en
+     este mismo archivo (pensada para los botones "azules" sueltos de otras pantallas) le
+     estaba metiendo negrita a TODO boton que no diga lo contrario -incluidos los del menu
+     lateral-, que es lo que hacia que la letra se viera distinta a la version original. */
   font-family: 'Segoe UI', Arial, sans-serif;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  font-weight: 400;
 }
 
 .sidebar nav button:hover {
@@ -394,6 +395,7 @@ body {
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.9rem;
+  font-weight: 400;
   white-space: nowrap;
 }
 
@@ -1278,6 +1280,7 @@ th {
   border-radius: 999px;
   padding: 8px 14px;
   font-size: 0.85rem;
+  font-weight: 500;
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
@@ -1292,6 +1295,11 @@ th {
   justify-content: center;
   width: 34px;
   height: 34px;
+  /* IMPORTANTE: sin este "padding: 0" explicito, el boton hereda el padding grande (0.55rem
+     1.1rem) de la regla generica "button" de mas abajo -eso dejaba sin espacio real dentro del
+     cuadro fijo de 34x34px y el icono (lapiz/X) quedaba invisible, mostrando solo el cuadro
+     gris vacio. */
+  padding: 0;
   background-color: #eef1f6;
   color: #334155;
   border: none;
