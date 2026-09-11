@@ -20,6 +20,12 @@ const { dialog, app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
+// Cada cuanto se revisa si hay una version nueva MIENTRAS el programa queda abierto (la tienda
+// suele dejar la PC prendida todo el dia). Antes eran 4 horas; se baja a 30 minutos para que la
+// ventana de "Actualizacion lista" pueda aparecer bastante mas rapido sin depender de cerrar y
+// volver a abrir el programa.
+const INTERVALO_REVISION_MS = 30 * 60 * 1000;
+
 // Registro en disco de todo lo que hace el auto-actualizador (que casi nunca se ve en pantalla,
 // porque la app empaquetada no tiene consola visible), para poder diagnosticar desde afuera por
 // que no detecto/descargo una version sin tener que adivinar. Vive junto a la base de datos, en
@@ -113,12 +119,23 @@ function configurarAutoActualizacion(mainWindow) {
     log(`ERROR revisando actualizaciones: ${err == null ? 'desconocido' : (err.stack || err.message)}`);
   });
 
-  // Revisa al abrir el programa, y despues cada 4 horas mientras quede encendido (la tienda
-  // suele dejar la PC prendida todo el dia).
-  autoUpdater.checkForUpdates().catch((err) => log(`ERROR al llamar checkForUpdates(): ${err && err.message}`));
-  setInterval(() => {
+  const revisarAhora = (motivo) => {
+    log(`Revisando actualizaciones (${motivo})...`);
     autoUpdater.checkForUpdates().catch((err) => log(`ERROR al llamar checkForUpdates(): ${err && err.message}`));
-  }, 4 * 60 * 60 * 1000);
+  };
+
+  // Revisa al abrir el programa, y despues cada 30 minutos mientras quede encendido -asi la
+  // ventana de "Actualizacion lista" puede llegar en cualquier momento del dia, no solo al
+  // abrir el programa.
+  revisarAhora('al iniciar el programa');
+  setInterval(() => revisarAhora('revision periodica'), INTERVALO_REVISION_MS);
+
+  // Ademas, cada vez que la ventana principal vuelve a tener el foco (por ejemplo, la PC
+  // estuvo en reposo/bloqueada un rato y el usuario vuelve a hacer click en el programa) se
+  // aprovecha para revisar de una vez, en lugar de esperar a que se cumpla el intervalo.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.on('focus', () => revisarAhora('la ventana recupero el foco'));
+  }
 }
 
 module.exports = { configurarAutoActualizacion };
