@@ -304,7 +304,13 @@ body {
   margin-bottom: 4px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.9rem;
+  /* Se fija explicitamente la misma fuente del body: los <button> no siempre heredan el
+     font-family del body en todos los navegadores/versiones de Chromium (usan la fuente por
+     defecto de los controles de formulario si no se les indica lo contrario), asi que sin esta
+     linea el menu lateral podia terminar viendose con una tipografia distinta al resto de la
+     app. Tambien se sube el tamano a 0.95rem para que coincida con el tamano original del menu. */
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 0.95rem;
 }
 
 .sidebar nav button:hover {
