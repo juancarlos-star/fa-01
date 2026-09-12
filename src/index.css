@@ -1247,6 +1247,30 @@ th {
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
 }
 
+/* FiltroFecha.jsx envuelve sus botones en un .form-box, y la regla ".form-box button"
+   (fondo azul solido, ver mas abajo) tiene mas especificidad que ".tab-item-claro" sola
+   (clase+etiqueta vs. una sola clase), asi que le ganaba y pintaba Hoy/Esta semana/Este
+   año de azul solido en vez de la pastilla clara. Estas reglas reafirman el estilo pastilla
+   dentro de un .form-box sin tocar los demas botones normales de formulario. */
+.form-box .tab-item-claro {
+  background-color: transparent;
+  color: #334155;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.form-box .tab-item-claro:hover {
+  background-color: rgba(255, 255, 255, 0.5);
+  color: #334155;
+}
+
+.form-box .tab-item-claro.active {
+  background-color: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
 /* Campo de busqueda tipo pildora con icono de lupa */
 .campo-buscar-pill {
   display: flex;
