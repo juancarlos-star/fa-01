@@ -191,7 +191,7 @@ export default function Inventario({ currentUser }) {
 
   return (
     <div>
-      <h1>Gestión de Productos</h1>
+      <h1 style={{ fontSize: '1rem' }}>Gestión de Productos</h1>
 
       <div className="tab-container-claro" style={{ margin: '1rem 0' }}>
         {tabs.map((t) => (
@@ -249,9 +249,9 @@ export default function Inventario({ currentUser }) {
               {esAccesorio && <th>Cod. barras</th>}
               <th>Producto</th>
               <th>Categoria</th>
-              {esAdmin && <th>Costo prom.</th>}
-              <th>Precio 1 (Bs.)</th>
-              <th>Precio 2 (Dolares)</th>
+              {esAdmin && <th>Costo</th>}
+              <th>Precio Bs.</th>
+              <th>Precio $.</th>
               {esAdmin && <th>Margen $</th>}
               {esAdmin && <th>Margen %</th>}
               <th>Stock</th>
@@ -508,7 +508,9 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
                 <span style={{ wordBreak: 'break-all' }}>
                   {u.codigo} — <em>{labelEstadoUnidad(u)}</em>{' '}
                   {u.estado !== 'vendido' && (
-                    <button onClick={() => abrirEdicionCodigoUnit(u)} style={{ fontSize: '0.75rem' }}>Editar</button>
+                    <button className="btn-accion-icono" title="Editar" onClick={() => abrirEdicionCodigoUnit(u)}>
+                      <IconoLapiz />
+                    </button>
                   )}
                 </span>
               )}
@@ -529,7 +531,9 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
                 ) : (
                   <span style={{ marginTop: '0.2rem', color: '#666' }}>
                     (costo: ${fmt(Number(u.costo_unitario_usd || 0))}{' '}
-                    <button onClick={() => abrirEdicionCostoUnit(u)} style={{ fontSize: '0.75rem' }}>Editar</button>)
+                    <button className="btn-accion-icono" title="Editar" onClick={() => abrirEdicionCostoUnit(u)}>
+                      <IconoLapiz />
+                    </button>)
                   </span>
                 )
               )}

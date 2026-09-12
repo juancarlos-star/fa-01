@@ -44,8 +44,8 @@ const CATEGORIAS = [
       { key: 'stockBajo', label: 'Stock Bajo' },
       { key: 'stockMuerto', label: 'Stock muerto' },
       { key: 'catalogoWhatsapp', label: 'Catálogo para WhatsApp' },
-      { key: 'historialCargos', label: 'Historial de Cargos' },
-      { key: 'historialDescargos', label: 'Historial de Descargos' }
+      { key: 'historialCargos', label: 'Hist. cargos' },
+      { key: 'historialDescargos', label: 'Hist. descargo' }
     ]
   },
   {
@@ -146,7 +146,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
 
   return (
     <div>
-      <h1>Reportes · {categoriaActiva.label}{tabActiva ? ` · ${tabActiva.label}` : ''}</h1>
+      <h1 style={{ fontSize: '1.4rem' }}>Reportes · {categoriaActiva.label}{tabActiva ? ` · ${tabActiva.label}` : ''}</h1>
 
       <div className="tab-container reportes-subtabs">
         {categoriaActiva.items.map((t) => (
