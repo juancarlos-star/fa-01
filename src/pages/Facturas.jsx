@@ -169,7 +169,7 @@ export default function Facturas({ currentUser }) {
         )}
         <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         {esAdmin && !factura.es_devolucion && (
-          <button onClick={() => pedirMotivoEliminar(factura.id)} style={{ marginBottom: '1rem', marginLeft: '8px', color: '#b42318' }}>
+          <button onClick={() => pedirMotivoEliminar(factura.id)} className="btn-danger" style={{ marginBottom: '1rem', marginLeft: '8px' }}>
             Eliminar factura
           </button>
         )}
@@ -229,7 +229,10 @@ export default function Facturas({ currentUser }) {
           />
         </div>
         <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-          <input type="checkbox" checked={buscarTodoElHistorial} onChange={(e) => setBuscarTodoElHistorial(e.target.checked)} />
+          <span className="switch">
+            <input type="checkbox" checked={buscarTodoElHistorial} onChange={(e) => setBuscarTodoElHistorial(e.target.checked)} />
+            <span className="switch-track"></span>
+          </span>
           Buscar en todo el historial (ignora las fechas)
         </label>
       </div>
@@ -275,7 +278,7 @@ export default function Facturas({ currentUser }) {
                 <td style={{ display: 'flex', gap: '0.4rem' }}>
                   <button onClick={() => verDetalle(f.id)}>Ver</button>
                   {esAdmin && !f.es_devolucion && (
-                    <button onClick={() => pedirMotivoEliminar(f.id)} style={{ color: '#b42318' }}>Eliminar</button>
+                    <button onClick={() => pedirMotivoEliminar(f.id)} className="btn-danger">Eliminar</button>
                   )}
                 </td>
               </tr>

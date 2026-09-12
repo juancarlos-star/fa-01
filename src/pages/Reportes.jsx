@@ -1630,7 +1630,7 @@ function ReporteInventarioFisico() {
   const cargar = useCallback(async () => {
     if (!depositoId) { setReporte(null); return; }
     setCargando(true);
-    const data = await window.api.getReporteInventarioFisico(Number(depositoId));
+    const data = await window.api.getReporteInventarioFisico(depositoId === 'todos' ? 'todos' : Number(depositoId));
     setReporte(data && data.ok ? data : null);
     setCargando(false);
   }, [depositoId]);
@@ -1652,6 +1652,7 @@ function ReporteInventarioFisico() {
         <label>Deposito a contar</label>
         <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
           {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
+          {depositos.length > 0 && <option value="todos">Todos los depósitos</option>}
           {depositos.map((d) => (
             <option key={d.id} value={d.id}>{d.nombre}</option>
           ))}

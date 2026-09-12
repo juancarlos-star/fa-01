@@ -205,16 +205,6 @@ export default function Inventario({ currentUser }) {
         ))}
       </div>
 
-      <div style={{ marginBottom: '1.5rem' }}>
-        <button
-          type="button"
-          onClick={() => setMostrarModalCrear(true)}
-          className="btn-primary"
-        >
-          + Crear producto
-        </button>
-      </div>
-
       {mostrarModalCrear && (
         <ProductoRapidoModal
           onConfirm={handleProductoCreado}
@@ -222,9 +212,8 @@ export default function Inventario({ currentUser }) {
         />
       )}
 
-
-      <div style={{ margin: '0.75rem 0' }}>
-        <div className="campo-buscar-pill" style={{ maxWidth: '360px' }}>
+      <div style={{ margin: '0.75rem 0', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div className="campo-buscar-pill" style={{ maxWidth: '360px', flex: 1, minWidth: 220 }}>
           <IconoLupa />
           <input
             type="text"
@@ -233,6 +222,13 @@ export default function Inventario({ currentUser }) {
             placeholder={`Buscar por nombre en ${tab.label}...`}
           />
         </div>
+        <button
+          type="button"
+          onClick={() => setMostrarModalCrear(true)}
+          className="btn-primary"
+        >
+          + Crear producto
+        </button>
       </div>
 
       {loading ? (
