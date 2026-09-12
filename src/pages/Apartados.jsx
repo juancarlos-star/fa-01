@@ -320,9 +320,9 @@ export default function Apartados({ currentUser, onIrAFacturar }) {
           ))}
         </div>
         <div className="tab-container-claro" style={{ marginBottom: 0 }}>
-          <button className="tab-item-claro" onClick={() => abrirBuscador('recibo')}>🔎 Buscar recibo</button>
-          <button className="tab-item-claro" onClick={() => abrirBuscador('numero')}>🔎 Buscar apartado</button>
-          <button className="tab-item-claro" onClick={() => abrirBuscador('cliente')}>🔎 Buscar por cliente</button>
+          <button className={modoBusqueda === 'recibo' ? 'tab-item-claro active' : 'tab-item-claro'} onClick={() => abrirBuscador('recibo')}>🔎 Buscar recibo</button>
+          <button className={modoBusqueda === 'numero' ? 'tab-item-claro active' : 'tab-item-claro'} onClick={() => abrirBuscador('numero')}>🔎 Buscar apartado</button>
+          <button className={modoBusqueda === 'cliente' ? 'tab-item-claro active' : 'tab-item-claro'} onClick={() => abrirBuscador('cliente')}>🔎 Buscar por cliente</button>
           <button className="tab-item-claro" onClick={() => setVista('nuevo')}>+ Nuevo apartado</button>
         </div>
       </div>

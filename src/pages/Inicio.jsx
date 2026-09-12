@@ -137,6 +137,9 @@ export default function Inicio({ user }) {
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [settings, setSettings] = useState(null);
+  // Version instalada: antes se mostraba chiquita debajo del logo en el menu vertical, ahora
+  // se pide aqui para mostrarla centrada al pie de Inicio, debajo de "Resumen y tendencias".
+  const [versionApp, setVersionApp] = useState('');
 
   useEffect(() => {
     window.api.getDashboardInicio().then((res) => {
@@ -144,6 +147,8 @@ export default function Inicio({ user }) {
       setCargando(false);
     });
   }, []);
+
+  useEffect(() => { window.api.getVersion().then(setVersionApp); }, []);
 
   // El logo configurado en Configuracion > Datos de Tienda ya NO se imprime en la Factura/Nota
   // de Venta (se quito de ahi a proposito); en su lugar se muestra aqui, en la esquina superior
@@ -235,6 +240,12 @@ export default function Inicio({ user }) {
               <AnilloTendencia pct={datos.tendenciaPorCategoria.accesorio} etiqueta="Accesorios" />
             </div>
           </div>
+
+          {versionApp && (
+            <p style={{ textAlign: 'center', fontSize: '0.7rem', color: GRIS, marginTop: '0.75rem' }}>
+              Version {versionApp}
+            </p>
+          )}
         </div>
       )}
     </div>
