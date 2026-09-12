@@ -185,10 +185,6 @@ export default function App() {
   // consultando; si "activada" es false, se bloquea todo detras de la pantalla de Activacion.
   const [licencia, setLicencia] = useState(null);
   useEffect(() => { window.api.licenciaEstado().then(setLicencia); }, []);
-  // Version instalada, para mostrarla chiquita debajo del logo -asi cualquiera puede confirmar
-  // a simple vista que version tiene sin ir a buscar el archivo de registro de actualizaciones.
-  const [versionApp, setVersionApp] = useState('');
-  useEffect(() => { window.api.getVersion().then(setVersionApp); }, []);
   const [view, setView] = useState('inicio');
   // Datos de un apartado que el usuario decidio facturar (boton "Generar factura" / "Nota de
   // venta" desde la pantalla de Apartados): { apartadoId, depositoId, clienteId, clienteNombre,
@@ -273,26 +269,66 @@ export default function App() {
     setView('reportes');
     setMenuReportesAbierto(false);
   };
+
+  // El menu vertical debe verse SIEMPRE completo (todas las opciones), sin importar la
+  // resolucion/alto de pantalla donde se instale, y sin depender de que el usuario haga scroll.
+  // Antes ".sidebar-scroll" solo permitia scrollear con la rueda si el contenido no entraba, lo
+  // cual technically mostraba todo pero escondia opciones fuera de la vista sin avisar. Ahora,
+  // si el <nav> (con todos los botones) no entra completo en el alto disponible, se encoje
+  // proporcionalmente (transform: scale) hasta que quepa entero -asi nunca se corta ni hace
+  // falta scrollear, en cualquier resolucion. Si sí entra completo, se queda al tamaño normal
+  // (escala 1). Se recalcula cada vez que cambia el tamaño de la ventana o se abre/cierra un
+  // submenu (que puede agregar/quitar botones visibles y cambiar el alto total del <nav>).
+  const refSidebarScroll = useRef(null);
+  const refNav = useRef(null);
+  const [escalaMenu, setEscalaMenu] = useState(1);
+  useLayoutEffect(() => {
+    const recalcular = () => {
+      const contenedor = refSidebarScroll.current;
+      const nav = refNav.current;
+      if (!contenedor || !nav) return;
+      // Se mide siempre a escala 1 para saber la altura "real" del contenido, antes de decidir
+      // si hace falta encoger.
+      nav.style.transform = 'scale(1)';
+      nav.style.width = '100%';
+      const altoDisponible = contenedor.clientHeight;
+      const altoNecesario = nav.scrollHeight;
+      if (altoNecesario > altoDisponible && altoNecesario > 0) {
+        const escala = Math.max(0.55, altoDisponible / altoNecesario);
+        setEscalaMenu(escala);
+      } else {
+        setEscalaMenu(1);
+      }
+    };
+    recalcular();
+    window.addEventListener('resize', recalcular);
+    return () => window.removeEventListener('resize', recalcular);
+  }, [algunSubmenuAbierto, user.role]);
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div style={{ marginBottom: '10px' }}><LogoMoviSync onDark height={41} /></div>
-        {versionApp && (
-          <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '-6px', marginBottom: '0.75rem', textAlign: 'center' }}>
-            Version {versionApp}
-          </p>
-        )}
         <p style={{ fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           {user.full_name} ({user.role})
         </p>
         <div
           className="sidebar-scroll"
+          ref={refSidebarScroll}
           // Cualquier click dentro del menu (un boton final o un submenu que se despliega)
           // avisa a la campana de notificaciones para que descarte los avisos flotantes, sin
           // tener que enganchar el evento en cada uno de los botones de abajo.
           onClickCapture={() => window.dispatchEvent(new Event('movisync-dismiss-toasts'))}
         >
-          <nav className={algunSubmenuAbierto ? 'submenu-open' : ''}>
+          <nav
+            ref={refNav}
+            className={algunSubmenuAbierto ? 'submenu-open' : ''}
+            style={{
+              transform: `scale(${escalaMenu})`,
+              transformOrigin: 'top left',
+              width: `${100 / escalaMenu}%`
+            }}
+          >
           <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}><MIcon.Inicio />Inicio</button>
           <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuFacturacionAbierto ? ' dimmed' : ''}`}>
