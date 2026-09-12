@@ -235,23 +235,32 @@ export default function App() {
   // cumplir la regla de que los hooks de React no pueden cambiar de orden entre renders.
   const refSidebarScroll = useRef(null);
   const refNav = useRef(null);
-  const [escalaMenu, setEscalaMenu] = useState(1);
+  // OJO: "transform: scale()" en CSS solo afecta lo que se VE, no el espacio que el elemento
+  // reserva en el layout (su "caja" sigue midiendo lo mismo que sin escalar). Por eso antes,
+  // aunque el menu se veia mas chico, el contenedor de arriba (.sidebar-scroll) seguia
+  // reservando/permitiendo scroll hasta la altura ORIGINAL (sin escalar) -de ahi que igual
+  // hiciera falta scrollear para llegar a "Cerrar sesion". La solucion es fijarle al <nav> una
+  // altura explicita IGUAL a su altura ya escalada (alto original x escala), asi la caja que
+  // ocupa en el layout coincide con lo que realmente se ve, y el contenedor nunca necesita
+  // scroll para mostrar el resto.
+  const [menuEscala, setMenuEscala] = useState({ escala: 1, altoPx: null });
   useLayoutEffect(() => {
     const recalcular = () => {
       const contenedor = refSidebarScroll.current;
       const nav = refNav.current;
       if (!contenedor || !nav) return;
-      // Se mide siempre a escala 1 para saber la altura "real" del contenido, antes de decidir
-      // si hace falta encoger.
+      // Se mide siempre a escala 1 y altura automatica para saber el tamano "real" del
+      // contenido, antes de decidir si hace falta encoger.
       nav.style.transform = 'scale(1)';
       nav.style.width = '100%';
+      nav.style.height = 'auto';
       const altoDisponible = contenedor.clientHeight;
       const altoNecesario = nav.scrollHeight;
       if (altoNecesario > altoDisponible && altoNecesario > 0) {
-        const escala = Math.max(0.55, altoDisponible / altoNecesario);
-        setEscalaMenu(escala);
+        const escala = altoDisponible / altoNecesario;
+        setMenuEscala({ escala, altoPx: Math.ceil(altoNecesario * escala) });
       } else {
-        setEscalaMenu(1);
+        setMenuEscala({ escala: 1, altoPx: null });
       }
     };
     recalcular();
@@ -322,9 +331,10 @@ export default function App() {
             ref={refNav}
             className={algunSubmenuAbierto ? 'submenu-open' : ''}
             style={{
-              transform: `scale(${escalaMenu})`,
+              transform: `scale(${menuEscala.escala})`,
               transformOrigin: 'top left',
-              width: `${100 / escalaMenu}%`
+              width: `${100 / menuEscala.escala}%`,
+              height: menuEscala.altoPx != null ? `${menuEscala.altoPx}px` : 'auto'
             }}
           >
           <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}><MIcon.Inicio />Inicio</button>

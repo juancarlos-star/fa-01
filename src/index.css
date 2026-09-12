@@ -415,6 +415,9 @@ body {
   padding: 2rem;
   height: 100vh;
   overflow-y: auto;
+  /* Si una tabla o formulario es mas ancho que la ventana (pantallas angostas o con zoom/DPI
+     alto), que aparezca scroll horizontal en vez de cortar contenido sin forma de verlo. */
+  overflow-x: auto;
 }
 
 table {
