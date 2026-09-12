@@ -236,37 +236,46 @@ export default function App() {
   const refSidebarScroll = useRef(null);
   const refNav = useRef(null);
   // OJO: "transform: scale()" en CSS solo afecta lo que se VE, no el espacio que el elemento
-  // reserva en el layout (su "caja" sigue midiendo lo mismo que sin escalar). Por eso antes,
-  // aunque el menu se veia mas chico, el contenedor de arriba (.sidebar-scroll) seguia
-  // reservando/permitiendo scroll hasta la altura ORIGINAL (sin escalar) -de ahi que igual
-  // hiciera falta scrollear para llegar a "Cerrar sesion". La solucion es fijarle al <nav> una
-  // altura explicita IGUAL a su altura ya escalada (alto original x escala), asi la caja que
-  // ocupa en el layout coincide con lo que realmente se ve, y el contenedor nunca necesita
-  // scroll para mostrar el resto.
+  // reserva en el layout. Por eso el <nav> de mas abajo se deja SIEMPRE a su tamano natural (sin
+  // transform ni alturas forzadas): asi su "scrollHeight" es siempre una medida real y confiable
+  // de cuanto necesita el menu. El encogido visual se aplica aparte, en un DIV que lo envuelve
+  // (ver "sidebar-nav-scaler" en el JSX), al que si se le fija una altura explicita igual a su
+  // altura ya escalada -asi el espacio que ocupa en el layout coincide exactamente con lo que se
+  // ve, y el contenedor nunca necesita scroll para mostrar el resto (ej: "Cerrar sesion").
+  //
+  // Para decidir CUANDO recalcular, en vez de depender de una lista fija de "cosas que podrian
+  // cambiar el alto" (abrir tal submenu, cambiar de rol, etc. -que resulto ser fragil: un
+  // submenu podia cambiar el alto real del menu por una razon no contemplada en esa lista, y el
+  // menu se quedaba con el tamano viejo, cortando "Cerrar sesion"), se usa un ResizeObserver que
+  // vigila el tamano REAL del <nav> y del contenedor disponible en todo momento. Asi, sea cual
+  // sea la causa (un submenu, un cambio de rol, la ventana, una fuente que carga distinto...),
+  // el menu se reajusta solo apenas el tamano real cambia, sin dejar huecos.
   const [menuEscala, setMenuEscala] = useState({ escala: 1, altoPx: null });
   useLayoutEffect(() => {
+    const contenedor = refSidebarScroll.current;
+    const nav = refNav.current;
+    if (!contenedor || !nav) return;
+
     const recalcular = () => {
-      const contenedor = refSidebarScroll.current;
-      const nav = refNav.current;
-      if (!contenedor || !nav) return;
-      // Se mide siempre a escala 1 y altura automatica para saber el tamano "real" del
-      // contenido, antes de decidir si hace falta encoger.
-      nav.style.transform = 'scale(1)';
-      nav.style.width = '100%';
-      nav.style.height = 'auto';
       const altoDisponible = contenedor.clientHeight;
       const altoNecesario = nav.scrollHeight;
-      if (altoNecesario > altoDisponible && altoNecesario > 0) {
-        const escala = altoDisponible / altoNecesario;
-        setMenuEscala({ escala, altoPx: Math.ceil(altoNecesario * escala) });
-      } else {
-        setMenuEscala({ escala: 1, altoPx: null });
-      }
+      setMenuEscala((prev) => {
+        const next = (altoNecesario > altoDisponible && altoNecesario > 0)
+          ? { escala: altoDisponible / altoNecesario, altoPx: Math.ceil(altoNecesario * (altoDisponible / altoNecesario)) }
+          : { escala: 1, altoPx: null };
+        // Evita re-renders (y posibles bucles con el ResizeObserver) si el resultado es
+        // practicamente el mismo que ya se tenia.
+        if (prev.escala === next.escala && prev.altoPx === next.altoPx) return prev;
+        return next;
+      });
     };
+
     recalcular();
-    window.addEventListener('resize', recalcular);
-    return () => window.removeEventListener('resize', recalcular);
-  }, [menuFacturacionAbierto, menuComprasAbierto, menuCargoDescargoAbierto, menuReportesAbierto, menuConfigAbierto, user?.role]);
+    const observer = new ResizeObserver(recalcular);
+    observer.observe(contenedor);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, []);
 
   // Mientras se muestra Activacion o Login, la ventana se ve chica y centrada (como cualquier
   // pantalla de ingreso); apenas hay un usuario logueado, pasa a "modo app" (maximizada). Este
@@ -327,15 +336,18 @@ export default function App() {
           // tener que enganchar el evento en cada uno de los botones de abajo.
           onClickCapture={() => window.dispatchEvent(new Event('movisync-dismiss-toasts'))}
         >
-          <nav
-            ref={refNav}
-            className={algunSubmenuAbierto ? 'submenu-open' : ''}
+          <div
+            className="sidebar-nav-scaler"
             style={{
               transform: `scale(${menuEscala.escala})`,
               transformOrigin: 'top left',
               width: `${100 / menuEscala.escala}%`,
               height: menuEscala.altoPx != null ? `${menuEscala.altoPx}px` : 'auto'
             }}
+          >
+          <nav
+            ref={refNav}
+            className={algunSubmenuAbierto ? 'submenu-open' : ''}
           >
           <button className={view === 'inicio' ? 'active' : ''} onClick={() => setView('inicio')}><MIcon.Inicio />Inicio</button>
           <hr className="sidebar-section-divider" />
@@ -509,6 +521,7 @@ export default function App() {
           <hr className="sidebar-section-divider" />
           <button onClick={handleLogout}><MIcon.CerrarSesion />Cerrar sesion</button>
         </nav>
+          </div>
         </div>
       </aside>
       <main className="content">

@@ -288,6 +288,14 @@ body {
   background: transparent;
 }
 
+/* Envoltorio que aplica el encogido visual del menu (ver App.jsx / ResizeObserver): el <nav> de
+   adentro se deja siempre a su tamano natural para poder medirlo de forma confiable, y es este
+   DIV el que realmente se escala (transform) y al que se le fija una altura explicita igual a
+   su altura ya escalada, para que el espacio que ocupa en el layout coincida con lo que se ve. */
+.sidebar-nav-scaler {
+  overflow: visible;
+}
+
 .sidebar h2 {
   font-size: 1.1rem;
   margin-bottom: 2rem;
@@ -312,6 +320,11 @@ body {
   font-family: 'Segoe UI', Arial, sans-serif;
   font-size: 0.9rem;
   font-weight: 400;
+  /* Evita que el texto de un boton haga salto de linea si el ancho cambia un poco (por el
+     "width: 100/escala %" que usa el encogido automatico del menu, ver App.jsx): si el texto
+     pudiera envolver, la altura real del menu cambiaria con cada pequeño ajuste de escala, y el
+     ResizeObserver que mide esa altura entraria en un vaiven de recalculos innecesario. */
+  white-space: nowrap;
 }
 
 .sidebar nav button:hover {
