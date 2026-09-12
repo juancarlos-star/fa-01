@@ -308,22 +308,22 @@ export default function Apartados({ currentUser, onIrAFacturar }) {
       </p>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '1rem 0', flexWrap: 'wrap', gap: '8px' }}>
-        <div className="reportes-subtabs" style={{ marginBottom: 0 }}>
+        <div className="tab-container-claro" style={{ marginBottom: 0 }}>
           {['activo', 'listo_para_entregar', 'completado', 'cancelado', 'todos'].map((e) => (
             <button
               key={e}
-              className={filtroEstado === e ? 'active' : ''}
+              className={filtroEstado === e ? 'tab-item-claro active' : 'tab-item-claro'}
               onClick={() => setFiltroEstado(e)}
             >
               {e === 'todos' ? 'Todos' : ESTADO_LABEL[e]}
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => abrirBuscador('recibo')}>🔎 Buscar recibo</button>
-          <button onClick={() => abrirBuscador('numero')}>🔎 Buscar apartado</button>
-          <button onClick={() => abrirBuscador('cliente')}>🔎 Buscar por cliente</button>
-          <button onClick={() => setVista('nuevo')}>+ Nuevo apartado</button>
+        <div className="tab-container-claro" style={{ marginBottom: 0 }}>
+          <button className="tab-item-claro" onClick={() => abrirBuscador('recibo')}>🔎 Buscar recibo</button>
+          <button className="tab-item-claro" onClick={() => abrirBuscador('numero')}>🔎 Buscar apartado</button>
+          <button className="tab-item-claro" onClick={() => abrirBuscador('cliente')}>🔎 Buscar por cliente</button>
+          <button className="tab-item-claro" onClick={() => setVista('nuevo')}>+ Nuevo apartado</button>
         </div>
       </div>
 
