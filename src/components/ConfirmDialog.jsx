@@ -36,5 +36,6 @@ const overlayStyle = {
 
 const boxStyle = {
   background: '#fff', padding: '1.25rem', borderRadius: '8px', width: '340px',
+  maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto',
   boxShadow: '0 10px 30px rgba(0,0,0,0.25)'
 };

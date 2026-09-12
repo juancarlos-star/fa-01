@@ -254,7 +254,7 @@ const overlayStyle = {
   position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
   background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
 };
-const boxStyle = { background: '#fff', borderRadius: '8px', width: '480px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 35px rgba(0,0,0,0.35)' };
+const boxStyle = { background: '#fff', borderRadius: '8px', width: '480px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 35px rgba(0,0,0,0.35)' };
 const headerStyle = { background: 'linear-gradient(180deg, #d6866b, #b8544a)', color: '#fff', fontWeight: 'bold', fontSize: '1.05rem', letterSpacing: '0.5px', padding: '12px 16px', borderRadius: '8px 8px 0 0' };
 const tabsWrapStyle = { display: 'flex', gap: '6px', marginBottom: '12px', background: '#f2f4f7', padding: '4px', borderRadius: '6px' };
 const tabBtnBase = { flex: 1, padding: '7px 0', borderRadius: '5px', border: 'none', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' };

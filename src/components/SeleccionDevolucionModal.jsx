@@ -151,6 +151,7 @@ const boxStyle = {
   background: '#fff',
   borderRadius: '8px',
   width: '460px',
+  maxWidth: '95vw',
   maxHeight: '90vh',
   overflowY: 'auto',
   boxShadow: '0 10px 35px rgba(0,0,0,0.35)'
