@@ -226,6 +226,39 @@ export default function App() {
   const refReportes = useRef(null);
   const refConfig = useRef(null);
 
+  // El menu vertical debe verse SIEMPRE completo (todas las opciones), sin importar la
+  // resolucion/alto de pantalla donde se instale, y sin depender de que el usuario haga scroll.
+  // IMPORTANTE: este hook (y sus useRef/useState) tienen que estar ANTES de los "return"
+  // condicionales de Activacion/Login de mas abajo -por eso las dependencias usan "user?.role"
+  // con "?." en vez de "user.role": en el primer render, antes de iniciar sesion, "user" todavia
+  // es null, y el hook se ejecuta igual (con las mismas dependencias en el mismo orden) para
+  // cumplir la regla de que los hooks de React no pueden cambiar de orden entre renders.
+  const refSidebarScroll = useRef(null);
+  const refNav = useRef(null);
+  const [escalaMenu, setEscalaMenu] = useState(1);
+  useLayoutEffect(() => {
+    const recalcular = () => {
+      const contenedor = refSidebarScroll.current;
+      const nav = refNav.current;
+      if (!contenedor || !nav) return;
+      // Se mide siempre a escala 1 para saber la altura "real" del contenido, antes de decidir
+      // si hace falta encoger.
+      nav.style.transform = 'scale(1)';
+      nav.style.width = '100%';
+      const altoDisponible = contenedor.clientHeight;
+      const altoNecesario = nav.scrollHeight;
+      if (altoNecesario > altoDisponible && altoNecesario > 0) {
+        const escala = Math.max(0.55, altoDisponible / altoNecesario);
+        setEscalaMenu(escala);
+      } else {
+        setEscalaMenu(1);
+      }
+    };
+    recalcular();
+    window.addEventListener('resize', recalcular);
+    return () => window.removeEventListener('resize', recalcular);
+  }, [menuFacturacionAbierto, menuComprasAbierto, menuCargoDescargoAbierto, menuReportesAbierto, menuConfigAbierto, user?.role]);
+
   // Mientras se muestra Activacion o Login, la ventana se ve chica y centrada (como cualquier
   // pantalla de ingreso); apenas hay un usuario logueado, pasa a "modo app" (maximizada). Este
   // efecto tiene que declararse ANTES de los "return" de abajo (Activacion/Login), porque los
@@ -269,41 +302,6 @@ export default function App() {
     setView('reportes');
     setMenuReportesAbierto(false);
   };
-
-  // El menu vertical debe verse SIEMPRE completo (todas las opciones), sin importar la
-  // resolucion/alto de pantalla donde se instale, y sin depender de que el usuario haga scroll.
-  // Antes ".sidebar-scroll" solo permitia scrollear con la rueda si el contenido no entraba, lo
-  // cual technically mostraba todo pero escondia opciones fuera de la vista sin avisar. Ahora,
-  // si el <nav> (con todos los botones) no entra completo en el alto disponible, se encoje
-  // proporcionalmente (transform: scale) hasta que quepa entero -asi nunca se corta ni hace
-  // falta scrollear, en cualquier resolucion. Si sí entra completo, se queda al tamaño normal
-  // (escala 1). Se recalcula cada vez que cambia el tamaño de la ventana o se abre/cierra un
-  // submenu (que puede agregar/quitar botones visibles y cambiar el alto total del <nav>).
-  const refSidebarScroll = useRef(null);
-  const refNav = useRef(null);
-  const [escalaMenu, setEscalaMenu] = useState(1);
-  useLayoutEffect(() => {
-    const recalcular = () => {
-      const contenedor = refSidebarScroll.current;
-      const nav = refNav.current;
-      if (!contenedor || !nav) return;
-      // Se mide siempre a escala 1 para saber la altura "real" del contenido, antes de decidir
-      // si hace falta encoger.
-      nav.style.transform = 'scale(1)';
-      nav.style.width = '100%';
-      const altoDisponible = contenedor.clientHeight;
-      const altoNecesario = nav.scrollHeight;
-      if (altoNecesario > altoDisponible && altoNecesario > 0) {
-        const escala = Math.max(0.55, altoDisponible / altoNecesario);
-        setEscalaMenu(escala);
-      } else {
-        setEscalaMenu(1);
-      }
-    };
-    recalcular();
-    window.addEventListener('resize', recalcular);
-    return () => window.removeEventListener('resize', recalcular);
-  }, [algunSubmenuAbierto, user.role]);
 
   return (
     <div className="app-shell">
