@@ -2947,7 +2947,7 @@ function ClienteFichaModal({ clienteId, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(16,24,40,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: '#fff', borderRadius: '10px', padding: '1.2rem', width: '640px', maxHeight: '80vh', overflowY: 'auto' }}>
+      <div style={{ background: '#fff', borderRadius: '10px', padding: '1.2rem', width: '640px', maxWidth: '95vw', maxHeight: '80vh', overflowY: 'auto' }}>
         {cargando || !datos ? (
           <p>Cargando...</p>
         ) : !datos.ok ? (

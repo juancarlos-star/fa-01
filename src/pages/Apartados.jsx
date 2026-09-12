@@ -112,6 +112,8 @@ function ModalResumenApartado({ apartado, items, abono, settings, onImprimir, on
           padding: '1.5rem',
           width: '100%',
           maxWidth: 440,
+          maxHeight: '90vh',
+          overflowY: 'auto',
           boxShadow: '0 20px 40px rgba(0,0,0,0.25)'
         }}
       >
