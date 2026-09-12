@@ -4713,28 +4713,52 @@ ipcMain.handle('reportes:stockMuerto', () => {
 // unidad individual (IMEI/codigo) porque el conteo fisico de esos se hace unidad por unidad.
 // Igual que arriba, se separa en una funcion propia para poder llamarla desde el correo
 // automatico/manual sin pasar por IPC.
+// depositoId === 'todos' (o la constante TODOS_LOS_DEPOSITOS) trae el conteo sumando/uniendo
+// todos los depositos, en vez de filtrar por uno solo.
 function obtenerReporteInventarioFisico(db, depositoId) {
   if (!depositoId) return { ok: false, message: 'Debe seleccionar un deposito' };
 
-  const deposito = db.prepare('SELECT * FROM depositos WHERE id = ?').get(depositoId);
+  const esTodos = depositoId === 'todos';
+
+  const deposito = esTodos
+    ? { id: null, nombre: 'Todos los depósitos' }
+    : db.prepare('SELECT * FROM depositos WHERE id = ?').get(depositoId);
   if (!deposito) return { ok: false, message: 'Deposito no encontrado' };
 
-  const accesorios = db.prepare(
-    `SELECT p.id AS product_id, p.nombre, p.codigo_producto, p.codigo_barras,
-            COALESCE(psd.cantidad, 0) AS cantidadSistema
-     FROM products p
-     LEFT JOIN product_stock_deposito psd ON psd.product_id = p.id AND psd.deposito_id = ?
-     WHERE p.tipo = 'accesorio'
-     ORDER BY p.nombre`
-  ).all(depositoId);
+  const accesorios = esTodos
+    ? db.prepare(
+        `SELECT p.id AS product_id, p.nombre, p.codigo_producto, p.codigo_barras,
+                COALESCE(SUM(psd.cantidad), 0) AS cantidadSistema
+         FROM products p
+         LEFT JOIN product_stock_deposito psd ON psd.product_id = p.id
+         WHERE p.tipo = 'accesorio'
+         GROUP BY p.id
+         ORDER BY p.nombre`
+      ).all()
+    : db.prepare(
+        `SELECT p.id AS product_id, p.nombre, p.codigo_producto, p.codigo_barras,
+                COALESCE(psd.cantidad, 0) AS cantidadSistema
+         FROM products p
+         LEFT JOIN product_stock_deposito psd ON psd.product_id = p.id AND psd.deposito_id = ?
+         WHERE p.tipo = 'accesorio'
+         ORDER BY p.nombre`
+      ).all(depositoId);
 
-  const unidades = db.prepare(
-    `SELECT u.id AS unit_id, u.codigo, p.id AS product_id, p.nombre, p.tipo, p.codigo_producto
-     FROM inventory_units u
-     JOIN products p ON p.id = u.product_id
-     WHERE u.deposito_id = ? AND u.estado = 'disponible'
-     ORDER BY p.tipo, p.nombre, u.codigo`
-  ).all(depositoId);
+  const unidades = esTodos
+    ? db.prepare(
+        `SELECT u.id AS unit_id, u.codigo, p.id AS product_id, p.nombre, p.tipo, p.codigo_producto
+         FROM inventory_units u
+         JOIN products p ON p.id = u.product_id
+         WHERE u.estado = 'disponible'
+         ORDER BY p.tipo, p.nombre, u.codigo`
+      ).all()
+    : db.prepare(
+        `SELECT u.id AS unit_id, u.codigo, p.id AS product_id, p.nombre, p.tipo, p.codigo_producto
+         FROM inventory_units u
+         JOIN products p ON p.id = u.product_id
+         WHERE u.deposito_id = ? AND u.estado = 'disponible'
+         ORDER BY p.tipo, p.nombre, u.codigo`
+      ).all(depositoId);
 
   return {
     ok: true,
