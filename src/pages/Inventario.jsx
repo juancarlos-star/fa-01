@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
+import GridPaginado from '../components/GridPaginado.jsx';
 import { fmt } from '../utils/format.js';
 
 // Los dialogos nativos (alert/confirm) le quitan la activacion de la ventana a Windows a nivel
@@ -455,86 +456,80 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
       ) : units.length === 0 ? (
         <p>Sin unidades registradas todavia.</p>
       ) : (
-        <div
-          style={{
-            border: '1px solid #ddd',
-            borderRadius: '6px',
-            background: '#fff',
-            padding: '0.5rem',
-            maxHeight: '380px',
-            overflowY: 'auto',
-            overflowX: 'auto',
-            display: 'grid',
-            gridAutoFlow: 'column',
-            gridTemplateRows: 'repeat(10, auto)',
-            gridAutoColumns: 'minmax(200px, 1fr)',
-            columnGap: '0.75rem',
-            width: '100%'
-          }}
-        >
-          {units.map((u) => (
-            <div
-              key={u.id}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                padding: '0.35rem 0.4rem',
-                borderBottom: '1px solid #eee',
-                fontSize: '0.85rem'
-              }}
-            >
-              {editandoCodigoUnitId === u.id ? (
-                <span style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                  <input
-                    type="text"
-                    value={nuevoCodigoUnitValor}
-                    onChange={(e) => setNuevoCodigoUnitValor(e.target.value)}
-                    style={{ width: '160px' }}
-                    autoFocus
-                  />
-                  {errorCodigoUnit && <span style={{ color: 'red', fontSize: '0.75rem' }}>{errorCodigoUnit}</span>}
-                  <span>
-                    <button onClick={() => guardarEdicionCodigoUnit(u.id)} disabled={guardandoCodigoUnit} style={{ fontSize: '0.75rem' }}>
-                      {guardandoCodigoUnit ? 'Guardando...' : 'Guardar'}
-                    </button>{' '}
-                    <button onClick={cancelarEdicionCodigoUnit} disabled={guardandoCodigoUnit} style={{ fontSize: '0.75rem' }}>Cancelar</button>
-                  </span>
-                </span>
-              ) : (
-                <span style={{ wordBreak: 'break-all' }}>
-                  {u.codigo} — <em>{labelEstadoUnidad(u)}</em>{' '}
-                  {u.estado !== 'vendido' && (
-                    <button className="btn-accion-icono" title="Editar" onClick={() => abrirEdicionCodigoUnit(u)}>
-                      <IconoLapiz />
-                    </button>
-                  )}
-                </span>
-              )}
-              {esAdmin && (
-                editandoCostoUnitId === u.id ? (
-                  <span style={{ marginTop: '0.2rem' }}>
+        <div style={{ border: '1px solid #ddd', borderRadius: '6px', background: '#fff', padding: '0.5rem' }}>
+          <GridPaginado
+            items={units}
+            keyExtractor={(u) => u.id}
+            filasPorColumna={10}
+            anchoMinColumna={200}
+            // El ancho de columna se calcula segun el codigo/IMEI mas largo que haya
+            // actualmente (mas la etiqueta de estado y el icono de editar), y se recalcula
+            // solo cada vez que se agrega, edita o quita una unidad.
+            medirTexto={(u) => `${u.codigo} — ${labelEstadoUnidad(u)}`}
+            paddingExtra={90}
+            renderItem={(u) => (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: '0.35rem 0.4rem',
+                  borderBottom: '1px solid #eee',
+                  fontSize: '0.85rem'
+                }}
+              >
+                {editandoCodigoUnitId === u.id ? (
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                     <input
-                      type="number"
-                      step="0.01"
-                      value={nuevoCostoUnitValor}
-                      onChange={(e) => setNuevoCostoUnitValor(e.target.value)}
-                      style={{ width: '80px' }}
+                      type="text"
+                      value={nuevoCodigoUnitValor}
+                      onChange={(e) => setNuevoCodigoUnitValor(e.target.value)}
+                      style={{ width: '160px' }}
                       autoFocus
                     />
-                    <button onClick={() => guardarEdicionCostoUnit(u.id)}>Guardar</button>
-                    <button onClick={cancelarEdicionCostoUnit}>Cancelar</button>
+                    {errorCodigoUnit && <span style={{ color: 'red', fontSize: '0.75rem' }}>{errorCodigoUnit}</span>}
+                    <span>
+                      <button onClick={() => guardarEdicionCodigoUnit(u.id)} disabled={guardandoCodigoUnit} style={{ fontSize: '0.75rem' }}>
+                        {guardandoCodigoUnit ? 'Guardando...' : 'Guardar'}
+                      </button>{' '}
+                      <button onClick={cancelarEdicionCodigoUnit} disabled={guardandoCodigoUnit} style={{ fontSize: '0.75rem' }}>Cancelar</button>
+                    </span>
                   </span>
                 ) : (
-                  <span style={{ marginTop: '0.2rem', color: '#666' }}>
-                    (costo: ${fmt(Number(u.costo_unitario_usd || 0))}{' '}
-                    <button className="btn-accion-icono" title="Editar" onClick={() => abrirEdicionCostoUnit(u)}>
-                      <IconoLapiz />
-                    </button>)
+                  <span style={{ wordBreak: 'break-all' }}>
+                    {u.codigo} — <em>{labelEstadoUnidad(u)}</em>{' '}
+                    {u.estado !== 'vendido' && (
+                      <button className="btn-accion-icono" title="Editar" onClick={() => abrirEdicionCodigoUnit(u)}>
+                        <IconoLapiz />
+                      </button>
+                    )}
                   </span>
-                )
-              )}
-            </div>
-          ))}
+                )}
+                {esAdmin && (
+                  editandoCostoUnitId === u.id ? (
+                    <span style={{ marginTop: '0.2rem' }}>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={nuevoCostoUnitValor}
+                        onChange={(e) => setNuevoCostoUnitValor(e.target.value)}
+                        style={{ width: '80px' }}
+                        autoFocus
+                      />
+                      <button onClick={() => guardarEdicionCostoUnit(u.id)}>Guardar</button>
+                      <button onClick={cancelarEdicionCostoUnit}>Cancelar</button>
+                    </span>
+                  ) : (
+                    <span style={{ marginTop: '0.2rem', color: '#666' }}>
+                      (costo: ${fmt(Number(u.costo_unitario_usd || 0))}{' '}
+                      <button className="btn-accion-icono" title="Editar" onClick={() => abrirEdicionCostoUnit(u)}>
+                        <IconoLapiz />
+                      </button>)
+                    </span>
+                  )
+                )}
+              </div>
+            )}
+          />
         </div>
       )}
     </div>
