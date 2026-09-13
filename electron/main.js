@@ -1855,6 +1855,19 @@ ipcMain.handle('licencia:desactivar', () => {
   return { ok: true };
 });
 
+// Clave para desbloquear, en la pantalla de Configuracion > Bases de datos, el boton de
+// "Desactivar licencia (solo pruebas)". La verificacion se hace aca, en el proceso principal,
+// a proposito -y no en el codigo de la pantalla (src/pages/Configuracion.jsx)- para que la
+// clave no quede a simple vista para quien abra las devtools del programa y revise el codigo de
+// la interfaz. Este archivo (electron/main.js) tambien es js corriente y en teoria se podria
+// revisar igual, pero no es lo que se inspecciona con F12/devtools como el codigo de pantalla,
+// asi que es un obstaculo bastante mayor para alguien que solo esta curioseando la app.
+const CLAVE_HERRAMIENTA_PRUEBAS = '1330024';
+ipcMain.handle('licencia:verificarClavePruebas', (event, { clave }) => {
+  return { ok: clave === CLAVE_HERRAMIENTA_PRUEBAS };
+});
+
+
 ipcMain.handle('settings:get', () => {
   const db = getDb();
   const rows = db.prepare('SELECT key, value FROM settings').all();

@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('api', {
   licenciaEstado: () => ipcRenderer.invoke('licencia:estado'),
   licenciaActivar: (codigo) => ipcRenderer.invoke('licencia:activar', { codigo }),
   licenciaDesactivar: () => ipcRenderer.invoke('licencia:desactivar'),
+  licenciaVerificarClavePruebas: (clave) => ipcRenderer.invoke('licencia:verificarClavePruebas', { clave }),
   licenciaEnviarSolicitud: (forzar) => ipcRenderer.invoke('licencia:enviarSolicitud', { forzar }),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (values) => ipcRenderer.invoke('settings:update', values),
