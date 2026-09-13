@@ -5179,6 +5179,22 @@ ipcMain.handle('reportes:ventasRelacion', (event, { desde, hasta, agrupacion }) 
 // tanto "Generar Factura" como "Nota de Venta", ya que ambas se guardan en la misma tabla).
 // Se excluyen devoluciones (es_devolucion = 0 en ambos lados) para no inflar ni distorsionar las
 // cantidades. El rango es de los ultimos 30 dias, agrupado por dia.
+//
+// IMPORTANTE: "Ventas por categoria" (y su tendencia) se agrupan por la CATEGORIA REAL del
+// producto (products.categoria, ej. "Telefonos", "SIM (ICCID)", "USIM", "Accesorios", "Otros",
+// "Fundas"...) y ya NO solo por el "tipo" fijo del sistema (equipo/simcard/usim/accesorio). Antes,
+// como el tipo "accesorio" agrupaba TODAS las categorias de accesorio en un solo balde
+// "Accesorios", cualquier categoria nueva que el usuario creara (ej. "Otros") quedaba mezclada
+// ahi sin verse por separado. Ahora cada categoria (incluyendo las nuevas que se creen desde
+// Categorias) aparece automaticamente como su propia barra/anillo, sin tocar codigo cada vez que
+// se agregue una.
+//
+// Como el numero de categorias no tiene limite (el usuario puede crear las que quiera), se
+// devuelven TODAS ordenadas de mayor a menor cantidad vendida, y es la pantalla de Inicio la que
+// decide cuantas caben (encogiendo las graficas automaticamente) y, si aun asi no caben todas,
+// se limita a mostrar solo las MAX_CATEGORIAS_DASHBOARD que mas se vendieron.
+const MAX_CATEGORIAS_DASHBOARD = 8;
+
 ipcMain.handle('reportes:dashboardInicio', () => {
   const db = getDb();
   const DIAS = 30;
@@ -5190,9 +5206,11 @@ ipcMain.handle('reportes:dashboardInicio', () => {
   const hastaStr = aISO(hoy);
 
   const filas = db.prepare(
-    `SELECT date(f.created_at) AS fecha, fi.tipo, fi.precio_unitario_usd, fi.cantidad
+    `SELECT date(f.created_at) AS fecha, fi.tipo, fi.precio_unitario_usd, fi.cantidad,
+            COALESCE(p.categoria, fi.tipo) AS categoria
      FROM factura_items fi
      JOIN facturas f ON f.id = fi.factura_id
+     LEFT JOIN products p ON p.id = fi.product_id
      WHERE f.es_devolucion = 0 AND fi.es_devolucion = 0
        AND f.created_at BETWEEN ? AND ?`
   ).all(`${desdeStr} 00:00:00`, `${hastaStr} 23:59:59`);
@@ -5205,21 +5223,36 @@ ipcMain.handle('reportes:dashboardInicio', () => {
     porDiaMapa.set(aISO(d), 0);
   }
 
-  const porCategoria = { equipo: 0, simcard: 0, usim: 0, accesorio: 0 };
+  // Etiquetas fijas y bonitas para los tipos base (equipo/simcard/usim solo tienen una
+  // categoria posible cada uno). Para "accesorio" se usa el nombre real de la categoria tal
+  // cual esta en products.categoria (ej. "Accesorios", "Otros", "Fundas"...).
+  const ETIQUETA_TIPO = { equipo: 'Teléfonos', simcard: 'SIM (ICCID)', usim: 'USIM' };
+
   const simcardPorPrecioMapa = new Map();
   // Para la tendencia por categoria: cantidad en la 1ra mitad del periodo vs la 2da mitad.
   const mitadFecha = aISO((() => { const d = new Date(desde); d.setDate(d.getDate() + Math.floor(DIAS / 2)); return d; })());
-  const porCategoriaMitad = {
-    equipo: [0, 0], simcard: [0, 0], usim: [0, 0], accesorio: [0, 0]
-  };
+
+  // Map de categoria -> { etiqueta, tipo, total, antes, despues }
+  const categoriasMapa = new Map();
 
   for (const r of filas) {
     porDiaMapa.set(r.fecha, (porDiaMapa.get(r.fecha) || 0) + r.cantidad);
-    if (porCategoria[r.tipo] !== undefined) {
-      porCategoria[r.tipo] += r.cantidad;
-      const idx = r.fecha < mitadFecha ? 0 : 1;
-      porCategoriaMitad[r.tipo][idx] += r.cantidad;
+
+    const clave = r.tipo === 'accesorio' ? `accesorio:${r.categoria || 'Accesorios'}` : r.tipo;
+    if (!categoriasMapa.has(clave)) {
+      categoriasMapa.set(clave, {
+        clave,
+        etiqueta: ETIQUETA_TIPO[r.tipo] || r.categoria || 'Accesorios',
+        tipo: r.tipo,
+        total: 0,
+        antes: 0,
+        despues: 0
+      });
     }
+    const entrada = categoriasMapa.get(clave);
+    entrada.total += r.cantidad;
+    if (r.fecha < mitadFecha) entrada.antes += r.cantidad; else entrada.despues += r.cantidad;
+
     if (r.tipo === 'simcard') {
       const precioKey = Number(r.precio_unitario_usd || 0).toFixed(2);
       simcardPorPrecioMapa.set(precioKey, (simcardPorPrecioMapa.get(precioKey) || 0) + r.cantidad);
@@ -5233,32 +5266,41 @@ ipcMain.handle('reportes:dashboardInicio', () => {
     return despues > 0 ? 100 : 0;
   };
 
-  const tendenciaPorCategoria = {};
-  Object.keys(porCategoriaMitad).forEach((tipo) => {
-    const [antes, despues] = porCategoriaMitad[tipo];
-    tendenciaPorCategoria[tipo] = calcularTendenciaPct(antes, despues);
-  });
+  // Todas las categorias con ventas en el periodo, ordenadas de mayor a menor cantidad total.
+  const todasLasCategorias = Array.from(categoriasMapa.values())
+    .map((c) => ({
+      clave: c.clave,
+      etiqueta: c.etiqueta,
+      cantidad: c.total,
+      tendenciaPct: calcularTendenciaPct(c.antes, c.despues)
+    }))
+    .sort((a, b) => b.cantidad - a.cantidad);
 
-  const totalAntes = Object.values(porCategoriaMitad).reduce((acc, [a]) => acc + a, 0);
-  const totalDespues = Object.values(porCategoriaMitad).reduce((acc, [, d]) => acc + d, 0);
+  // Solo se envian al dashboard las que mas se venden, hasta el limite que cabe comodamente en
+  // el espacio de la pantalla de Inicio; el resto (si las hay) se resume aparte.
+  const categorias = todasLasCategorias.slice(0, MAX_CATEGORIAS_DASHBOARD);
+  const categoriasOmitidas = todasLasCategorias.length - categorias.length;
+
+  const totalAntes = Array.from(categoriasMapa.values()).reduce((acc, c) => acc + c.antes, 0);
+  const totalDespues = Array.from(categoriasMapa.values()).reduce((acc, c) => acc + c.despues, 0);
   const tendenciaTotalPct = calcularTendenciaPct(totalAntes, totalDespues);
 
   const simcardPorPrecio = Array.from(simcardPorPrecioMapa.entries())
     .map(([precio, cantidad]) => ({ precio: Number(precio), cantidad }))
     .sort((a, b) => a.precio - b.precio);
 
-  const totalGeneral = Object.values(porCategoria).reduce((a, b) => a + b, 0);
+  const totalGeneral = todasLasCategorias.reduce((acc, c) => acc + c.cantidad, 0);
 
   return {
     ok: true,
     desde: desdeStr,
     hasta: hastaStr,
     ventasPorDia,
-    porCategoria,
+    categorias,
+    categoriasOmitidas,
     simcardPorPrecio,
     totalGeneral,
-    tendenciaTotalPct,
-    tendenciaPorCategoria
+    tendenciaTotalPct
   };
 });
 
