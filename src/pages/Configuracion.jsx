@@ -391,6 +391,17 @@ function SeccionDepositos() {
 function SeccionBaseDatos() {
   const [mensajeBackup, setMensajeBackup] = useState('');
   const [desactivando, setDesactivando] = useState(false);
+  // "Herramienta de pruebas": por defecto no se ve nada (ni el texto explicativo ni el boton),
+  // solo un campo para escribir la clave. Se desbloquea (queda desbloqueado hasta que se
+  // navegue a otra pantalla y se vuelva a entrar aca) recien cuando la clave es correcta. La
+  // clave en si NUNCA viaja ni se compara en este archivo -se manda al proceso principal
+  // (electron/main.js) y es alli donde se compara, para que no quede a la vista revisando el
+  // codigo de esta pantalla con las devtools.
+  const [claveHerramienta, setClaveHerramienta] = useState('');
+  const [herramientaDesbloqueada, setHerramientaDesbloqueada] = useState(false);
+  const [verificandoClave, setVerificandoClave] = useState(false);
+  const [errorClave, setErrorClave] = useState('');
+
 
   const handleBackup = async () => {
     setMensajeBackup('');
@@ -413,13 +424,32 @@ function SeccionBaseDatos() {
   };
 
   const handleDesactivarLicencia = async () => {
-    if (!confirm('Esto vuelve a pedir la clave de activación la próxima vez que abras el programa. Úsalo solo para pruebas. ¿Continuar?')) return;
+    if (!confirm('¿Estás seguro de eliminar la licencia? Esto vuelve a pedir la clave de activación la próxima vez que abras el programa. Úsalo solo para pruebas.')) return;
     setDesactivando(true);
     try {
       await window.api.licenciaDesactivar();
       alert('Listo. Cierra el programa por completo y vuelve a abrirlo: te va a pedir la clave de activación de nuevo.');
     } finally {
       setDesactivando(false);
+    }
+  };
+
+  const handleVerificarClaveHerramienta = async () => {
+    if (!claveHerramienta) return;
+    setVerificandoClave(true);
+    setErrorClave('');
+    try {
+      const res = await window.api.licenciaVerificarClavePruebas(claveHerramienta);
+      if (res.ok) {
+        setHerramientaDesbloqueada(true);
+      } else {
+        setErrorClave('Clave incorrecta.');
+      }
+    } finally {
+      // Se borra el campo tanto si acerto como si no, para no dejar la clave escrita en
+      // pantalla mas tiempo del necesario.
+      setClaveHerramienta('');
+      setVerificandoClave(false);
     }
   };
 
@@ -439,15 +469,39 @@ function SeccionBaseDatos() {
 
       <div className="form-box" style={{ maxWidth: '460px', marginTop: '1rem' }}>
         <h3 style={{ marginTop: 0 }}>Herramienta de pruebas</h3>
-        <p style={{ fontSize: '0.85rem', color: '#666' }}>
-          La licencia se guarda dentro de esta misma base de datos, no en un archivo aparte — por
-          eso desinstalar y reinstalar el programa no la borra (la base de datos vive en la
-          carpeta de datos de Windows, que el instalador no toca). Usa este botón para volver a
-          dejar este equipo "sin activar" y poder probar esa pantalla otra vez.
-        </p>
-        <button type="button" onClick={handleDesactivarLicencia} disabled={desactivando}>
-          {desactivando ? 'Desactivando...' : 'Desactivar licencia (solo pruebas)'}
-        </button>
+        {!herramientaDesbloqueada ? (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              type="password"
+              value={claveHerramienta}
+              onChange={(e) => setClaveHerramienta(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleVerificarClaveHerramienta(); }}
+              placeholder="Clave de acceso"
+              style={{ flex: 1 }}
+            />
+            <button type="button" onClick={handleVerificarClaveHerramienta} disabled={verificandoClave || !claveHerramienta}>
+              {verificandoClave ? 'Verificando...' : 'Ingresar'}
+            </button>
+          </div>
+        ) : (
+          <>
+            <p style={{ fontSize: '0.85rem', color: '#666' }}>
+              La licencia se guarda dentro de esta misma base de datos, no en un archivo aparte — por
+              eso desinstalar y reinstalar el programa no la borra (la base de datos vive en la
+              carpeta de datos de Windows, que el instalador no toca). Usa este botón para volver a
+              dejar este equipo "sin activar" y poder probar esa pantalla otra vez.
+            </p>
+            <button
+              type="button"
+              onClick={handleDesactivarLicencia}
+              disabled={desactivando}
+              style={{ backgroundColor: '#dc2626', color: '#fff', borderColor: '#dc2626' }}
+            >
+              {desactivando ? 'Desactivando...' : 'Desactivar licencia (solo pruebas)'}
+            </button>
+          </>
+        )}
+        {errorClave && <p style={{ fontSize: '0.85rem', color: '#dc2626', marginTop: '8px' }}>{errorClave}</p>}
       </div>
     </div>
   );
