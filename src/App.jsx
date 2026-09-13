@@ -256,12 +256,19 @@ export default function App() {
     const nav = refNav.current;
     if (!contenedor || !nav) return;
 
+    // Margen de seguridad: sin esto, cuando el contenido cabe "justo" (0-2px de sobra) el
+    // calculo decide que no hace falta encoger nada (escala 1), pero cualquier variacion minima
+    // (redondeo del navegador, una fuente que termina de cargar un pixel mas ancha/alta, el
+    // portal del submenu, etc.) puede dejar el menu recortado por esos mismos 1-2px, sin scroll
+    // visible para notarlo. Restando este margen del alto disponible, siempre queda un colchon.
+    const MARGEN_SEGURIDAD_PX = 4;
+
     const recalcular = () => {
-      const altoDisponible = contenedor.clientHeight;
+      const altoDisponible = contenedor.clientHeight - MARGEN_SEGURIDAD_PX;
       const altoNecesario = nav.scrollHeight;
       setMenuEscala((prev) => {
         const next = (altoNecesario > altoDisponible && altoNecesario > 0)
-          ? { escala: altoDisponible / altoNecesario, altoPx: Math.ceil(altoNecesario * (altoDisponible / altoNecesario)) }
+          ? { escala: altoDisponible / altoNecesario, altoPx: Math.floor(altoNecesario * (altoDisponible / altoNecesario)) }
           : { escala: 1, altoPx: null };
         // Evita re-renders (y posibles bucles con el ResizeObserver) si el resultado es
         // practicamente el mismo que ya se tenia.
@@ -270,12 +277,33 @@ export default function App() {
       });
     };
 
+    // El ResizeObserver de mas abajo solo avisa cuando el TAMANO REAL de "contenedor" o "nav"
+    // cambia -pero abrir/cerrar un submenu, cambiar de vista o de rol NO cambia ese tamano (el
+    // submenu es un portal aparte, ver SidebarSubmenu), asi que en esos casos el observer nunca
+    // se entera de que "tocaria" recalcular. Como red de seguridad adicional (ademas del
+    // observer, que sigue cubriendo cambios de tamano de ventana), se vuelve a medir cada vez
+    // que cambia cualquier cosa que pueda afectar que opciones se muestran en el menu.
     recalcular();
+    // Un segundo intento en el siguiente frame: cubre el caso de que, justo al montar o al
+    // cambiar de vista, el navegador todavia no haya terminado de aplicar la fuente/el layout
+    // definitivo cuando se hizo la primera medicion.
+    const raf = requestAnimationFrame(recalcular);
+    // Y un tercer intento cuando las fuentes efectivamente terminen de cargar (por ejemplo la
+    // primera vez que arranca la app, antes de que "Segoe UI" o el fallback esten listos).
+    let cancelado = false;
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => { if (!cancelado) recalcular(); });
+    }
+
     const observer = new ResizeObserver(recalcular);
     observer.observe(contenedor);
     observer.observe(nav);
-    return () => observer.disconnect();
-  }, []);
+    return () => {
+      cancelado = true;
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
+  }, [view, user?.role, menuFacturacionAbierto, menuComprasAbierto, menuCargoDescargoAbierto, menuReportesAbierto, menuConfigAbierto]);
 
   // Mientras se muestra Activacion o Login, la ventana se ve chica y centrada (como cualquier
   // pantalla de ingreso); apenas hay un usuario logueado, pasa a "modo app" (maximizada). Este
