@@ -6,6 +6,7 @@ import CargoDescargoDocumentoDetalle from '../components/CargoDescargoDocumentoD
 import Facturas from './Facturas.jsx';
 import Etiquetas from './Etiquetas.jsx';
 import SelectorProducto from '../components/SelectorProducto.jsx';
+import GridPaginado from '../components/GridPaginado.jsx';
 import ProductoRapidoModal from '../components/ProductoRapidoModal.jsx';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { agruparItemsPorProducto } from '../utils/agruparFacturaItems.js';
@@ -1719,38 +1720,34 @@ function ReporteInventarioFisico() {
                 });
 
                 return (
-                  <table key={grupoTipo.tipo} style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1.5rem' }}>
-                    <thead>
-                      <tr style={{ textAlign: 'left', borderBottom: '2px solid #1d2939' }}>
-                        <th style={{ padding: '0.5rem' }} colSpan={3}>
-                          {TIPO_LABEL_INV[grupoTipo.tipo] || grupoTipo.tipo} ({grupoTipo.unidades.length})
-                        </th>
-                      </tr>
-                      <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd', color: '#667085', fontSize: '0.85rem' }}>
-                        <th style={{ padding: '0.35rem 0.5rem' }}>Producto</th>
-                        <th>Codigo / IMEI</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Array.from(porProducto.entries()).map(([nombre, unidades]) => (
-                        <React.Fragment key={nombre}>
-                          <tr style={{ background: '#f9fafb' }}>
-                            <td style={{ padding: '0.4rem 0.5rem', fontWeight: 600 }} colSpan={3}>
-                              {nombre} — {unidades.length} unidad{unidades.length === 1 ? '' : 'es'}
-                            </td>
-                          </tr>
-                          {unidades.map((u) => (
-                            <tr key={u.unit_id} style={{ borderBottom: '1px solid #eee' }}>
-                              <td style={{ padding: '0.5rem' }}></td>
-                              <td>{u.codigo}</td>
-                              <td></td>
-                            </tr>
-                          ))}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div
+                    key={grupoTipo.tipo}
+                    style={{ background: '#fff', marginBottom: '1.5rem', border: '1px solid #eee', borderRadius: '6px', overflow: 'hidden' }}
+                  >
+                    <div style={{ padding: '0.5rem', borderBottom: '2px solid #1d2939', fontWeight: 700 }}>
+                      {TIPO_LABEL_INV[grupoTipo.tipo] || grupoTipo.tipo} ({grupoTipo.unidades.length})
+                    </div>
+                    {Array.from(porProducto.entries()).map(([nombre, unidades]) => (
+                      <div key={nombre} style={{ borderBottom: '1px solid #eee' }}>
+                        <div style={{ padding: '0.4rem 0.5rem', fontWeight: 600, background: '#f9fafb' }}>
+                          {nombre} — {unidades.length} unidad{unidades.length === 1 ? '' : 'es'}
+                        </div>
+                        <div style={{ padding: '0.5rem' }}>
+                          <GridPaginado
+                            items={unidades}
+                            keyExtractor={(u) => u.unit_id}
+                            filasPorColumna={10}
+                            anchoMinColumna={160}
+                            renderItem={(u) => (
+                              <div style={{ padding: '0.3rem 0.5rem', borderBottom: '1px solid #f2f2f2', fontSize: '0.9rem', color: '#98002e' }}>
+                                {u.codigo}
+                              </div>
+                            )}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 );
               });
             })()
