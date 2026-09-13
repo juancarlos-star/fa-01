@@ -440,6 +440,78 @@ export async function generarPDFInventarioProductos(reporte, depositoLabel, opci
 
 // ---------------- Inventario: Fisico (hoja de conteo) ----------------
 
+// Reparte "codigos" en tantas columnas como quepan a lo ancho de la hoja (segun el largo real
+// del codigo mas largo) y, dentro de cada columna, tantas filas como quepan a lo largo de la
+// pagina — sin el tope de 10 que tiene la vista en pantalla. Si no alcanza el espacio, sigue
+// en paginas nuevas. Cada codigo lleva un pequeño casillero para marcarlo al contar fisicamente.
+// Devuelve el "y" donde quedo el cursor, para poder seguir dibujando debajo.
+function dibujarCodigosEnColumnasPDF(doc, codigos, startY, opciones = {}) {
+  const {
+    margenIzq = 10,
+    margenDer = 10,
+    margenInferior = 15,
+    margenSuperiorPagina = 15,
+    fuente = 8
+  } = opciones;
+
+  if (codigos.length === 0) return startY;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(fuente);
+
+  const ladoCheckbox = 3;
+  const holgura = 6;
+  const altoFila = 4.5;
+
+  let anchoTexto = 0;
+  codigos.forEach((c) => {
+    const w = doc.getTextWidth(String(c));
+    if (w > anchoTexto) anchoTexto = w;
+  });
+  const anchoColumna = anchoTexto + ladoCheckbox + holgura;
+
+  const anchoPagina = doc.internal.pageSize.getWidth();
+  const altoPagina = doc.internal.pageSize.getHeight();
+  const anchoDisponible = anchoPagina - margenIzq - margenDer;
+  const columnas = Math.max(1, Math.floor(anchoDisponible / anchoColumna));
+
+  let y = startY;
+  let indice = 0;
+  let yFinBloque = y;
+
+  while (indice < codigos.length) {
+    const filasDisponibles = Math.max(1, Math.floor((altoPagina - margenInferior - y) / altoFila));
+    const itemsEstaPagina = Math.min(codigos.length - indice, columnas * filasDisponibles);
+    let maxFilaUsada = 0;
+
+    for (let c = 0; c < columnas; c++) {
+      const inicioCol = indice + c * filasDisponibles;
+      if (inicioCol >= indice + itemsEstaPagina) break;
+      const finCol = Math.min(inicioCol + filasDisponibles, indice + itemsEstaPagina);
+      const x = margenIzq + c * anchoColumna;
+      for (let i = inicioCol; i < finCol; i++) {
+        const fila = i - inicioCol;
+        const cy = y + fila * altoFila + altoFila * 0.75;
+        doc.setDrawColor(120);
+        doc.rect(x, cy - ladoCheckbox, ladoCheckbox, ladoCheckbox);
+        doc.setTextColor(0, 0, 0);
+        doc.text(String(codigos[i]), x + ladoCheckbox + 1.5, cy);
+      }
+      maxFilaUsada = Math.max(maxFilaUsada, finCol - inicioCol);
+    }
+
+    indice += itemsEstaPagina;
+    yFinBloque = y + maxFilaUsada * altoFila;
+
+    if (indice < codigos.length) {
+      doc.addPage();
+      y = margenSuperiorPagina;
+    }
+  }
+
+  return yFinBloque + 4;
+}
+
 export async function generarPDFInventarioFisico(reporte, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   doc.setFont('helvetica', 'bold');
@@ -464,19 +536,46 @@ export async function generarPDFInventarioFisico(reporte, opciones = {}) {
     margin: { left: 10, right: 10 }
   });
 
-  const y2 = (doc.lastAutoTable?.finalY || 40) + 10;
-  doc.setFont('helvetica', 'bold');
-  doc.text('Teléfonos, SIM y USIM (por unidad — IMEI / codigo)', 10, y2);
+  let y = (doc.lastAutoTable?.finalY || 40) + 10;
+  const alturaPagina = doc.internal.pageSize.getHeight();
 
-  autoTable(doc, {
-    startY: y2 + 4,
-    head: [['Tipo', 'Producto', 'Codigo/IMEI', 'Contado (Si/No)']],
-    body: reporte.unidades.map((u) => [TIPO_LABEL[u.tipo] || u.tipo, u.nombre, u.codigo, '']),
-    theme: 'grid',
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
-    margin: { left: 10, right: 10 }
-  });
+  if (reporte.unidades.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Teléfonos, SIM y USIM (por unidad — IMEI / codigo, con casillero para marcar el conteo)', 10, y);
+    y += 6;
+
+    const ordenTipos = ['equipo', 'simcard', 'usim'];
+    ordenTipos.forEach((tipo) => {
+      const unidadesTipo = reporte.unidades.filter((u) => u.tipo === tipo);
+      if (unidadesTipo.length === 0) return;
+
+      if (y > alturaPagina - 25) { doc.addPage(); y = 15; }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(11, 79, 158);
+      doc.text(`${TIPO_LABEL[tipo] || tipo} (${unidadesTipo.length})`, 10, y);
+      doc.setTextColor(0, 0, 0);
+      y += 5;
+
+      const porProducto = new Map();
+      unidadesTipo.forEach((u) => {
+        if (!porProducto.has(u.nombre)) porProducto.set(u.nombre, []);
+        porProducto.get(u.nombre).push(u.codigo);
+      });
+
+      porProducto.forEach((codigos, nombre) => {
+        if (y > alturaPagina - 25) { doc.addPage(); y = 15; }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text(`${nombre} — ${codigos.length} unidad${codigos.length === 1 ? '' : 'es'}`, 10, y);
+        y += 4.5;
+        y = dibujarCodigosEnColumnasPDF(doc, codigos, y);
+      });
+
+      y += 3;
+    });
+  }
 
   if (opciones.imprimir) {
     await guardarAbrirEImprimirPDF(doc, `Inventario-Fisico_${fechaParaNombreArchivo()}`, 'Reportes');
