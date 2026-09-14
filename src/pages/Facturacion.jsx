@@ -858,15 +858,15 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
           <div className="pos-right-header">{esNotaVenta ? 'Nota de Venta' : 'Factura'} N° {numeroFacturaPreview}</div>
           <div className="pos-right-row">
             <span>Base imponible</span>
-            <span>{fmt(subtotal)}</span>
+            <span>${fmt(subtotal)}</span>
           </div>
           <div className="pos-right-row">
             <span>IVA ({ivaPorcentaje}%)</span>
-            <span>{fmt(iva)}</span>
+            <span>${fmt(iva)}</span>
           </div>
           <div className="pos-right-row total-final">
             <span>Total</span>
-            <span>{fmt(total)}</span>
+            <span>${fmt(total)}</span>
           </div>
           <div className="pos-right-footer">
             <span>Total cantidad de Items</span>
@@ -955,7 +955,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
                   </>
                 ) : ''}
               </td>
-              <td className="text-right">{filaProducto ? fmt(totalFila()) : ''}</td>
+              <td className="text-right">{filaProducto ? `$${fmt(totalFila())}` : ''}</td>
               <td>
                 <div className="pos-entrada-acciones">
                   {filaProducto && (
@@ -988,8 +988,8 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
                   </td>
                   <td>{g.cantidad}</td>
                   <td>UND</td>
-                  <td className="text-right">{fmt(g.precio_unitario)}</td>
-                  <td className="text-right">{fmt(g.precio_unitario * g.cantidad)}</td>
+                  <td className="text-right">${fmt(g.precio_unitario)}</td>
+                  <td className="text-right">${fmt(g.precio_unitario * g.cantidad)}</td>
                   <td>
                     {Array.isArray(keyPendienteQuitar) && keyPendienteQuitar[0] === g.keys[0] ? (
                       <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
@@ -1074,8 +1074,8 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
                         </td>
                         <td>{g.cantidad}</td>
                         <td>UND</td>
-                        <td className="text-right">{fmt(g.precio_unitario)}</td>
-                        <td className="text-right">{fmt(g.precio_unitario * g.cantidad)}</td>
+                        <td className="text-right">${fmt(g.precio_unitario)}</td>
+                        <td className="text-right">${fmt(g.precio_unitario * g.cantidad)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1084,7 +1084,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
             </div>
             <div className="pos-vertodo-footer">
               <span>Total cantidad de items: <strong>{totalPiezas}</strong></span>
-              <span>Total: <strong>{fmt(total)}</strong></span>
+              <span>Total: <strong>${fmt(total)}</strong></span>
               <button type="button" className="btn-primary" onClick={() => setMostrarModalVerTodo(false)}>Cerrar</button>
             </div>
           </div>

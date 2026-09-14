@@ -295,15 +295,15 @@ export default function DevolucionFacturas({ currentUser }) {
           <div className="pos-right-header">Devolución N° {proximoNumeroDevolucion != null ? String(proximoNumeroDevolucion).padStart(6, '0') : '------'}</div>
           <div className="pos-right-row">
             <span>Base imponible</span>
-            <span>{fmt(subtotal)}</span>
+            <span>${fmt(subtotal)}</span>
           </div>
           <div className="pos-right-row">
             <span>IVA ({ivaPorcentaje}%)</span>
-            <span>{fmt(iva)}</span>
+            <span>${fmt(iva)}</span>
           </div>
           <div className="pos-right-row total-final">
             <span>Total</span>
-            <span>{fmt(total)}</span>
+            <span>${fmt(total)}</span>
           </div>
           <div className="pos-right-footer">
             <span>Total cantidad de Items</span>
@@ -379,8 +379,8 @@ export default function DevolucionFacturas({ currentUser }) {
                       )}
                     </td>
                     <td>UND</td>
-                    <td className="text-right">{fmt(item.precio_unitario_usd)}</td>
-                    <td className="text-right">{fmt(totalLinea)}</td>
+                    <td className="text-right">${fmt(item.precio_unitario_usd)}</td>
+                    <td className="text-right">${fmt(totalLinea)}</td>
                     <td>
                       <button
                         type="button"
