@@ -630,6 +630,17 @@ th {
   font-size: 0.85rem;
 }
 
+/* Nombres de productos: mismo azul usado en Reportes > Gestion de Productos,
+   para que un producto se identifique visualmente igual en cualquier pantalla. */
+.producto-nombre {
+  color: #0057a3;
+}
+
+/* Codigos/IMEI/ICCID mostrados en reportes (mismo azul que el nombre de producto). */
+.codigo-reporte {
+  color: #0057a3;
+}
+
 .pos-table-wrap {
   background: #fff;
   border: 1px solid #d0d5dd;
