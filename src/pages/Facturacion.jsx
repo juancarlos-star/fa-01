@@ -3,6 +3,7 @@ import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { fmt } from '../utils/format.js';
 import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
 import SeleccionUnidadesModal from '../components/SeleccionUnidadesModal.jsx';
+import PagoModal from '../components/PagoModal.jsx';
 import BuscadorProductoInput from '../components/BuscadorProductoInput.jsx';
 
 export default function Facturacion({ currentUser, modo = 'factura', apartadoOrigen, onApartadoOrigenConsumido }) {
@@ -571,6 +572,11 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
   // se mantiene presionada la tecla F10 (el teclado repite el evento keydown) o se hace doble
   // clic muy rapido, justo en la ventana de tiempo antes de que el boton alcance a deshabilitarse.
   const totalizandoRef = useRef(false);
+  // Antes de emitir se pide la forma de pago (una o varias lineas: efectivo Bs/USD, tarjeta,
+  // transferencia, pago movil), EXCEPTO cuando esta factura/nota de venta viene de completar un
+  // Apartado -ese pago ya se cobro como abonos durante el apartado (ver Apartados.jsx), asi que
+  // no se le vuelve a pedir aqui (el backend tampoco lo exige en ese caso, ver facturas:crear).
+  const [mostrarModalPago, setMostrarModalPago] = useState(false);
 
   const handleTotalizar = async () => {
     if (totalizandoRef.current) return;
@@ -606,7 +612,15 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
         );
         return;
       }
+      // Viene de un Apartado ya cobrado: se emite directo, sin pedir forma de pago.
+      await emitirFactura(null);
+      return;
     }
+    // Venta directa: se pide la forma de pago antes de emitir de verdad.
+    setMostrarModalPago(true);
+  };
+
+  const emitirFactura = async (pagos) => {
     const cliente = { id: clienteSeleccionado.id };
     totalizandoRef.current = true;
     setEmitiendo(true);
@@ -617,7 +631,8 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
         usuario: currentUser?.username,
         depositoId: Number(depositoId),
         esNotaVenta,
-        apartadoOrigenId: apartadoOrigen?.apartadoId || null
+        apartadoOrigenId: apartadoOrigen?.apartadoId || null,
+        pagos
       });
 
       if (!res.ok) {
@@ -1033,6 +1048,19 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
           unidadesDisponibles={filaUnidadesDisponibles}
           onConfirm={confirmarSeleccionUnidades}
           onCancel={cancelarSeleccionUnidades}
+        />
+      )}
+
+      {mostrarModalPago && (
+        <PagoModal
+          titulo={esNotaVenta ? 'Cobrar nota de venta' : 'Cobrar factura'}
+          totalUsd={total}
+          tasaCambio={tasaCambio}
+          onCancel={() => setMostrarModalPago(false)}
+          onConfirm={async (pagos) => {
+            setMostrarModalPago(false);
+            await emitirFactura(pagos);
+          }}
         />
       )}
 

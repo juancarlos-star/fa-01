@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fmt } from '../utils/format.js';
 import ClienteNuevoModal from '../components/ClienteNuevoModal.jsx';
+import PagoModal from '../components/PagoModal.jsx';
 import SelectorProducto from '../components/SelectorProducto.jsx';
 import { generarReciboAbonoPDF } from '../utils/generarReciboAbonoPDF.js';
 
@@ -507,6 +508,9 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onGuardado }) {
   const [notas, setNotas] = useState('');
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
+  // Si hay abono inicial (abono > 0), antes de guardar se pide la forma de pago (una o varias
+  // lineas). Si no hay abono, se guarda directo -no hay nada que cobrar todavia.
+  const [mostrarModalPagoInicial, setMostrarModalPagoInicial] = useState(false);
 
   // Refs para el flujo de captura rapida por Enter del renglon "Productos a apartar":
   // Producto -> (Enter) -> Cantidad -> (Enter) -> Precio -> (Enter) agrega el renglon al
@@ -599,6 +603,16 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onGuardado }) {
     const abono = parseFloat(abonoInicial) || 0;
     if (abono > totalUsd + 0.005) { setError('El abono inicial no puede ser mayor al total'); return; }
 
+    if (abono > 0) {
+      // Hay abono inicial: se pide la forma de pago antes de guardar de verdad.
+      setMostrarModalPagoInicial(true);
+      return;
+    }
+    await guardarApartado(null);
+  };
+
+  const guardarApartado = async (pagosAbonoInicial) => {
+    const abono = parseFloat(abonoInicial) || 0;
     setGuardando(true);
     try {
       const res = await window.api.crearApartado({
@@ -614,7 +628,8 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onGuardado }) {
         })),
         abonoInicial: abono,
         notas,
-        usuario: currentUser?.username
+        usuario: currentUser?.username,
+        pagosAbonoInicial
       });
       if (!res.ok) { setError(res.message || 'No se pudo crear el apartado'); return; }
       // Ya no se imprime automaticamente aqui: se vuelve a la lista principal y se muestra la
@@ -798,6 +813,19 @@ function ApartadoNuevo({ currentUser, settings, onCancelar, onGuardado }) {
           onCancel={() => setMostrarModalClienteNuevo(false)}
         />
       )}
+
+      {mostrarModalPagoInicial && (
+        <PagoModal
+          titulo="Cobrar abono inicial"
+          totalUsd={parseFloat(abonoInicial) || 0}
+          tasaCambio={settings ? parseFloat(settings.tasa_cambio) : 1}
+          onCancel={() => setMostrarModalPagoInicial(false)}
+          onConfirm={async (pagos) => {
+            setMostrarModalPagoInicial(false);
+            await guardarApartado(pagos);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -812,6 +840,7 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
   const [motivoCancelar, setMotivoCancelar] = useState('');
   const [facturasCliente, setFacturasCliente] = useState([]);
   const [facturaElegida, setFacturaElegida] = useState('');
+  const [mostrarModalPagoAbono, setMostrarModalPagoAbono] = useState(false);
 
   const cargar = useCallback(async () => {
     const res = await window.api.detalleApartado(id);
@@ -835,13 +864,20 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
 
   const { apartado, items, abonos } = datos;
 
-  const handleAbonar = async () => {
+  const handleAbonar = () => {
     setError('');
     const m = parseFloat(montoAbono);
     if (!m || m <= 0) { setError('Monto invalido'); return; }
+    // Se pide la forma de pago antes de registrar el abono de verdad.
+    setMostrarModalPagoAbono(true);
+  };
+
+  const confirmarAbonoConPagos = async (pagos) => {
+    setMostrarModalPagoAbono(false);
+    const m = parseFloat(montoAbono);
     setProcesando(true);
     try {
-      const res = await window.api.abonarApartado(id, m, currentUser?.username);
+      const res = await window.api.abonarApartado(id, m, currentUser?.username, pagos);
       if (!res.ok) { setError(res.message || 'No se pudo registrar el abono'); return; }
       setMontoAbono('');
       cargar();
@@ -1066,6 +1102,16 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
             </div>
           )}
         </div>
+      )}
+
+      {mostrarModalPagoAbono && (
+        <PagoModal
+          titulo="Cobrar abono"
+          totalUsd={parseFloat(montoAbono) || 0}
+          tasaCambio={settings ? parseFloat(settings.tasa_cambio) : 1}
+          onCancel={() => setMostrarModalPagoAbono(false)}
+          onConfirm={confirmarAbonoConPagos}
+        />
       )}
     </div>
   );
