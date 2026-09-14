@@ -5685,8 +5685,10 @@ ipcMain.handle('apartados:buscarReciboPorNumero', (event, { numeroRecibo }) => {
   const soloDigitos = String(numeroRecibo || '').replace(/\D/g, '');
   const n = parseInt(soloDigitos, 10);
   if (!n) return { ok: false, message: 'Numero de recibo invalido' };
-  const abono = db.prepare('SELECT * FROM apartado_abonos WHERE numero_recibo = ?').get(n);
-  if (!abono) return { ok: false, message: `No existe ningun recibo con el numero ${n}` };
+  const abonoBase = db.prepare('SELECT * FROM apartado_abonos WHERE numero_recibo = ?').get(n);
+  if (!abonoBase) return { ok: false, message: `No existe ningun recibo con el numero ${n}` };
+  const pagosDelAbono = db.prepare('SELECT * FROM apartado_abono_pagos WHERE abono_id = ?').all(abonoBase.id);
+  const abono = { ...abonoBase, pagos: pagosDelAbono };
   const apartado = db.prepare(
     `SELECT a.*, d.nombre AS deposito_nombre FROM apartados a LEFT JOIN depositos d ON d.id = a.deposito_id WHERE a.id = ?`
   ).get(abono.apartado_id);
@@ -5724,9 +5726,11 @@ ipcMain.handle('apartados:buscarPorCliente', (event, { texto }) => {
      WHERE a.cliente_nombre LIKE ? OR a.cliente_telefono LIKE ? OR c.rif_cedula LIKE ?
      ORDER BY a.created_at DESC`
   ).all(like, like, like);
+  const pagosPorAbonoCliente = db.prepare('SELECT * FROM apartado_abono_pagos WHERE abono_id = ?');
   const resultado = apartados.map((a) => {
     const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(a.id);
-    const abonos = db.prepare('SELECT * FROM apartado_abonos WHERE apartado_id = ? ORDER BY created_at ASC').all(a.id);
+    const abonosBase = db.prepare('SELECT * FROM apartado_abonos WHERE apartado_id = ? ORDER BY created_at ASC').all(a.id);
+    const abonos = abonosBase.map((ab) => ({ ...ab, pagos: pagosPorAbonoCliente.all(ab.id) }));
     return { ...a, saldo_usd: Math.round((a.total_usd - a.abonado_usd) * 100) / 100, items, abonos };
   });
   return { ok: true, apartados: resultado };
