@@ -167,8 +167,10 @@ export default function Inventario({ currentUser }) {
     cargarProductos();
   };
 
+  const busquedaLower = busqueda.trim().toLowerCase();
   const productosFiltrados = products.filter((p) =>
-    p.nombre.toLowerCase().includes(busqueda.trim().toLowerCase())
+    p.nombre.toLowerCase().includes(busquedaLower) ||
+    (p.codigo_producto || '').toLowerCase().includes(busquedaLower)
   );
 
   // Columnas siempre presentes: Codigo, Producto, Categoria, Precio 1, Precio 2, Stock, Acciones.
@@ -220,7 +222,7 @@ export default function Inventario({ currentUser }) {
             type="text"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder={`Buscar por nombre en ${tab.label}...`}
+            placeholder={`Buscar por Ref. o nombre en ${tab.label}...`}
           />
         </div>
         <button

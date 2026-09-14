@@ -1614,12 +1614,22 @@ function ReporteCatalogoWhatsapp() {
   );
 }
 
+function IconoLupa() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
 function ReporteInventarioFisico() {
   const [depositos, setDepositos] = useState([]);
   const [depositoId, setDepositoId] = useState('');
   const [reporte, setReporte] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [generandoPDF, setGenerandoPDF] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
 
   useEffect(() => {
     window.api.listDepositos(true).then((lista) => {
@@ -1647,17 +1657,38 @@ function ReporteInventarioFisico() {
     }
   };
 
+  const busquedaLower = busqueda.trim().toLowerCase();
+  const coincide = (nombre, ref) =>
+    !busquedaLower ||
+    (nombre || '').toLowerCase().includes(busquedaLower) ||
+    (ref || '').toLowerCase().includes(busquedaLower);
+
+  const accesoriosFiltrados = reporte ? reporte.accesorios.filter((a) => coincide(a.nombre, a.codigo_producto)) : [];
+  const unidadesFiltradas = reporte ? reporte.unidades.filter((u) => coincide(u.nombre, u.codigo_producto)) : [];
+
   return (
     <div style={{ marginTop: '1rem' }}>
-      <div className="form-box" style={{ maxWidth: '360px' }}>
-        <label>Deposito a contar</label>
-        <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
-          {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
-          {depositos.length > 0 && <option value="todos">Todos los depósitos</option>}
-          {depositos.map((d) => (
-            <option key={d.id} value={d.id}>{d.nombre}</option>
-          ))}
-        </select>
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div className="form-box" style={{ maxWidth: '360px' }}>
+          <label>Deposito a contar</label>
+          <select value={depositoId} onChange={(e) => setDepositoId(e.target.value)}>
+            {depositos.length === 0 && <option value="">-- No hay depositos --</option>}
+            {depositos.length > 0 && <option value="todos">Todos los depósitos</option>}
+            {depositos.map((d) => (
+              <option key={d.id} value={d.id}>{d.nombre}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="campo-buscar-pill" style={{ maxWidth: '360px', flex: 1, minWidth: 220 }}>
+          <IconoLupa />
+          <input
+            type="text"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por Ref. o nombre del producto..."
+          />
+        </div>
       </div>
 
       {cargando || !reporte ? (
@@ -1671,19 +1702,19 @@ function ReporteInventarioFisico() {
             ajusta stock automaticamente.
           </p>
 
-          <h3>Total en inventario — {reporte.totalAccesorios + reporte.totalUnidades} unidades en sistema</h3>
+          <h3>Total en inventario — {accesoriosFiltrados.reduce((acc, a) => acc + a.cantidadSistema, 0) + unidadesFiltradas.length} unidades en sistema</h3>
 
-          {reporte.accesorios.length > 0 && (
+          {accesoriosFiltrados.length > 0 && (
             <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginBottom: '1.5rem' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-                  <th style={{ padding: '0.5rem' }}>Codigo</th>
+                  <th style={{ padding: '0.5rem' }}>Ref.</th>
                   <th>Producto</th>
                   <th>Cant. en sistema</th>
                 </tr>
               </thead>
               <tbody>
-                {reporte.accesorios.map((a) => (
+                {accesoriosFiltrados.map((a) => (
                   <tr key={a.product_id} style={{ borderBottom: '1px solid #eee' }}>
                     <td style={{ padding: '0.5rem' }}>{a.codigo_producto || '—'}</td>
                     <td>{a.nombre}</td>
@@ -1694,14 +1725,14 @@ function ReporteInventarioFisico() {
               <tfoot>
                 <tr style={{ borderTop: '2px solid #1d2939', fontWeight: 700, background: '#f9fafb' }}>
                   <td style={{ padding: '0.5rem' }} colSpan={2}>Subtotal Accesorios</td>
-                  <td>{reporte.totalAccesorios}</td>
+                  <td>{accesoriosFiltrados.reduce((acc, a) => acc + a.cantidadSistema, 0)}</td>
                 </tr>
               </tfoot>
             </table>
           )}
 
-          {reporte.unidades.length === 0 ? (
-            <p>No hay unidades disponibles en este deposito.</p>
+          {unidadesFiltradas.length === 0 ? (
+            <p>{busquedaLower ? 'Ningun producto coincide con la busqueda.' : 'No hay unidades disponibles en este deposito.'}</p>
           ) : (
             (() => {
               // Agrupadas por tipo (Teléfono/SIM/USIM) y, dentro de cada tipo, por producto —
@@ -1709,7 +1740,7 @@ function ReporteInventarioFisico() {
               // recorrer a mano una lista plana de decenas de IMEI/ICCID.
               const ordenTipos = ['equipo', 'simcard', 'usim'];
               const gruposPorTipo = ordenTipos
-                .map((tipo) => ({ tipo, unidades: reporte.unidades.filter((u) => u.tipo === tipo) }))
+                .map((tipo) => ({ tipo, unidades: unidadesFiltradas.filter((u) => u.tipo === tipo) }))
                 .filter((g) => g.unidades.length > 0);
 
               return gruposPorTipo.map((grupoTipo) => {
@@ -1741,7 +1772,7 @@ function ReporteInventarioFisico() {
                             medirTexto={(u) => u.codigo}
                             paddingExtra={40}
                             renderItem={(u) => (
-                              <div style={{ padding: '0.3rem 0.5rem', borderBottom: '1px solid #f2f2f2', fontSize: '0.9rem', color: '#0057a3' }}>
+                              <div style={{ padding: '0.3rem 0.5rem', borderBottom: '1px solid #f2f2f2', fontSize: '0.9rem' }}>
                                 {u.codigo}
                               </div>
                             )}
