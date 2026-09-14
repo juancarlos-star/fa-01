@@ -643,6 +643,8 @@ function crearIndicesSiHacenFalta(database) {
     CREATE INDEX IF NOT EXISTS idx_cargos_descargos_encabezado_created_at ON cargos_descargos_encabezado(created_at);
     CREATE INDEX IF NOT EXISTS idx_descargos_created_at ON descargos(created_at);
     CREATE INDEX IF NOT EXISTS idx_notificaciones_created_at ON notificaciones(created_at);
+    CREATE INDEX IF NOT EXISTS idx_factura_pagos_factura_id ON factura_pagos(factura_id);
+    CREATE INDEX IF NOT EXISTS idx_apartado_abono_pagos_abono_id ON apartado_abono_pagos(abono_id);
     CREATE INDEX IF NOT EXISTS idx_notificaciones_tipo_producto ON notificaciones(tipo, producto_id);
   `);
 }
@@ -908,6 +910,38 @@ function initDb() {
       usuario TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (apartado_id) REFERENCES apartados(id)
+    );
+    -- Desglose de como se cobro cada factura/nota de venta: en vez de un solo campo
+    -- "metodo_pago", cada factura puede tener VARIAS lineas aqui (una por cada metodo/moneda
+    -- que se uso), lo que cubre pagos mixtos sin necesitar un metodo "mixto" aparte (por
+    -- ejemplo: una linea de 20 USD en efectivo + otra de 300 Bs en efectivo + otra por tarjeta).
+    -- "monto" queda en la unidad tal cual se cobro (Bs o USD); "monto_usd" es ese mismo monto ya
+    -- convertido a USD con la tasa_cambio de ESA factura, para poder sumar/reportar todo junto
+    -- sin importar en que moneda se pago cada linea. El backend valida que la suma de
+    -- monto_usd de todas las lineas de una factura cuadre con su total_usd (ver facturas:crear).
+    CREATE TABLE IF NOT EXISTS factura_pagos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      factura_id INTEGER NOT NULL,
+      metodo TEXT NOT NULL CHECK(metodo IN ('efectivo','tarjeta','transferencia','pago_movil','otro')),
+      moneda TEXT NOT NULL CHECK(moneda IN ('Bs','USD')),
+      monto REAL NOT NULL,
+      monto_usd REAL NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (factura_id) REFERENCES facturas(id)
+    );
+    -- Mismo desglose que factura_pagos, pero para cada abono de un Apartado (tanto el abono
+    -- inicial que se puede cargar al crear el apartado, como los abonos posteriores desde
+    -- apartados:abonar). Se cuelga de apartado_abonos (no directo de apartados) porque el pago
+    -- mixto se arma por cada abono individual, no por el apartado completo.
+    CREATE TABLE IF NOT EXISTS apartado_abono_pagos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      abono_id INTEGER NOT NULL,
+      metodo TEXT NOT NULL CHECK(metodo IN ('efectivo','tarjeta','transferencia','pago_movil','otro')),
+      moneda TEXT NOT NULL CHECK(moneda IN ('Bs','USD')),
+      monto REAL NOT NULL,
+      monto_usd REAL NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (abono_id) REFERENCES apartado_abonos(id)
     );
   `);
 

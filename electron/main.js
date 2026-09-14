@@ -51,6 +51,61 @@ function depositoValido(db, depositoId) {
   return db.prepare('SELECT * FROM depositos WHERE id = ? AND activo = 1').get(depositoId);
 }
 
+const METODOS_PAGO_VALIDOS = ['efectivo', 'tarjeta', 'transferencia', 'pago_movil', 'otro'];
+const MONEDAS_PAGO_VALIDAS = ['Bs', 'USD'];
+
+// Valida y normaliza el arreglo "pagos" que llega desde el frontend (Facturacion.jsx /
+// Apartados.jsx) para facturas:crear y apartados:crear/abonar. Cada linea representa un
+// metodo+moneda+monto (un pago mixto es simplemente varias lineas: no existe un metodo
+// "mixto" aparte). Devuelve { ok:false, message } si algo no cuadra, o
+// { ok:true, pagosNormalizados, totalUsd } con cada linea ya con su equivalente en USD
+// calculado (monto tal cual si es USD, o monto / tasaCambio si es Bs), listo para insertar.
+// "montoEsperadoUsd" es el total que las lineas de pago deben sumar (con 1 centavo de
+// tolerancia, por redondeo): el total de la factura, o el monto del abono.
+function validarYNormalizarPagos(pagos, tasaCambio, montoEsperadoUsd, etiquetaDocumento) {
+  if (!Array.isArray(pagos) || pagos.length === 0) {
+    return { ok: false, message: `Registra al menos una forma de pago para ${etiquetaDocumento}` };
+  }
+  const pagosNormalizados = [];
+  let sumaUsd = 0;
+  for (const p of pagos) {
+    const metodo = p && p.metodo;
+    const moneda = p && p.moneda;
+    const monto = parseFloat(p && p.monto);
+    if (!METODOS_PAGO_VALIDOS.includes(metodo)) {
+      return { ok: false, message: `Metodo de pago invalido: "${metodo}"` };
+    }
+    if (!MONEDAS_PAGO_VALIDAS.includes(moneda)) {
+      return { ok: false, message: `Moneda de pago invalida: "${moneda}"` };
+    }
+    if (!monto || monto <= 0) {
+      return { ok: false, message: 'Cada linea de pago debe tener un monto mayor a cero' };
+    }
+    const montoUsd = moneda === 'USD' ? monto : monto / (tasaCambio || 1);
+    sumaUsd += montoUsd;
+    pagosNormalizados.push({ metodo, moneda, monto, montoUsd: Math.round(montoUsd * 100) / 100 });
+  }
+  if (Math.abs(sumaUsd - montoEsperadoUsd) > 0.01) {
+    return {
+      ok: false,
+      message: `Las formas de pago suman $${sumaUsd.toFixed(2)}, pero ${etiquetaDocumento} es de $${montoEsperadoUsd.toFixed(2)}`
+    };
+  }
+  return { ok: true, pagosNormalizados };
+}
+
+// Inserta en "tabla" (factura_pagos o apartado_abono_pagos) las lineas ya normalizadas por
+// validarYNormalizarPagos, colgadas de "columnaId" (factura_id o abono_id) = idDocumento.
+function insertarLineasDePago(db, tabla, columnaId, idDocumento, pagosNormalizados) {
+  const insert = db.prepare(
+    `INSERT INTO ${tabla} (${columnaId}, metodo, moneda, monto, monto_usd, created_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))`
+  );
+  pagosNormalizados.forEach((p) => {
+    insert.run(idDocumento, p.metodo, p.moneda, p.monto, p.montoUsd);
+  });
+}
+
 // Cuanto de un producto esta "reservado" ahora mismo por Apartados (feature #8), sin haber
 // tocado el stock real todavia. Se cuenta mientras el apartado sigue 'activo' o
 // 'listo_para_entregar' (ya pago todo pero la factura real aun no se genera/vincula) -en
@@ -2429,7 +2484,7 @@ ipcMain.handle('proveedores:update', (event, { id, nombre, rif, telefono, direcc
 // ---------- IPC: Facturacion ----------
 ipcMain.handle('facturas:crear', (event, payload) => {
   const db = getDb();
-  const { cliente, items, usuario, sinCliente, depositoId, esNotaVenta, apartadoOrigenId } = payload;
+  const { cliente, items, usuario, sinCliente, depositoId, esNotaVenta, apartadoOrigenId, pagos } = payload;
 
   if (!items || items.length === 0) {
     return { ok: false, message: `La ${esNotaVenta ? 'nota de venta' : 'factura'} debe tener al menos un producto` };
@@ -2549,6 +2604,22 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   const ivaBs = ivaUsd * tasaCambio;
   const totalBs = totalUsd * tasaCambio;
 
+  // La Nota de Venta que se genera automaticamente al completar un Apartado ya cobro el pago
+  // real como abonos DURANTE el apartado (ver apartados:abonar) -esta "factura" solo formaliza
+  // el documento, no es un cobro nuevo-, asi que no se le vuelve a pedir forma de pago aparte.
+  // Fuera de ese caso (venta directa desde Facturacion.jsx), la forma de pago es obligatoria.
+  let pagosValidados = null;
+  if (!apartadoOrigenValido) {
+    const resultadoPagos = validarYNormalizarPagos(
+      pagos,
+      tasaCambio,
+      totalUsd,
+      esNotaVenta ? 'la nota de venta' : 'la factura'
+    );
+    if (!resultadoPagos.ok) return resultadoPagos;
+    pagosValidados = resultadoPagos.pagosNormalizados;
+  }
+
   let clienteId = null;
   let clienteNombre = 'Consumidor final';
   let clienteRif = '';
@@ -2587,6 +2658,10 @@ ipcMain.handle('facturas:crear', (event, payload) => {
       .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '', depositoId, esNotaVenta ? 1 : 0, apartadoOrigenValido ? apartadoOrigenValido.id : null);
 
     const facturaId = facturaInfo.lastInsertRowid;
+
+    if (pagosValidados) {
+      insertarLineasDePago(db, 'factura_pagos', 'factura_id', facturaId, pagosValidados);
+    }
 
     const insertItem = db.prepare(
       `INSERT INTO factura_items (factura_id, product_id, unit_id, tipo, descripcion, codigo, cantidad, precio_unitario_usd, subtotal_usd, costo_unitario_usd)
@@ -2729,7 +2804,8 @@ ipcMain.handle('facturas:detalle', (event, { id }) => {
   ).get(id);
   if (!factura) return { ok: false, message: 'Factura no encontrada' };
   const items = db.prepare('SELECT * FROM factura_items WHERE factura_id = ?').all(id);
-  return { ok: true, factura, items };
+  const pagos = db.prepare('SELECT * FROM factura_pagos WHERE factura_id = ? ORDER BY id ASC').all(id);
+  return { ok: true, factura, items, pagos };
 });
 
 ipcMain.handle('facturas:eliminar', (event, { id, motivo }) => {
@@ -5365,7 +5441,7 @@ ipcMain.handle('reportes:dashboardInicio', () => {
 // reservar). O activo -> cancelado en cualquier momento antes de completarse.
 ipcMain.handle('apartados:crear', (event, payload) => {
   const db = getDb();
-  const { clienteId, clienteNombre, clienteTelefono, items, abonoInicial, notas, usuario, depositoId } = payload || {};
+  const { clienteId, clienteNombre, clienteTelefono, items, abonoInicial, notas, usuario, depositoId, pagosAbonoInicial } = payload || {};
 
   if (!clienteNombre || !clienteNombre.trim()) {
     return { ok: false, message: 'El nombre del cliente es obligatorio' };
@@ -5401,6 +5477,16 @@ ipcMain.handle('apartados:crear', (event, payload) => {
     return { ok: false, message: 'El abono inicial no puede ser mayor al total del apartado' };
   }
 
+  let pagosAbonoInicialValidados = null;
+  if (abono > 0) {
+    const tasaCambioActual = parseFloat(
+      db.prepare("SELECT value FROM settings WHERE key = 'tasa_cambio'").get()?.value
+    ) || 1;
+    const resultadoPagos = validarYNormalizarPagos(pagosAbonoInicial, tasaCambioActual, abono, 'el abono inicial');
+    if (!resultadoPagos.ok) return resultadoPagos;
+    pagosAbonoInicialValidados = resultadoPagos.pagosNormalizados;
+  }
+
   const settingsRow = db.prepare("SELECT value FROM settings WHERE key = 'numero_apartado_siguiente'").get();
   let siguienteNumero = parseInt(settingsRow ? settingsRow.value : '1', 10);
   if (!siguienteNumero || siguienteNumero < 1) siguienteNumero = 1;
@@ -5433,6 +5519,7 @@ ipcMain.handle('apartados:crear', (event, payload) => {
         `INSERT INTO apartado_abonos (apartado_id, monto_usd, numero_recibo, usuario, created_at) VALUES (?, ?, ?, ?, datetime('now','localtime'))`
       ).run(apartadoId, abono, numeroReciboInicial, usuario || null);
       abonoInicialId = infoAbono.lastInsertRowid;
+      insertarLineasDePago(db, 'apartado_abono_pagos', 'abono_id', abonoInicialId, pagosAbonoInicialValidados);
       db.prepare("UPDATE settings SET value = ? WHERE key = 'numero_recibo_abono_siguiente'").run(String(numeroReciboInicial + 1));
     }
 
@@ -5443,6 +5530,9 @@ ipcMain.handle('apartados:crear', (event, payload) => {
   const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(apartadoId);
   const itemsGuardados = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(apartadoId);
   const abonoInicialRegistrado = abonoInicialId ? db.prepare('SELECT * FROM apartado_abonos WHERE id = ?').get(abonoInicialId) : null;
+  if (abonoInicialRegistrado) {
+    abonoInicialRegistrado.pagos = db.prepare('SELECT * FROM apartado_abono_pagos WHERE abono_id = ?').all(abonoInicialId);
+  }
   return { ok: true, apartado, items: itemsGuardados, abonoInicial: abonoInicialRegistrado };
 });
 
@@ -5472,11 +5562,13 @@ ipcMain.handle('apartados:detalle', (event, { id }) => {
   if (!apartado) return { ok: false, message: 'Apartado no encontrado' };
   const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(id);
   const abonos = db.prepare('SELECT * FROM apartado_abonos WHERE apartado_id = ? ORDER BY created_at ASC').all(id);
+  const pagosPorAbono = db.prepare('SELECT * FROM apartado_abono_pagos WHERE abono_id = ?');
+  const abonosConPagos = abonos.map((ab) => ({ ...ab, pagos: pagosPorAbono.all(ab.id) }));
   const saldo = Math.round((apartado.total_usd - apartado.abonado_usd) * 100) / 100;
-  return { ok: true, apartado: { ...apartado, saldo_usd: saldo }, items, abonos };
+  return { ok: true, apartado: { ...apartado, saldo_usd: saldo }, items, abonos: abonosConPagos };
 });
 
-ipcMain.handle('apartados:abonar', (event, { id, monto, usuario }) => {
+ipcMain.handle('apartados:abonar', (event, { id, monto, usuario, pagos }) => {
   const db = getDb();
   const apartado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
   if (!apartado) return { ok: false, message: 'Apartado no encontrado' };
@@ -5488,6 +5580,13 @@ ipcMain.handle('apartados:abonar', (event, { id, monto, usuario }) => {
     return { ok: false, message: `El abono no puede superar el saldo pendiente ($${saldoActual.toFixed(2)})` };
   }
 
+  const tasaCambioActual = parseFloat(
+    db.prepare("SELECT value FROM settings WHERE key = 'tasa_cambio'").get()?.value
+  ) || 1;
+  const resultadoPagos = validarYNormalizarPagos(pagos, tasaCambioActual, m, 'el abono');
+  if (!resultadoPagos.ok) return resultadoPagos;
+  const pagosValidados = resultadoPagos.pagosNormalizados;
+
   const settingsRow = db.prepare("SELECT value FROM settings WHERE key = 'numero_recibo_abono_siguiente'").get();
   let numeroRecibo = parseInt(settingsRow ? settingsRow.value : '1', 10);
   if (!numeroRecibo || numeroRecibo < 1) numeroRecibo = 1;
@@ -5498,6 +5597,7 @@ ipcMain.handle('apartados:abonar', (event, { id, monto, usuario }) => {
       `INSERT INTO apartado_abonos (apartado_id, monto_usd, numero_recibo, usuario, created_at) VALUES (?, ?, ?, ?, datetime('now','localtime'))`
     ).run(id, m, numeroRecibo, usuario || null);
     abonoId = info.lastInsertRowid;
+    insertarLineasDePago(db, 'apartado_abono_pagos', 'abono_id', abonoId, pagosValidados);
     db.prepare(
       `UPDATE apartados SET abonado_usd = abonado_usd + ?, actualizado_at = datetime('now','localtime') WHERE id = ?`
     ).run(m, id);
@@ -5507,6 +5607,7 @@ ipcMain.handle('apartados:abonar', (event, { id, monto, usuario }) => {
 
   const actualizado = db.prepare('SELECT * FROM apartados WHERE id = ?').get(id);
   const abonoRegistrado = db.prepare('SELECT * FROM apartado_abonos WHERE id = ?').get(abonoId);
+  abonoRegistrado.pagos = db.prepare('SELECT * FROM apartado_abono_pagos WHERE abono_id = ?').all(abonoId);
   const items = db.prepare('SELECT * FROM apartado_items WHERE apartado_id = ?').all(id);
   const saldoPendiente = Math.round((actualizado.total_usd - actualizado.abonado_usd) * 100) / 100;
   return {
