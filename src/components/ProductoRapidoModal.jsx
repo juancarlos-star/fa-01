@@ -396,7 +396,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
                     {productosFiltrados.map((p) => (
                       <tr key={p.id} style={{ borderBottom: '1px solid #f0f2f5' }}>
                         <td style={tdStyle}>{p.codigo_producto || '—'}</td>
-                        <td style={tdStyle}>{p.nombre}</td>
+                        <td style={tdStyle} className="producto-nombre">{p.nombre}</td>
                         <td style={tdStyleCentrado}>${fmt(p.costo_promedio_usd)}</td>
                         <td style={tdStyleCentrado}>${fmt(p.precio2)}</td>
                       </tr>

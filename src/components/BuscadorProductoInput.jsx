@@ -147,7 +147,7 @@ export default function BuscadorProductoInput({
                 background: i === resaltado ? '#eff8ff' : '#fff'
               }}
             >
-              <strong>{p.nombre}</strong>
+              <strong className="producto-nombre">{p.nombre}</strong>
               {p.codigo_producto && <span style={{ color: '#98a2b3' }}> · {p.codigo_producto}</span>}
             </li>
           ))}

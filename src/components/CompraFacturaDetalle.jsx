@@ -92,7 +92,7 @@ export default function CompraFacturaDetalle({ encabezado, items, devoluciones, 
                 <tbody>
                   {resumenDevolucion.productos.map((p) => (
                     <tr key={p.product_id}>
-                      <td style={{ padding: '0.2rem 0.4rem 0.2rem 0' }}>{p.descripcion}</td>
+                      <td style={{ padding: '0.2rem 0.4rem 0.2rem 0' }} className="producto-nombre">{p.descripcion}</td>
                       <td>{p.cantidad_devuelta} / {p.cantidad_original}</td>
                       <td>${fmt(p.costo_original_usd)}</td>
                       <td>
@@ -143,7 +143,7 @@ export default function CompraFacturaDetalle({ encabezado, items, devoluciones, 
           <tbody>
             {items.map((i) => (
               <tr key={i.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{i.descripcion}</td>
+                <td style={{ padding: '0.5rem' }} className="producto-nombre">{i.descripcion}</td>
                 <td>{i.cantidad}</td>
                 <td>${fmt(i.costo_unitario_usd)}</td>
                 <td>${fmt(i.total_usd)}</td>
@@ -157,8 +157,8 @@ export default function CompraFacturaDetalle({ encabezado, items, devoluciones, 
             <h4 style={{ marginBottom: '0.4rem' }}>Detalle de IMEI / codigos por producto</h4>
             {items.filter((i) => i.codigos && i.codigos.length > 0).map((i) => (
               <div key={i.id} style={{ marginBottom: '0.6rem' }}>
-                <p style={{ margin: '0 0 0.2rem 0', fontWeight: '600' }}>{i.descripcion} ({i.codigos.length}):</p>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: '#333', wordBreak: 'break-word' }}>
+                <p style={{ margin: '0 0 0.2rem 0', fontWeight: '600' }} className="producto-nombre">{i.descripcion} ({i.codigos.length}):</p>
+                <p className="codigo-reporte" style={{ margin: 0, fontSize: '0.85rem', wordBreak: 'break-word' }}>
                   {i.codigos.join(', ')}
                 </p>
               </div>

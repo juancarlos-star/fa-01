@@ -157,7 +157,7 @@ const SelectorProducto = forwardRef(function SelectorProducto({
                   background: i === resaltado ? '#eef4ff' : (String(p.id) === String(value) ? '#f7f9fc' : 'transparent')
                 }}
               >
-                {p.codigo_producto ? `[${p.codigo_producto}] ` : ''}{p.nombre}
+                {p.codigo_producto ? `[${p.codigo_producto}] ` : ''}<span className="producto-nombre">{p.nombre}</span>
                 {mostrarStock && p.stock_disponible !== undefined ? ` (disponible: ${p.stock_disponible})` : ''}
               </li>
             ))
