@@ -1741,7 +1741,7 @@ function ReporteInventarioFisico() {
                             medirTexto={(u) => u.codigo}
                             paddingExtra={40}
                             renderItem={(u) => (
-                              <div style={{ padding: '0.3rem 0.5rem', borderBottom: '1px solid #f2f2f2', fontSize: '0.9rem', color: '#98002e' }}>
+                              <div style={{ padding: '0.3rem 0.5rem', borderBottom: '1px solid #f2f2f2', fontSize: '0.9rem', color: '#0057a3' }}>
                                 {u.codigo}
                               </div>
                             )}
