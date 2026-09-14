@@ -398,19 +398,40 @@ export async function generarPDFInventarioProductos(reporte, depositoLabel, opci
     32
   );
 
-  const valorPorTipo = {};
+  // Se agrupa por categoria real (no solo por tipo fijo del sistema) para que cualquier
+  // categoria nueva que el admin cree (todas son de tipo "accesorio") aparezca con su propia
+  // barra automaticamente, igual que ya se hace en el grafico de Inicio. Equipo/SimCard/USIM
+  // solo pueden tener una categoria posible cada uno, asi que se agrupan por su tipo.
+  const gruposMapa = new Map();
   reporte.productos.forEach((p) => {
-    valorPorTipo[p.tipo] = (valorPorTipo[p.tipo] || 0) + (p.valorTotalUsd || 0);
+    const clave = p.tipo === 'accesorio' ? `accesorio:${p.categoria || 'Accesorios'}` : p.tipo;
+    if (!gruposMapa.has(clave)) {
+      const etiqueta = p.tipo === 'accesorio' ? (p.categoria || 'Accesorios') : (TIPO_LABEL[p.tipo] || p.tipo);
+      gruposMapa.set(clave, { etiqueta, valor: 0 });
+    }
+    gruposMapa.get(clave).valor += p.valorTotalUsd || 0;
   });
-  const datosGrafico = ['equipo', 'simcard', 'usim', 'accesorio']
-    .filter((t) => valorPorTipo[t] !== undefined)
-    .map((t) => ({ etiqueta: TIPO_LABEL[t] || t, valor: valorPorTipo[t] }));
+  let datosGrafico = Array.from(gruposMapa.values()).sort((a, b) => b.valor - a.valor);
+  const LIMITE_BARRAS = 8;
+  let categoriasFueraDeEspacio = 0;
+  if (datosGrafico.length > LIMITE_BARRAS) {
+    categoriasFueraDeEspacio = datosGrafico.length - LIMITE_BARRAS;
+    datosGrafico = datosGrafico.slice(0, LIMITE_BARRAS);
+  }
 
-  const yTrasGrafico = datosGrafico.length > 0
+  let yTrasGrafico = datosGrafico.length > 0
     ? dibujarGraficoBarrasPDF(doc, {
       x: 10, y: 38, ancho: 130, alto: 40, datos: datosGrafico, formatoValor: (v) => `$${fmt(v)}`
     })
     : 38;
+
+  if (categoriasFueraDeEspacio > 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(102, 112, 133);
+    doc.text(`+ ${categoriasFueraDeEspacio} categoria(s) mas no mostradas en el grafico por espacio (se listan igual abajo).`, 10, yTrasGrafico - 2);
+    doc.setTextColor(0, 0, 0);
+  }
 
   autoTable(doc, {
     startY: yTrasGrafico + 6,
@@ -651,18 +672,16 @@ export async function generarPDFVendedoresUltimasVentas(filas, opciones = {}) {
 
 // ---------------- Vendedores: Ventas por categoria ----------------
 
-const TIPO_LABEL_CAT = { equipo: 'Teléfono', simcard: 'SIM', usim: 'USIM', accesorio: 'Accesorio' };
-
 export async function generarPDFVendedoresPorCategoria(reporte, opciones = {}) {
   const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
   encabezado(doc, 'Ventas por Categoria de Producto (por Vendedor)', reporte.desde, reporte.hasta);
 
   autoTable(doc, {
     startY: 34,
-    head: [['Vendedor', ...reporte.tipos.map((t) => TIPO_LABEL_CAT[t] || t), 'Total']],
+    head: [['Vendedor', ...reporte.columnas.map((c) => c.etiqueta), 'Total']],
     body: reporte.matriz.map((m) => [
       m.nombreVendedor,
-      ...reporte.tipos.map((t) => `$${fmt(m[t].totalUsd)} (${m[t].cantidad})`),
+      ...reporte.columnas.map((c) => `$${fmt(m[c.clave].totalUsd)} (${m[c.clave].cantidad})`),
       `$${fmt(m.totalUsd)}`
     ]),
     theme: 'grid',
