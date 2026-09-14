@@ -67,8 +67,8 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   const filas = grupos.map((g) => [
     String(g.cantidad),
     g.codigos.length > 0 ? `${g.descripcion}\n${g.codigos.join('\n')}` : g.descripcion,
-    `${fmt(g.precio_unitario)}`,
-    `${fmt(g.subtotal)}`
+    `$${fmt(g.precio_unitario)}`,
+    `$${fmt(g.subtotal)}`
   ]);
 
   autoTable(doc, {
@@ -99,11 +99,11 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   doc.text(`TOTAL ${factura.es_nota_venta ? 'NOTA' : 'FACTURA'} (Bs. ${fmt(factura.tasa_cambio)}):`, 130, finalY + 20);
 
   doc.setFont('helvetica', 'normal');
-  doc.text(fmt(factura.subtotal_usd), 195, finalY, { align: 'right' });
-  doc.text(fmt(factura.subtotal_usd), 195, finalY + 5, { align: 'right' });
-  doc.text(fmt(factura.iva_usd), 195, finalY + 10, { align: 'right' });
+  doc.text(`$${fmt(factura.subtotal_usd)}`, 195, finalY, { align: 'right' });
+  doc.text(`$${fmt(factura.subtotal_usd)}`, 195, finalY + 5, { align: 'right' });
+  doc.text(`$${fmt(factura.iva_usd)}`, 195, finalY + 10, { align: 'right' });
   doc.setFont('helvetica', 'bold');
-  doc.text(fmt(factura.total_usd), 195, finalY + 15, { align: 'right' });
+  doc.text(`$${fmt(factura.total_usd)}`, 195, finalY + 15, { align: 'right' });
   // El monto en Bs. es solo una conversion de referencia con la tasa del dia en que se emitio
   // ESTA factura (factura.tasa_cambio, guardada en el momento de facturar) - no con la tasa de
   // hoy, para que una factura vieja impresa de nuevo siga mostrando el monto correcto de su dia.
