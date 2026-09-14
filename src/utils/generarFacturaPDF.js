@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { guardarYAbrirPDF, guardarAbrirEImprimirPDF, dibujarEncabezadoEmpresa, dibujarPiePaginaEmpresa } from './pdfUtils.js';
 import { fmt } from './format.js';
 import { agruparItemsPorProducto } from './agruparFacturaItems.js';
+import { formatearLineaPago } from './metodosPago.js';
 
 export async function generarFacturaPDF(factura, items, settings, opciones = {}) {
   // compress:true genera un PDF con streams comprimidos (mas chico y con una estructura
@@ -108,6 +109,23 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   // ESTA factura (factura.tasa_cambio, guardada en el momento de facturar) - no con la tasa de
   // hoy, para que una factura vieja impresa de nuevo siga mostrando el monto correcto de su dia.
   doc.text(`Bs ${fmt(factura.total_usd * (factura.tasa_cambio || 1))}`, 195, finalY + 20, { align: 'right' });
+
+  // Desglose de como se cobro (metodo + moneda de cada linea, cubre tambien pagos mixtos).
+  // opciones.pagos llega desde facturas:detalle (columna factura_pagos); facturas viejas,
+  // emitidas antes de que existiera este desglose, no tendran lineas y este bloque simplemente
+  // no se dibuja, sin romper la impresion de esos documentos antiguos.
+  const pagos = opciones.pagos || [];
+  let yPagos = finalY + 28;
+  if (pagos.length > 0) {
+    if (yPagos + pagos.length * 5 > 270) { doc.addPage(); yPagos = 20; }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('FORMA DE PAGO:', 10, yPagos);
+    doc.setFont('helvetica', 'normal');
+    pagos.forEach((pago, i) => {
+      doc.text(formatearLineaPago(pago, fmt), 10, yPagos + 5 + i * 5);
+    });
+  }
 
   dibujarPiePaginaEmpresa(doc, settings);
 

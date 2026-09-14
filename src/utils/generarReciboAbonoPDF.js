@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { guardarYAbrirPDF, guardarAbrirEImprimirPDF, fechaParaNombreArchivo, dibujarEncabezadoEmpresa } from './pdfUtils.js';
 import { fmt } from './format.js';
+import { formatearLineaPago } from './metodosPago.js';
 
 // Genera el PDF del "Recibo de Abono" de un Apartado: datos del cliente, producto(s)
 // apartado(s), precio de cada uno, el monto abonado en ESTE recibo puntual, la fecha, y el
@@ -94,6 +95,23 @@ export async function generarReciboAbonoPDF(apartado, items, abono, settings, op
   doc.setFontSize(10.5);
   doc.text(`MONTO ABONADO HOY: $${fmt(abono.monto_usd)}`, 133, y + 1);
   y += 12;
+
+  // Desglose de como se cobro este abono puntual (metodo + moneda de cada linea, cubre pagos
+  // mixtos). abono.pagos llega ya armado desde el backend (apartados:abonar, apartados:detalle,
+  // apartados:buscarReciboPorNumero, apartados:buscarPorCliente); abonos viejos sin este
+  // desglose simplemente no muestran el bloque.
+  const pagos = abono.pagos || [];
+  if (pagos.length > 0) {
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('Forma de pago:', 130, y);
+    doc.setFont('helvetica', 'normal');
+    pagos.forEach((pago, i) => {
+      doc.text(formatearLineaPago(pago, fmt), 130, y + 5 + i * 5);
+    });
+    y += 5 + pagos.length * 5 + 3;
+  }
 
   doc.setFontSize(10.5);
   doc.setFont('helvetica', 'bold');
