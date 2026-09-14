@@ -1491,13 +1491,13 @@ function ReporteMargenProducto({ desde, hasta }) {
         {' '}— Ganancia total: <strong style={{ color: '#067647' }}>${fmt(reporte.totales.gananciaUsd)}</strong>
       </p>
 
-      <h4 style={{ marginBottom: '6px' }}>Comparativo por tipo de producto</h4>
+      <h4 style={{ marginBottom: '6px' }}>Comparativo por categoría</h4>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '1.2rem' }}>
         {reporte.porTipo.length === 0 ? (
           <p>No hay ventas en este rango de fechas.</p>
         ) : reporte.porTipo.map((t) => (
-          <div key={t.tipo} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '6px', background: '#f9fafb' }}>
-            <span style={{ fontSize: '0.85rem' }}><strong>{TIPO_LABEL_INV[t.tipo] || t.tipo || 'Sin tipo'}</strong></span>
+          <div key={t.etiqueta || t.tipo} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', borderRadius: '6px', background: '#f9fafb' }}>
+            <span style={{ fontSize: '0.85rem' }}><strong>{t.etiqueta || TIPO_LABEL_INV[t.tipo] || t.tipo || 'Sin tipo'}</strong></span>
             <span style={{ fontSize: '0.78rem', color: '#667085', display: 'flex', gap: '14px' }}>
               <span>Vendido: {t.cantidad}</span>
               <span>Ventas: ${fmt(t.ventasUsd)}</span>
@@ -1933,7 +1933,7 @@ function ReporteVendedoresPorCategoria({ desde, hasta }) {
     <div style={{ marginTop: '1rem' }}>
       <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
       <p style={{ color: '#667085', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-        Cuanto vendio cada vendedor de cada tipo de producto (equipo, SIM, USIM, accesorio) en el periodo.
+        Cuanto vendio cada vendedor de cada categoria de producto (Teléfono, SIM, USIM y cada categoria de accesorio) en el periodo.
       </p>
 
       {reporte.matriz.length === 0 ? (
@@ -1943,8 +1943,8 @@ function ReporteVendedoresPorCategoria({ desde, hasta }) {
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
               <th style={{ padding: '0.5rem' }}>Vendedor</th>
-              {reporte.tipos.map((t) => (
-                <th key={t}>{TIPO_LABEL_INV[t] || t}</th>
+              {reporte.columnas.map((c) => (
+                <th key={c.clave}>{c.etiqueta}</th>
               ))}
               <th>Total</th>
             </tr>
@@ -1953,8 +1953,8 @@ function ReporteVendedoresPorCategoria({ desde, hasta }) {
             {reporte.matriz.map((m) => (
               <tr key={m.usuario} style={{ borderBottom: '1px solid #eee' }}>
                 <td style={{ padding: '0.5rem' }}>{m.nombreVendedor}</td>
-                {reporte.tipos.map((t) => (
-                  <td key={t}>${fmt(m[t].totalUsd)} <span style={{ color: '#98a2b3' }}>({m[t].cantidad})</span></td>
+                {reporte.columnas.map((c) => (
+                  <td key={c.clave}>${fmt(m[c.clave].totalUsd)} <span style={{ color: '#98a2b3' }}>({m[c.clave].cantidad})</span></td>
                 ))}
                 <td><strong>${fmt(m.totalUsd)}</strong></td>
               </tr>
