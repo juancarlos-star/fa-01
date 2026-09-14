@@ -242,7 +242,7 @@ export default function Inventario({ currentUser }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: '0.5rem' }}>Código</th>
+              <th style={{ padding: '0.5rem' }}>Ref.</th>
               {esAccesorio && <th>Cod. barras</th>}
               <th>Producto</th>
               <th>Categoria</th>

@@ -881,7 +881,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
         <table className="pos-table">
           <thead>
             <tr>
-              <th style={{ width: '13%' }}>Código</th>
+              <th style={{ width: '13%' }}>Ref.</th>
               <th>Descripción</th>
               <th style={{ width: '8%' }}>Cantidad</th>
               <th style={{ width: '6%' }}>Und</th>
@@ -900,7 +900,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
                 {!filaProducto ? (
                   <BuscadorProductoInput
                     inputRef={codigoRef}
-                    placeholder="Código + Enter"
+                    placeholder="Ref. + Enter"
                     value={filaCodigo}
                     onChangeValue={setFilaCodigo}
                     productos={productosParaSugerencias}
@@ -1050,7 +1050,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
                 <table className="pos-vertodo-table">
                   <thead>
                     <tr>
-                      <th>Código</th>
+                      <th>Ref.</th>
                       <th>Descripción</th>
                       <th>Cantidad</th>
                       <th>Und</th>

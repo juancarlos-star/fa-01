@@ -564,7 +564,7 @@ export default function ComprasTelfAcces({ currentUser }) {
         <table className="pos-table">
           <thead>
             <tr>
-              <th style={{ width: '13%' }}>Código</th>
+              <th style={{ width: '13%' }}>Ref.</th>
               <th>Descripción</th>
               <th style={{ width: '8%' }}>Cantidad</th>
               <th style={{ width: '6%' }}>Und</th>
@@ -583,7 +583,7 @@ export default function ComprasTelfAcces({ currentUser }) {
                 {!filaProducto ? (
                   <BuscadorProductoInput
                     inputRef={codigoRef}
-                    placeholder="Código + Enter"
+                    placeholder="Ref. + Enter"
                     value={filaCodigo}
                     onChangeValue={setFilaCodigo}
                     productos={productosParaSugerencias}
@@ -748,7 +748,7 @@ export default function ComprasTelfAcces({ currentUser }) {
                 <table className="pos-vertodo-table">
                   <thead>
                     <tr>
-                      <th>Código</th>
+                      <th>Ref.</th>
                       <th>Descripción</th>
                       <th>Cantidad</th>
                       <th>Und</th>

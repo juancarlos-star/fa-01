@@ -497,7 +497,7 @@ function TablaCargoDescargo({ tipoDocumento, productos, depositoId, itemsDocumen
         <table className="pos-table">
           <thead>
             <tr>
-              <th style={{ width: '13%' }}>Código</th>
+              <th style={{ width: '13%' }}>Ref.</th>
               <th>Descripción</th>
               <th style={{ width: '8%' }}>Cantidad</th>
               <th style={{ width: '6%' }}>Und</th>
@@ -512,7 +512,7 @@ function TablaCargoDescargo({ tipoDocumento, productos, depositoId, itemsDocumen
                 {!filaProducto ? (
                   <BuscadorProductoInput
                     inputRef={codigoRef}
-                    placeholder="Código o nombre + Enter"
+                    placeholder="Ref. o nombre + Enter"
                     value={filaCodigo}
                     onChangeValue={setFilaCodigo}
                     productos={productos}

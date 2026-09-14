@@ -336,7 +336,7 @@ export default function Traslados({ currentUser }) {
         <table className="pos-table">
           <thead>
             <tr>
-              <th style={{ width: '15%' }}>Código</th>
+              <th style={{ width: '15%' }}>Ref.</th>
               <th>Descripción</th>
               <th style={{ width: '10%' }}>Cantidad</th>
               <th style={{ width: '8%' }}>Und</th>
@@ -354,7 +354,7 @@ export default function Traslados({ currentUser }) {
                   <input
                     ref={codigoRef}
                     type="text"
-                    placeholder="Código + Enter"
+                    placeholder="Ref. + Enter"
                     value={filaCodigo}
                     onChange={(e) => setFilaCodigo(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarProductoPorCodigoEnter(); } }}
@@ -473,7 +473,7 @@ export default function Traslados({ currentUser }) {
                 <table className="pos-vertodo-table">
                   <thead>
                     <tr>
-                      <th>Código</th>
+                      <th>Ref.</th>
                       <th>Descripción</th>
                       <th>Cantidad</th>
                       <th>Und</th>

@@ -328,7 +328,7 @@ export default function DevolucionCompras({ currentUser }) {
         <table className="pos-table">
           <thead>
             <tr>
-              <th style={{ width: '11%' }}>Código</th>
+              <th style={{ width: '11%' }}>Ref.</th>
               <th>Descripción</th>
               <th style={{ width: '10%' }}>Comprado</th>
               <th style={{ width: '14%' }}>A devolver</th>
