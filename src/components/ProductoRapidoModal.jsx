@@ -28,6 +28,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
   const seVendePorUnidadInicial = editando ? productoEditar.tipo !== 'accesorio' : null;
   const [form, setForm] = useState({
     codigo_producto: editando ? (productoEditar.codigo_producto || '') : (codigoInicial || ''),
+    codigo_barras: editando ? (productoEditar.codigo_barras || '') : '',
     nombre: editando ? (productoEditar.nombre || '') : '',
     categoria: editando ? (productoEditar.categoria || '') : '',
     // El costo se guarda SIEMPRE en dolares (costo_promedio_usd), pero se escribe en la moneda
@@ -174,7 +175,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
           precio: precioBsCalculado,
           precio2: parseFloat(form.precio2) || 0,
           stock_minimo: parseInt(form.stock_minimo, 10) || 0,
-          codigo_barras: tipo === 'accesorio' ? (productoEditar.codigo_barras || '') : '',
+          codigo_barras: tipo === 'accesorio' ? form.codigo_barras.trim() : '',
           codigo_producto: codigoLimpio || ''
         });
         if (!res.ok) {
@@ -196,6 +197,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
           categoria: tipoCambio ? '' : form.categoria,
           nombre: form.nombre.trim(),
           codigo_producto: codigoLimpio || null,
+          codigo_barras: tipo === 'accesorio' ? (form.codigo_barras.trim() || null) : null,
           precio: precioBsCalculado,
           precio2: parseFloat(form.precio2) || 0,
           costo_promedio_usd: nuevoCosto
@@ -211,7 +213,8 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
         precio2: parseFloat(form.precio2) || 0,
         stock_minimo: parseInt(form.stock_minimo, 10) || 0,
         costo_inicial: costoUsdFinal,
-        codigo_producto: codigoLimpio || null
+        codigo_producto: codigoLimpio || null,
+        codigo_barras: tipo === 'accesorio' ? form.codigo_barras.trim() : ''
       });
       if (!res.ok) {
         setError(res.message || 'No se pudo crear el producto');
@@ -226,6 +229,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
         nombre: form.nombre.trim(),
         categoria: form.categoria,
         codigo_producto: codigoLimpio || null,
+        codigo_barras: tipo === 'accesorio' ? (form.codigo_barras.trim() || null) : null,
         precio: precioBsCalculado,
         precio2: parseFloat(form.precio2) || 0,
         stock_minimo: parseInt(form.stock_minimo, 10) || 0,
@@ -254,10 +258,17 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
         <div style={headerStyle}>{editando ? 'EDITAR PRODUCTO' : 'PRODUCTO NUEVO'}</div>
         <div style={{ display: 'flex' }}>
           <form onSubmit={handleSubmit} style={{ padding: '1rem 1.2rem 1.2rem', width: '360px', flexShrink: 0 }}>
-            <Campo label="Codigo">
+            <Campo label="Ref.">
               <input autoFocus value={form.codigo_producto} onChange={set('codigo_producto')}
                 placeholder="Ej: ss24" style={inputStyle} />
             </Campo>
+
+            {tipoActual === 'accesorio' && (
+              <Campo label="Cód. de barra (opcional)">
+                <input value={form.codigo_barras} onChange={set('codigo_barras')}
+                  placeholder="Escanea o escribe el código de barra" style={inputStyle} />
+              </Campo>
+            )}
 
             <Campo label="Descripcion" required>
               <input value={form.nombre} onChange={set('nombre')}
@@ -386,7 +397,7 @@ export default function ProductoRapidoModal({ codigoInicial, productoEditar, tip
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
                   <thead>
                     <tr style={{ position: 'sticky', top: 0, background: '#f4f6f8' }}>
-                      <th style={thStyle}>Código</th>
+                      <th style={thStyle}>Ref.</th>
                       <th style={thStyle}>Descripción</th>
                       <th style={thStyleCentrado}>Costo</th>
                       <th style={thStyleCentrado}>Precio $</th>
