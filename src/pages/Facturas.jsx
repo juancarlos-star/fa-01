@@ -152,7 +152,7 @@ export default function Facturas({ currentUser }) {
   }
 
   if (detalle) {
-    const { factura, items } = detalle;
+    const { factura, items, pagos } = detalle;
     return (
       <div>
         <button onClick={() => setDetalle(null)}>&larr; Volver</button>
@@ -167,7 +167,7 @@ export default function Facturas({ currentUser }) {
             </strong>
           </p>
         )}
-        <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        <button onClick={() => generarFacturaPDF(factura, items, settings, { pagos })} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         {esAdmin && !factura.es_devolucion && (
           <button onClick={() => pedirMotivoEliminar(factura.id)} className="btn-danger" style={{ marginBottom: '1rem', marginLeft: '8px' }}>
             Eliminar factura

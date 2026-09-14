@@ -482,7 +482,7 @@ function ReporteFacturas({ desde, hasta }) {
   if (!reporte) return null;
 
   if (detalle) {
-    const { factura, items } = detalle;
+    const { factura, items, pagos } = detalle;
     return (
       <div style={{ marginTop: '1rem' }}>
         <button onClick={() => setDetalle(null)}>&larr; Volver al listado</button>
@@ -490,7 +490,7 @@ function ReporteFacturas({ desde, hasta }) {
         <p><strong>Cliente:</strong> {factura.cliente_nombre} {factura.cliente_rif ? `(${factura.cliente_rif})` : ''}</p>
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
-        <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        <button onClick={() => generarFacturaPDF(factura, items, settings, { pagos })} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0', tableLayout: 'fixed' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
@@ -604,7 +604,7 @@ function ReporteDevolucionesFacturas({ desde, hasta }) {
   if (!reporte) return null;
 
   if (detalle) {
-    const { factura, items } = detalle;
+    const { factura, items, pagos } = detalle;
     return (
       <div style={{ marginTop: '1rem' }}>
         <button onClick={() => setDetalle(null)}>&larr; Volver al listado</button>
@@ -612,7 +612,7 @@ function ReporteDevolucionesFacturas({ desde, hasta }) {
         <p><strong>Cliente:</strong> {factura.cliente_nombre} {factura.cliente_rif ? `(${factura.cliente_rif})` : ''}</p>
         <p><strong>Fecha:</strong> {factura.created_at}</p>
         <p><strong>Vendedor:</strong> {factura.usuario}</p>
-        <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        <button onClick={() => generarFacturaPDF(factura, items, settings, { pagos })} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', margin: '1rem 0', tableLayout: 'fixed' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
@@ -2522,13 +2522,13 @@ function ReporteVentasPorCliente({ desde, hasta }) {
   };
 
   if (detalle) {
-    const { factura, items } = detalle;
+    const { factura, items, pagos } = detalle;
     return (
       <div style={{ marginTop: '1rem' }}>
         <button onClick={() => setDetalle(null)}>&larr; Volver</button>
         <h3>Factura N° {factura.numero_factura || String(factura.id).padStart(6, '0')}</h3>
         <p><strong>Fecha:</strong> {factura.created_at} — <strong>Vendedor:</strong> {factura.usuario}</p>
-        <button onClick={() => generarFacturaPDF(factura, items, settings)} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
+        <button onClick={() => generarFacturaPDF(factura, items, settings, { pagos })} style={{ marginBottom: '1rem' }}>Imprimir PDF</button>
         <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>

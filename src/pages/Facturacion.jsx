@@ -666,7 +666,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
       // veces muestra una de las dos copias en blanco/negro).
       if (detalle.ok) {
         try {
-          await generarFacturaPDF(detalle.factura, detalle.items, settings, { imprimir: true });
+          await generarFacturaPDF(detalle.factura, detalle.items, settings, { imprimir: true, pagos: detalle.pagos });
         } catch (errImpresion) {
           console.error('Error al imprimir la factura automaticamente:', errImpresion);
         }
@@ -703,7 +703,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
     if (!confirmacion?.detalle) return;
     setImprimiendoFactura(true);
     try {
-      await generarFacturaPDF(confirmacion.detalle.factura, confirmacion.detalle.items, settings, { imprimir: true });
+      await generarFacturaPDF(confirmacion.detalle.factura, confirmacion.detalle.items, settings, { imprimir: true, pagos: confirmacion.detalle.pagos });
     } finally {
       setImprimiendoFactura(false);
     }
