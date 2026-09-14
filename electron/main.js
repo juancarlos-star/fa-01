@@ -824,6 +824,12 @@ ipcMain.handle('products:buscarPorCodigo', (event, { codigo, depositoId }) => {
   let p = db.prepare('SELECT * FROM products WHERE codigo_producto = ? COLLATE NOCASE').get(c);
   if (p) return { ...p, stock_disponible: calcularStock(p) };
 
+  // 1b) Codigo de barra del producto (accesorios: routers, bocinas, otros electronicos).
+  // Es el mismo codigo que se imprime en Etiquetas, para que escanear esa etiqueta en
+  // Compras/Cargos y Descargos/Facturacion encuentre el producto igual que un codigo_producto.
+  p = db.prepare('SELECT * FROM products WHERE codigo_barras = ? COLLATE NOCASE').get(c);
+  if (p) return { ...p, stock_disponible: calcularStock(p) };
+
   // 2) Codigo individual (IMEI/ICCID) leido con pistola
   const unidad = db.prepare('SELECT * FROM inventory_units WHERE codigo = ? COLLATE NOCASE').get(c);
   if (unidad) {
@@ -903,8 +909,22 @@ ipcMain.handle('products:create', (event, data) => {
     return { ok: false, message: 'El codigo de producto es obligatorio para equipos, SIM y USIM' };
   }
   if (codigoProductoLimpio) {
-    const existenteCodigo = db.prepare('SELECT id FROM products WHERE codigo_producto = ? COLLATE NOCASE').get(codigoProductoLimpio);
+    const existenteCodigo = db.prepare(
+      'SELECT id FROM products WHERE codigo_producto = ? COLLATE NOCASE OR codigo_barras = ? COLLATE NOCASE'
+    ).get(codigoProductoLimpio, codigoProductoLimpio);
     if (existenteCodigo) return { ok: false, message: 'Ese codigo de producto ya esta en uso' };
+  }
+
+  // El codigo de barras (solo accesorios) tambien se usa para el escaneo en Compras/Cargos y
+  // Descargos/Facturacion (products:buscarPorCodigo), asi que debe ser unico igual que el
+  // codigo_producto -y no puede chocar con el codigo_producto de otro producto- para que el
+  // escaneo nunca sea ambiguo. Antes de este cambio no se validaba nada aqui.
+  const codigoBarrasLimpio = tipo === 'accesorio' ? (codigo_barras || '').trim() : '';
+  if (codigoBarrasLimpio) {
+    const existenteBarras = db.prepare(
+      'SELECT id FROM products WHERE codigo_barras = ? COLLATE NOCASE OR codigo_producto = ? COLLATE NOCASE'
+    ).get(codigoBarrasLimpio, codigoBarrasLimpio);
+    if (existenteBarras) return { ok: false, message: 'Ese codigo de barras ya esta asignado a otro producto' };
   }
 
   // Ya no se admite "stock inicial" al crear el producto: todo el stock debe entrar por el
@@ -920,7 +940,7 @@ ipcMain.handle('products:create', (event, data) => {
     .run(
       tipo, nombre, categoria || '', precio || 0, precio2 || 0, stock_minimo || 0,
       costo,
-      tipo === 'accesorio' ? (codigo_barras || '') : null,
+      codigoBarrasLimpio || null,
       codigoProductoLimpio || null
     );
 
@@ -1006,7 +1026,9 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
   if (tipoFinal === 'accesorio') {
     codigoBarras = (codigo_barras || '').trim();
     if (codigoBarras) {
-      const existente = db.prepare('SELECT id FROM products WHERE codigo_barras = ? AND id != ?').get(codigoBarras, id);
+      const existente = db.prepare(
+        'SELECT id FROM products WHERE (codigo_barras = ? COLLATE NOCASE OR codigo_producto = ? COLLATE NOCASE) AND id != ?'
+      ).get(codigoBarras, codigoBarras, id);
       if (existente) return { ok: false, message: 'Ese codigo de barras ya esta asignado a otro producto' };
     }
   } else {
@@ -1023,7 +1045,9 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
       return { ok: false, message: 'El codigo de producto es obligatorio para equipos, SIM y USIM' };
     }
     if (codigoProductoLimpio) {
-      const existenteCodigo = db.prepare('SELECT id FROM products WHERE codigo_producto = ? COLLATE NOCASE AND id != ?').get(codigoProductoLimpio, id);
+      const existenteCodigo = db.prepare(
+        'SELECT id FROM products WHERE (codigo_producto = ? COLLATE NOCASE OR codigo_barras = ? COLLATE NOCASE) AND id != ?'
+      ).get(codigoProductoLimpio, codigoProductoLimpio, id);
       if (existenteCodigo) return { ok: false, message: 'Ese codigo de producto ya esta en uso' };
     }
     codigoProducto = codigoProductoLimpio || null;
@@ -1093,7 +1117,9 @@ ipcMain.handle('products:updateCodigoBarras', (event, { id, codigo_barras }) => 
   const db = getDb();
   const codigo = (codigo_barras || '').trim();
   if (!codigo) return { ok: true, updated: false };
-  const existente = db.prepare('SELECT id FROM products WHERE codigo_barras = ? AND id != ?').get(codigo, id);
+  const existente = db.prepare(
+    'SELECT id FROM products WHERE (codigo_barras = ? COLLATE NOCASE OR codigo_producto = ? COLLATE NOCASE) AND id != ?'
+  ).get(codigo, codigo, id);
   if (existente) return { ok: false, message: 'Ese codigo de barras ya esta asignado a otro producto' };
   db.prepare('UPDATE products SET codigo_barras = ? WHERE id = ?').run(codigo, id);
   return { ok: true, updated: true };
@@ -3635,8 +3661,11 @@ ipcMain.handle('inventario:buscarPorCodigo', (event, { codigo }) => {
   }
 
   const producto = db.prepare(
-    `SELECT * FROM products WHERE tipo = 'accesorio' AND codigo_barras = ? AND codigo_barras IS NOT NULL AND codigo_barras != ''`
-  ).get(c);
+    `SELECT * FROM products WHERE tipo = 'accesorio' AND (
+       (codigo_barras = ? COLLATE NOCASE AND codigo_barras IS NOT NULL AND codigo_barras != '')
+       OR (codigo_producto = ? COLLATE NOCASE AND codigo_producto IS NOT NULL AND codigo_producto != '')
+     )`
+  ).get(c, c);
   if (producto) {
     return {
       ok: true,
