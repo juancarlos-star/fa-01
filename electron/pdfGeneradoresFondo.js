@@ -179,8 +179,8 @@ function generarPDFFacturaFondo(factura, items, settings) {
   const filas = grupos.map((g) => [
     String(g.cantidad),
     g.codigos.length > 0 ? `${g.descripcion}\n${g.codigos.join('\n')}` : g.descripcion,
-    `${fmt(g.precio_unitario)}`,
-    `${fmt(g.subtotal)}`
+    `$${fmt(g.precio_unitario)}`,
+    `$${fmt(g.subtotal)}`
   ]);
 
   autoTable(doc, {
@@ -211,11 +211,11 @@ function generarPDFFacturaFondo(factura, items, settings) {
   doc.text(`TOTAL ${factura.es_nota_venta ? 'NOTA' : 'FACTURA'} (Bs. ${fmt(factura.tasa_cambio)}):`, 130, finalY + 20);
 
   doc.setFont('helvetica', 'normal');
-  doc.text(fmt(factura.subtotal_usd), 195, finalY, { align: 'right' });
-  doc.text(fmt(factura.subtotal_usd), 195, finalY + 5, { align: 'right' });
-  doc.text(fmt(factura.iva_usd), 195, finalY + 10, { align: 'right' });
+  doc.text(`$${fmt(factura.subtotal_usd)}`, 195, finalY, { align: 'right' });
+  doc.text(`$${fmt(factura.subtotal_usd)}`, 195, finalY + 5, { align: 'right' });
+  doc.text(`$${fmt(factura.iva_usd)}`, 195, finalY + 10, { align: 'right' });
   doc.setFont('helvetica', 'bold');
-  doc.text(fmt(factura.total_usd), 195, finalY + 15, { align: 'right' });
+  doc.text(`$${fmt(factura.total_usd)}`, 195, finalY + 15, { align: 'right' });
   doc.text(`Bs ${fmt(factura.total_usd * (factura.tasa_cambio || 1))}`, 195, finalY + 20, { align: 'right' });
 
   dibujarPiePaginaEmpresa(doc, settings);
