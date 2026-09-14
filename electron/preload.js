@@ -160,7 +160,7 @@ contextBridge.exposeInMainWorld('api', {
   crearApartado: (payload) => ipcRenderer.invoke('apartados:crear', payload),
   listarApartados: (estado) => ipcRenderer.invoke('apartados:listar', { estado }),
   detalleApartado: (id) => ipcRenderer.invoke('apartados:detalle', { id }),
-  abonarApartado: (id, monto, usuario) => ipcRenderer.invoke('apartados:abonar', { id, monto, usuario }),
+  abonarApartado: (id, monto, usuario, pagos) => ipcRenderer.invoke('apartados:abonar', { id, monto, usuario, pagos }),
   cancelarApartado: (id, usuario, motivo) => ipcRenderer.invoke('apartados:cancelar', { id, usuario, motivo }),
   marcarApartadoListoParaEntregar: (id, usuario) => ipcRenderer.invoke('apartados:marcarListoParaEntregar', { id, usuario }),
   completarApartado: (id, facturaId, usuario) => ipcRenderer.invoke('apartados:completar', { id, facturaId, usuario }),
