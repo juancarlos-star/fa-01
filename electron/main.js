@@ -4342,9 +4342,11 @@ function calcularReporteMargenPorProducto(db, desde, hasta) {
   // calcularReporteGanancias- para que ambos reportes siempre cuadren entre si.
   const items = db.prepare(
     `SELECT fi.product_id, fi.descripcion, fi.tipo, fi.cantidad,
-            fi.precio_unitario_usd, fi.costo_unitario_usd, fi.subtotal_usd, fi.es_devolucion
+            fi.precio_unitario_usd, fi.costo_unitario_usd, fi.subtotal_usd, fi.es_devolucion,
+            p.categoria AS categoria
      FROM factura_items fi
      JOIN facturas f ON f.id = fi.factura_id
+     LEFT JOIN products p ON p.id = fi.product_id
      WHERE f.created_at BETWEEN ? AND ?`
   ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
@@ -4354,7 +4356,7 @@ function calcularReporteMargenPorProducto(db, desde, hasta) {
     let r = porProducto.get(key);
     if (!r) {
       r = {
-        product_id: it.product_id, descripcion: it.descripcion, tipo: it.tipo,
+        product_id: it.product_id, descripcion: it.descripcion, tipo: it.tipo, categoria: it.categoria,
         cantidad: 0, ventasUsd: 0, costoUsd: 0, gananciaUsd: 0
       };
       porProducto.set(key, r);
@@ -4375,14 +4377,19 @@ function calcularReporteMargenPorProducto(db, desde, hasta) {
     margenPct: r.ventasUsd > 0 ? (r.gananciaUsd / r.ventasUsd) * 100 : 0
   })).sort((a, b) => b.gananciaUsd - a.gananciaUsd);
 
-  // Comparativo por categoria/tipo (SIM vs Telefonos vs Accesorios): mismos totales, agrupados
-  // por "tipo" (equipo/simcard/usim/accesorio) en vez de por producto individual.
+  // Comparativo por categoria real (SIM vs Telefonos vs cada categoria de accesorio): mismos
+  // totales, agrupados por la categoria real del producto en vez de por producto individual.
+  // Equipo/SimCard/USIM se agrupan por su tipo (solo pueden tener una categoria posible cada
+  // uno); los accesorios se agrupan por su categoria real para que una categoria nueva
+  // (ej. "Otros") aparezca automaticamente con su propio renglon, sin tocar codigo.
   const porTipoMap = new Map();
   for (const p of productos) {
-    let t = porTipoMap.get(p.tipo);
+    const clave = p.tipo === 'accesorio' ? `accesorio:${p.categoria || 'Accesorios'}` : p.tipo;
+    let t = porTipoMap.get(clave);
     if (!t) {
-      t = { tipo: p.tipo, cantidad: 0, ventasUsd: 0, costoUsd: 0, gananciaUsd: 0 };
-      porTipoMap.set(p.tipo, t);
+      const etiqueta = p.tipo === 'accesorio' ? (p.categoria || 'Accesorios') : null;
+      t = { tipo: p.tipo, etiqueta, cantidad: 0, ventasUsd: 0, costoUsd: 0, gananciaUsd: 0 };
+      porTipoMap.set(clave, t);
     }
     t.cantidad += p.cantidad;
     t.ventasUsd += p.ventasUsd;
@@ -4954,29 +4961,42 @@ ipcMain.handle('reportes:vendedoresUltimasVentas', (event) => {
 ipcMain.handle('reportes:vendedoresPorCategoria', (event, { desde, hasta }) => {
   const db = getDb();
   const filas = db.prepare(
-    `SELECT f.usuario, fi.tipo, SUM(fi.cantidad) AS cantidad, SUM(fi.subtotal_usd) AS totalUsd
+    `SELECT f.usuario, fi.tipo, p.categoria AS categoria, SUM(fi.cantidad) AS cantidad, SUM(fi.subtotal_usd) AS totalUsd
      FROM factura_items fi
      JOIN facturas f ON f.id = fi.factura_id
+     LEFT JOIN products p ON p.id = fi.product_id
      WHERE f.es_devolucion = 0 AND f.created_at BETWEEN ? AND ?
-     GROUP BY f.usuario, fi.tipo`
+     GROUP BY f.usuario, fi.tipo, p.categoria`
   ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
 
   const nombres = mapaUsuarios(db);
-  const tipos = ['equipo', 'simcard', 'usim', 'accesorio'];
-  const vendedoresSet = new Set(filas.map((f) => f.usuario));
+  // Cada renglon se agrupa por su categoria real (una columna por categoria de accesorio,
+  // incluyendo cualquiera nueva que el admin cree), no solo por el tipo fijo del sistema.
+  const ETIQUETA_TIPO = { equipo: 'Teléfono', simcard: 'SIM', usim: 'USIM' };
+  const columnasMapa = new Map();
+  const filasConClave = filas.map((f) => {
+    const clave = f.tipo === 'accesorio' ? `accesorio:${f.categoria || 'Accesorios'}` : f.tipo;
+    if (!columnasMapa.has(clave)) {
+      const etiqueta = ETIQUETA_TIPO[f.tipo] || f.categoria || 'Accesorios';
+      columnasMapa.set(clave, { clave, etiqueta });
+    }
+    return { ...f, clave };
+  });
+  const columnas = Array.from(columnasMapa.values());
+  const vendedoresSet = new Set(filasConClave.map((f) => f.usuario));
   const matriz = Array.from(vendedoresSet).map((usuario) => {
     const fila = { usuario, nombreVendedor: nombres[usuario] || usuario || 'Sin asignar' };
     let totalVendedor = 0;
-    tipos.forEach((t) => {
-      const encontrado = filas.find((f) => f.usuario === usuario && f.tipo === t);
-      fila[t] = encontrado ? { cantidad: encontrado.cantidad, totalUsd: encontrado.totalUsd } : { cantidad: 0, totalUsd: 0 };
-      totalVendedor += fila[t].totalUsd;
+    columnas.forEach((c) => {
+      const encontrado = filasConClave.find((f) => f.usuario === usuario && f.clave === c.clave);
+      fila[c.clave] = encontrado ? { cantidad: encontrado.cantidad, totalUsd: encontrado.totalUsd } : { cantidad: 0, totalUsd: 0 };
+      totalVendedor += fila[c.clave].totalUsd;
     });
     fila.totalUsd = totalVendedor;
     return fila;
   }).sort((a, b) => b.totalUsd - a.totalUsd);
 
-  return { ok: true, desde, hasta, tipos, matriz };
+  return { ok: true, desde, hasta, columnas, matriz };
 });
 
 // "Estadisticas": totales generales por vendedor (facturas, monto, ticket promedio, participacion %).
