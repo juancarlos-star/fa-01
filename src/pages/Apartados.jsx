@@ -935,7 +935,7 @@ function ApartadoDetalle({ id, currentUser, settings, onVolver, onAbonoRegistrad
         <tbody>
           {items.map((it) => (
             <tr key={it.id} style={{ borderBottom: '1px solid #eee' }}>
-              <td style={{ padding: '0.5rem' }}>{it.descripcion}</td>
+              <td style={{ padding: '0.5rem' }} className="producto-nombre">{it.descripcion}</td>
               <td>{it.cantidad}</td>
               <td>${fmt(it.precio_unitario_usd)}</td>
               <td>${fmt(it.cantidad * it.precio_unitario_usd)}</td>

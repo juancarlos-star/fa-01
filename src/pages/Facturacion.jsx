@@ -977,7 +977,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
                 <tr key={g.groupKey}>
                   <td>{g.producto_codigo}</td>
                   <td>
-                    <div>{g.descripcion}</div>
+                    <div className="producto-nombre">{g.descripcion}</div>
                     {g.codigosIndividuales.length > 0 && (
                       <div style={codigosListStyle}>
                         {g.codigosIndividuales.map((cod) => (
@@ -1063,7 +1063,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
                       <tr key={g.groupKey}>
                         <td>{g.producto_codigo}</td>
                         <td>
-                          <div>{g.descripcion}</div>
+                          <div className="producto-nombre">{g.descripcion}</div>
                           {g.codigosIndividuales.length > 0 && (
                             <div className="pos-vertodo-codigos">
                               {g.codigosIndividuales.map((cod) => (
@@ -1151,7 +1151,7 @@ function SugerenciaVentaCruzada({ carrito, onAgregar }) {
             border: '1px solid #f0c14b', borderRadius: '999px', background: '#fff', cursor: 'pointer'
           }}
         >
-          <span>{s.nombre}</span>
+          <span className="producto-nombre">{s.nombre}</span>
           <span style={{ color: '#667085' }}>${fmt(s.precio2)}</span>
           <span style={{ fontWeight: 700, color: '#0b4f9e' }}>+</span>
         </button>

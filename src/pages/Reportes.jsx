@@ -504,12 +504,12 @@ function ReporteFacturas({ desde, hasta }) {
           <tbody>
             {agruparItemsPorProducto(items).map((grupo) => (
               <tr key={grupo.product_id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem', verticalAlign: 'top', wordBreak: 'break-word' }}>{grupo.descripcion}</td>
+                <td style={{ padding: '0.5rem', verticalAlign: 'top', wordBreak: 'break-word' }} className="producto-nombre">{grupo.descripcion}</td>
                 <td style={{ verticalAlign: 'top' }}>
                   {grupo.codigos.length > 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       {grupo.codigos.map((c) => (
-                        <span key={c} style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>{c}</span>
+                        <span key={c} className="codigo-reporte" style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>{c}</span>
                       ))}
                     </div>
                   ) : '—'}
@@ -626,12 +626,12 @@ function ReporteDevolucionesFacturas({ desde, hasta }) {
           <tbody>
             {agruparItemsPorProducto(items).map((grupo) => (
               <tr key={grupo.product_id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem', verticalAlign: 'top', wordBreak: 'break-word' }}>{grupo.descripcion}</td>
+                <td style={{ padding: '0.5rem', verticalAlign: 'top', wordBreak: 'break-word' }} className="producto-nombre">{grupo.descripcion}</td>
                 <td style={{ verticalAlign: 'top' }}>
                   {grupo.codigos.length > 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       {grupo.codigos.map((c) => (
-                        <span key={c} style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>{c}</span>
+                        <span key={c} className="codigo-reporte" style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>{c}</span>
                       ))}
                     </div>
                   ) : '—'}
@@ -798,7 +798,7 @@ function ReporteProductosVendidos({ desde, hasta }) {
               <tbody>
                 {reporte.resumen.map((r) => (
                   <tr key={r.product_id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>{r.descripcion}</td>
+                    <td style={{ padding: '0.5rem' }} className="producto-nombre">{r.descripcion}</td>
                     <td>{r.cantidad}</td>
                     <td>${fmt(r.totalUsd)}</td>
                   </tr>
@@ -829,7 +829,7 @@ function ReporteProductosVendidos({ desde, hasta }) {
                     <td style={{ padding: '0.5rem' }}>{i.fecha}</td>
                     <td>{i.numero_factura || '—'}</td>
                     <td>{i.cliente_nombre}</td>
-                    <td>{i.descripcion}</td>
+                    <td className="producto-nombre">{i.descripcion}</td>
                     <td>{i.codigo || '—'}</td>
                     <td>{i.cantidad}</td>
                     <td>${fmt(i.subtotal_usd)}</td>
@@ -1124,7 +1124,7 @@ function ReporteInventarioProductos() {
                     onMouseDown={() => { setBusqueda(p.nombre); setMostrarSugerencias(false); }}
                     style={{ padding: '7px 10px', cursor: 'pointer', borderBottom: '1px solid #f0f2f5', fontSize: '0.85rem' }}
                   >
-                    <strong>{p.nombre}</strong>{p.codigo_producto ? ` — ${p.codigo_producto}` : ''}
+                    <strong className="producto-nombre">{p.nombre}</strong>{p.codigo_producto ? ` — ${p.codigo_producto}` : ''}
                   </div>
                 ))
               )}
@@ -1177,7 +1177,7 @@ function ReporteInventarioProductos() {
                     return (
                       <tr key={p.id} style={{ borderBottom: '1px solid #eee' }}>
                         <td style={{ padding: '0.5rem' }}>{p.codigo_producto || '—'}</td>
-                        <td>{p.nombre}</td>
+                        <td className="producto-nombre">{p.nombre}</td>
                         <td>{p.stock}</td>
                         <td>${fmt(p.costo_promedio_usd)}</td>
                         <td>Bs. {fmt(p.precioBs)}</td>
@@ -1328,7 +1328,7 @@ function ReporteStockBajo() {
                 }}
               >
                 <span style={{ fontSize: '0.85rem', color: '#344054' }}>
-                  {agotado ? '⛔' : '⚠️'} <strong>{p.nombre}</strong>
+                  {agotado ? '⛔' : '⚠️'} <strong className="producto-nombre">{p.nombre}</strong>
                   <span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_INV[p.tipo] || p.tipo}{p.codigo_producto ? ` · ${p.codigo_producto}` : ''}</span>
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
@@ -1437,7 +1437,7 @@ function ReporteStockMuerto() {
               }}
             >
               <span style={{ fontSize: '0.85rem', color: '#344054' }}>
-                🐌 <strong>{p.nombre}</strong>
+                🐌 <strong className="producto-nombre">{p.nombre}</strong>
                 <span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_INV[p.tipo] || p.tipo}{p.codigo_producto ? ` · ${p.codigo_producto}` : ''}</span>
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
@@ -1526,7 +1526,7 @@ function ReporteMargenProducto({ desde, hasta }) {
           {productosOrdenados.map((p) => (
             <div key={p.product_id ?? p.descripcion} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '8px 10px', borderRadius: '6px', background: '#f9fafb' }}>
               <span style={{ fontSize: '0.85rem', color: '#344054' }}>
-                <strong>{p.descripcion}</strong>
+                <strong className="producto-nombre">{p.descripcion}</strong>
                 <span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_INV[p.tipo] || p.tipo || 'Sin tipo'}</span>
               </span>
               <span style={{ fontSize: '0.78rem', color: '#667085', display: 'flex', gap: '14px', flexShrink: 0 }}>
@@ -1604,7 +1604,7 @@ function ReporteCatalogoWhatsapp() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           {productos.map((p) => (
             <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#f9fafb', borderRadius: '6px', fontSize: '0.85rem' }}>
-              <span><strong>{p.nombre}</strong><span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_INV[p.tipo] || p.tipo}{p.categoria ? ` · ${p.categoria}` : ''}</span></span>
+              <span><strong className="producto-nombre">{p.nombre}</strong><span style={{ color: '#98a2b3' }}> — {TIPO_LABEL_INV[p.tipo] || p.tipo}{p.categoria ? ` · ${p.categoria}` : ''}</span></span>
               <span>${fmt(p.precioUsd)} · Stock: {p.stock}</span>
             </div>
           ))}
@@ -2330,7 +2330,7 @@ function ReporteVentasCierreDiario() {
               <tbody>
                 {reporte.filas.map((f, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>{f.descripcion}</td>
+                    <td style={{ padding: '0.5rem' }} className="producto-nombre">{f.descripcion}</td>
                     <td>{TIPO_LABEL_INV[f.tipo] || f.tipo || '—'}</td>
                     <td>{f.codigo || '—'}</td>
                     <td>{f.unidades}</td>
@@ -2511,7 +2511,7 @@ function ReporteVentasPorCliente({ desde, hasta }) {
           <tbody>
             {items.map((i) => (
               <tr key={i.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{i.descripcion}</td>
+                <td style={{ padding: '0.5rem' }} className="producto-nombre">{i.descripcion}</td>
                 <td>{i.codigo || '—'}</td>
                 <td>{i.cantidad}</td>
                 <td>${fmt(i.precio_unitario_usd)}</td>
@@ -2977,7 +2977,7 @@ function ClienteFichaModal({ clienteId, onClose }) {
                     </div>
                     <ul style={{ margin: '6px 0 0', paddingLeft: '18px', fontSize: '0.78rem', color: '#667085' }}>
                       {f.items.map((it, i) => (
-                        <li key={i}>{it.cantidad}x {it.descripcion} — ${fmt(it.subtotal_usd)}</li>
+                        <li key={i}>{it.cantidad}x <span className="producto-nombre">{it.descripcion}</span> — ${fmt(it.subtotal_usd)}</li>
                       ))}
                     </ul>
                   </div>

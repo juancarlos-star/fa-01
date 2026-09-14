@@ -188,7 +188,7 @@ export default function Facturas({ currentUser }) {
           <tbody>
             {items.map((i) => (
               <tr key={i.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '0.5rem' }}>{i.descripcion}</td>
+                <td style={{ padding: '0.5rem' }} className="producto-nombre">{i.descripcion}</td>
                 <td>{i.codigo || '—'}</td>
                 <td>{i.cantidad}</td>
                 <td>${fmt(i.precio_unitario_usd)}</td>

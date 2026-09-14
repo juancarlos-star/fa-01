@@ -342,7 +342,7 @@ export default function DevolucionFacturas({ currentUser }) {
                   <tr key={item.id} style={sinNadaQueDevolver ? { opacity: 0.55 } : undefined}>
                     <td>{item.producto_codigo || '—'}</td>
                     <td>
-                      <div>{item.descripcion}</div>
+                      <div className="producto-nombre">{item.descripcion}</div>
                       {item.tipo !== 'accesorio' && item.codigo && (
                         <div style={codigoLineStyle}>{item.codigo}</div>
                       )}

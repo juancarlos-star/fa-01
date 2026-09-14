@@ -352,7 +352,7 @@ export default function DevolucionCompras({ currentUser }) {
                   <tr key={item.id} style={sinNadaQueDevolver ? { opacity: 0.55 } : undefined}>
                     <td>{item.producto_codigo || '—'}</td>
                     <td>
-                      <div>{item.descripcion}</div>
+                      <div className="producto-nombre">{item.descripcion}</div>
                       {item.tipo !== 'accesorio' && (
                         <div style={codigosListStyle}>
                           {(selecciones[item.product_id]?.codigos || []).length === 0 ? (

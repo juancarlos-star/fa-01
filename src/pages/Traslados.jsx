@@ -415,7 +415,7 @@ export default function Traslados({ currentUser }) {
                 <tr key={item.key}>
                   <td>{item.producto_codigo || '—'}</td>
                   <td>
-                    <div>{item.descripcion}</div>
+                    <div className="producto-nombre">{item.descripcion}</div>
                     {item.codigos && item.codigos.length > 0 && (
                       <div style={codigosListStyle}>
                         {item.codigos.map((cod) => (
@@ -484,7 +484,7 @@ export default function Traslados({ currentUser }) {
                       <tr key={item.key}>
                         <td>{item.producto_codigo || '—'}</td>
                         <td>
-                          <div>{item.descripcion}</div>
+                          <div className="producto-nombre">{item.descripcion}</div>
                           {item.codigos && item.codigos.length > 0 && (
                             <div className="pos-vertodo-codigos">
                               {item.codigos.map((cod) => (

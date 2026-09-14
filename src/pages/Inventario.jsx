@@ -360,8 +360,12 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
     setLoading(true);
     const data = await window.api.listUnits(productId);
     // Las unidades ya facturadas (vendidas) no deben mostrarse aqui: esta vista
-    // es para ver el inventario disponible/dado de baja, no el historial de ventas.
-    setUnits(data.filter((u) => u.estado !== 'vendido'));
+    // es para ver el inventario disponible/cargado, no el historial de ventas.
+    // Los "Descargados" tampoco se muestran aqui a proposito: ya no forman parte
+    // del stock y consultarlos aqui duplicaria (y podria confundir con) el
+    // Historial de Descargos de Reportes > Cargos y Descargos, que es su lugar
+    // natural con fecha, motivo y usuario que hizo el descargo.
+    setUnits(data.filter((u) => u.estado !== 'vendido' && u.estado !== 'descargado'));
     setLoading(false);
   }, [productId]);
 
@@ -446,9 +450,11 @@ function UnidadesProducto({ productId, tipo, currentUser }) {
     <div>
       <p style={{ color: '#666', fontSize: '0.85rem', marginTop: 0 }}>
         Vista de solo lectura de {label}s. Para agregar se debe hacer por el modulo de{' '}
-        <strong>Compras</strong> (queda como "Disponible") o, si quiere agregar manualmente o dar
-        de baja unidades, usa el modulo <strong>Cargos y Descargos</strong> (queda como "Cargado" o
-        "Descargado"; los "Cargado" igual se pueden facturar).
+        <strong>Compras</strong> (queda como "Disponible") o, si quiere agregar manualmente,
+        usa el modulo <strong>Cargos y Descargos</strong> (queda como "Cargado", y se puede
+        facturar igual que un "Disponible"). Las unidades dadas de baja ("Descargado") no
+        se listan aqui; para verlas entra a <strong>Reportes &gt; Cargos y Descargos &gt;
+        Historial de Descargos</strong>.
       </p>
 
       {loading ? (

@@ -587,7 +587,7 @@ function TablaCargoDescargo({ tipoDocumento, productos, depositoId, itemsDocumen
                 <tr key={item.key}>
                   <td>{item.producto_codigo || '—'}</td>
                   <td>
-                    <div>{item.descripcion}</div>
+                    <div className="producto-nombre">{item.descripcion}</div>
                     {item.codigos && item.codigos.length > 0 && (
                       <div style={codigosListStyle}>
                         {item.codigos.map((cod) => (

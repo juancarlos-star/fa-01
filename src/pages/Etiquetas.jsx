@@ -152,7 +152,7 @@ export default function Etiquetas() {
 
       {productoPendiente && productoPendiente.tipo === 'accesorio' && (
         <div className="form-box" style={{ maxWidth: '480px' }}>
-          <p><strong>{productoPendiente.nombre}</strong> — ${fmt(productoPendiente.precio2)}</p>
+          <p><strong className="producto-nombre">{productoPendiente.nombre}</strong> — ${fmt(productoPendiente.precio2)}</p>
           <label>¿Cuántas etiquetas necesitas?</label>
           <input
             type="number"
@@ -172,7 +172,7 @@ export default function Etiquetas() {
 
       {productoPendiente && productoPendiente.tipo !== 'accesorio' && (
         <div className="form-box" style={{ maxWidth: '480px' }}>
-          <p><strong>{productoPendiente.nombre}</strong> — ${fmt(productoPendiente.precio2)}</p>
+          <p><strong className="producto-nombre">{productoPendiente.nombre}</strong> — ${fmt(productoPendiente.precio2)}</p>
           <label>Elige las unidades a etiquetar ({unidadesSeleccionadas.length} de {unidadesDisponibles.length} seleccionadas)</label>
           <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #d0d5dd', borderRadius: '6px', padding: '6px' }}>
             {unidadesDisponibles.map((u) => (
