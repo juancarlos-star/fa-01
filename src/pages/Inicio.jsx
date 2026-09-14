@@ -13,8 +13,14 @@ const VERDE = '#0b8f4e';
 const ROJO = '#b42318';
 const GRIS = '#98a2b3';
 
-const TIPO_LABEL = { equipo: 'Teléfonos', simcard: 'SIM (ICCID)', usim: 'USIM', accesorio: 'Accesorios' };
 const TIPO_COLOR = { equipo: AZUL, simcard: '#1d78c9', usim: '#5aa9e6', accesorio: '#9cc6f2' };
+
+// Recorta una etiqueta si es muy larga, para que quepa en la barra/anillo sin desbordarse
+// cuando hay muchas categorias en pantalla al mismo tiempo.
+function recortarEtiqueta(texto, maxLargo) {
+  if (!texto) return '';
+  return texto.length > maxLargo ? `${texto.slice(0, maxLargo - 1)}…` : texto;
+}
 
 function formatFechaCorta(fechaISO) {
   const [, mes, dia] = fechaISO.split('-');
@@ -65,7 +71,10 @@ function LineChart({ datos }) {
 }
 
 // ---- Grafico de barras verticales simple (categorias o precios de SimCard) ----
-function BarChart({ datos, colorBarra }) {
+// El tamano de letra y el largo permitido de las etiquetas se reducen automaticamente segun
+// cuantas barras hay que mostrar, para que, sin importar cuantas categorias existan, todas
+// quepan en el mismo espacio fijo sin que el texto se amontone o se salga del cuadro.
+function BarChart({ datos, colorBarra, coloresPorEtiqueta }) {
   const ancho = 300;
   const alto = 90;
   const padIzq = 6;
@@ -74,6 +83,12 @@ function BarChart({ datos, colorBarra }) {
   const padAbajo = 20;
   const max = Math.max(1, ...datos.map((d) => d.valor));
   const anchoBarra = (ancho - padIzq - padDer) / datos.length;
+
+  const cant = datos.length;
+  const fontValor = cant <= 4 ? 9 : cant <= 6 ? 8 : cant <= 8 ? 7 : 6;
+  const fontEtiqueta = cant <= 4 ? 8.5 : cant <= 6 ? 7.5 : cant <= 8 ? 6.5 : 5.5;
+  const maxLargoEtiqueta = cant <= 4 ? 12 : cant <= 6 ? 9 : cant <= 8 ? 7 : 5;
+
   return (
     <svg viewBox={`0 0 ${ancho} ${alto}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
       {datos.map((d, i) => {
@@ -81,14 +96,15 @@ function BarChart({ datos, colorBarra }) {
         const x = padIzq + i * anchoBarra + anchoBarra * 0.18;
         const anchoReal = anchoBarra * 0.64;
         const y = alto - padAbajo - alturaBarra;
+        const color = (coloresPorEtiqueta && coloresPorEtiqueta[d.etiqueta]) || colorBarra || AZUL;
         return (
           <g key={d.etiqueta}>
-            <rect x={x} y={y} width={anchoReal} height={Math.max(alturaBarra, 1)} rx="2.5" fill={colorBarra || AZUL} />
-            <text x={x + anchoReal / 2} y={y - 3} fontSize="9" fill="#344054" textAnchor="middle" fontWeight="600">
+            <rect x={x} y={y} width={anchoReal} height={Math.max(alturaBarra, 1)} rx="2.5" fill={color} />
+            <text x={x + anchoReal / 2} y={y - 3} fontSize={fontValor} fill="#344054" textAnchor="middle" fontWeight="600">
               {d.valor}
             </text>
-            <text x={x + anchoReal / 2} y={alto - padAbajo + 12} fontSize="8.5" fill={GRIS} textAnchor="middle">
-              {d.etiqueta}
+            <text x={x + anchoReal / 2} y={alto - padAbajo + 12} fontSize={fontEtiqueta} fill={GRIS} textAnchor="middle">
+              {recortarEtiqueta(d.etiqueta, maxLargoEtiqueta)}
             </text>
           </g>
         );
@@ -98,7 +114,9 @@ function BarChart({ datos, colorBarra }) {
 }
 
 // ---- Anillo/dona de tendencia (porcentaje de cambio) ----
-function AnilloTendencia({ pct, etiqueta }) {
+// "escala" encoge el anillo completo (y su letra) cuando hay muchas categorias que mostrar a la
+// vez, para que todos los anillos sigan cabiendo en una sola fila sin desbordar la tarjeta.
+function AnilloTendencia({ pct, etiqueta, escala = 1 }) {
   const r = 24;
   const circ = 2 * Math.PI * r;
   const positivo = pct >= 0;
@@ -107,9 +125,11 @@ function AnilloTendencia({ pct, etiqueta }) {
   // para que el dibujo nunca "de mas de una vuelta".
   const fraccion = Math.min(Math.abs(pct), 100) / 100;
   const offset = circ * (1 - fraccion);
+  const tamano = Math.round(62 * escala);
+  const maxLargoEtiqueta = escala >= 0.85 ? 16 : escala >= 0.7 ? 12 : 9;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-      <svg width="62" height="62" viewBox="0 0 62 62">
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', width: `${tamano + 6}px` }}>
+      <svg width={tamano} height={tamano} viewBox="0 0 62 62">
         <circle cx="31" cy="31" r={r} fill="none" stroke="#eef1f5" strokeWidth="6" />
         <circle
           cx="31" cy="31" r={r} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round"
@@ -120,7 +140,9 @@ function AnilloTendencia({ pct, etiqueta }) {
           {positivo ? '+' : ''}{pct}%
         </text>
       </svg>
-      <span style={{ fontSize: '0.68rem', color: '#475467', textAlign: 'center', fontWeight: 600 }}>{etiqueta}</span>
+      <span style={{ fontSize: `${Math.max(0.55, 0.68 * escala)}rem`, color: '#475467', textAlign: 'center', fontWeight: 600 }}>
+        {recortarEtiqueta(etiqueta, maxLargoEtiqueta)}
+      </span>
     </div>
   );
 }
@@ -202,14 +224,21 @@ export default function Inicio({ user }) {
             <div style={{ ...cardStyle, flex: '1 1 280px' }}>
               <h3 style={{ margin: 0, fontSize: '0.9rem' }}>Ventas por categoría</h3>
               <div style={{ height: '90px', marginTop: '4px' }}>
+                {/* Se muestran TODAS las categorias con ventas (incluye las que se creen nuevas,
+                    ej. "Otros"), ordenadas de mas a menos vendida. El propio BarChart encoge
+                    letras/barras solas segun cuantas haya, para que quepan siempre en el mismo
+                    espacio. Si hay mas de las que caben, el backend ya recorto a las mas
+                    vendidas y "categoriasOmitidas" avisa cuantas quedaron afuera. */}
                 <BarChart
                   colorBarra={AZUL}
-                  datos={['equipo', 'simcard', 'usim', 'accesorio'].map((t) => ({
-                    etiqueta: TIPO_LABEL[t],
-                    valor: datos.porCategoria[t] || 0
-                  }))}
+                  datos={datos.categorias.map((c) => ({ etiqueta: c.etiqueta, valor: c.cantidad }))}
                 />
               </div>
+              {datos.categoriasOmitidas > 0 && (
+                <p style={{ fontSize: '0.62rem', color: GRIS, margin: '4px 0 0', textAlign: 'right' }}>
+                  +{datos.categoriasOmitidas} categoría(s) más con menos ventas, no mostrada(s) por espacio.
+                </p>
+              )}
             </div>
 
             <div style={{ ...cardStyle, flex: '1 1 280px' }}>
@@ -232,13 +261,21 @@ export default function Inicio({ user }) {
             <p style={{ fontSize: '0.68rem', color: GRIS, margin: '1px 0 6px' }}>
               Compara la 2da mitad de los últimos 30 días contra la 1ra mitad (en unidades vendidas).
             </p>
-            <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', justifyContent: 'space-around' }}>
-              <AnilloTendencia pct={datos.tendenciaTotalPct} etiqueta="Total de ventas" />
-              <AnilloTendencia pct={datos.tendenciaPorCategoria.equipo} etiqueta="Teléfonos" />
-              <AnilloTendencia pct={datos.tendenciaPorCategoria.simcard} etiqueta="SIM (ICCID)" />
-              <AnilloTendencia pct={datos.tendenciaPorCategoria.usim} etiqueta="USIM" />
-              <AnilloTendencia pct={datos.tendenciaPorCategoria.accesorio} etiqueta="Accesorios" />
-            </div>
+            {/* Un anillo por "Total de ventas" mas uno por cada categoria con ventas (misma lista
+                que la grafica de barras de arriba). La escala se reduce automaticamente mientras
+                mas anillos haya, para que todos sigan cabiendo en una sola fila. */}
+            {(() => {
+              const totalAnillos = datos.categorias.length + 1;
+              const escala = totalAnillos <= 5 ? 1 : totalAnillos <= 7 ? 0.82 : totalAnillos <= 9 ? 0.68 : 0.58;
+              return (
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'space-around' }}>
+                  <AnilloTendencia pct={datos.tendenciaTotalPct} etiqueta="Total de ventas" escala={escala} />
+                  {datos.categorias.map((c) => (
+                    <AnilloTendencia key={c.clave} pct={c.tendenciaPct} etiqueta={c.etiqueta} escala={escala} />
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {versionApp && (
