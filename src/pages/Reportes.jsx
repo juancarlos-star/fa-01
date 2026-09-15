@@ -96,6 +96,13 @@ const CATEGORIAS = [
     ]
   },
   {
+    key: 'auditoria',
+    label: 'Auditoría',
+    items: [
+      { key: 'historialAuditoria', label: 'Historial de auditoría' }
+    ]
+  },
+  {
     key: 'etiquetas',
     label: 'Etiquetas',
     items: [
@@ -129,9 +136,10 @@ export default function Reportes({ currentUser, categoriaInicial }) {
         items: c.items.filter((i) => {
           if (c.key === 'impuestos' && i.key === 'libroVentasIva') return false;
           if (c.key === 'vendedores' && i.key === 'vendedoresEfectividad') return false;
+          if (c.key === 'auditoria') return false;
           return true;
         })
-      }));
+      })).filter((c) => c.items.length > 0);
 
   const categoriaDefault = categoriaInicial && categoriasVisibles.some((c) => c.key === categoriaInicial)
     ? categoriaInicial
@@ -195,6 +203,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
       {tab === 'ventasPorCliente' && <ReporteVentasPorCliente desde={desde} hasta={hasta} />}
       {tab === 'libroVentasIva' && <ReporteLibroVentasIva desde={desde} hasta={hasta} />}
       {tab === 'libroComprasIva' && <ReporteLibroComprasIva desde={desde} hasta={hasta} />}
+      {tab === 'historialAuditoria' && <ReporteAuditoria desde={desde} hasta={hasta} />}
       {tab === 'etiquetas' && <Etiquetas />}
     </div>
   );
@@ -3197,6 +3206,86 @@ function ReporteLibroComprasIva({ desde, hasta }) {
               <td>${fmt(reporte.totalGeneralUsd)}</td>
             </tr>
           </tfoot>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// Etiquetas visuales por accion, reutilizando los mismos criterios de color que el resto de
+// Reportes (rojo = algo se perdio/elimino, azul = un valor cambio pero el registro sigue vivo).
+const COLOR_ACCION_AUDITORIA = {
+  eliminado: '#b42318',
+  precio_actualizado: '#175cd3',
+  costo_actualizado: '#175cd3'
+};
+
+const ETIQUETA_ACCION_AUDITORIA = {
+  eliminado: 'Eliminado',
+  precio_actualizado: 'Precio actualizado',
+  costo_actualizado: 'Costo actualizado'
+};
+
+const ETIQUETA_ENTIDAD_AUDITORIA = {
+  producto: 'Producto',
+  unidad: 'Unidad / IMEI',
+  gasto: 'Gasto',
+  categoria: 'Categoría'
+};
+
+// Historial general de cambios de precio/costo y borrados (productos, unidades, gastos,
+// categorias) -distinto del historial de facturas eliminadas, que tiene su propia pestaña en
+// Ventas > Historial de facturas. Exclusivo del administrador (el backend tambien lo exige en
+// auditoria:listar, asi que aunque alguien manipulara la app no podria traer estos datos).
+function ReporteAuditoria({ desde, hasta }) {
+  const [filas, setFilas] = useState(null);
+  const [cargando, setCargando] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const data = await window.api.listarAuditoria(desde, hasta);
+    setFilas(Array.isArray(data) ? data : []);
+    setCargando(false);
+  }, [desde, hasta]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  if (cargando) return <p>Cargando...</p>;
+  if (!filas) return null;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <p style={{ fontSize: '0.85rem', color: '#667085' }}>
+        Registra automáticamente cada cambio de precio o costo, y cada eliminación de producto,
+        unidad/IMEI, gasto o categoría — con quién lo hizo y cuándo. No se puede editar ni borrar
+        desde la app.
+      </p>
+      {filas.length === 0 ? (
+        <p>No hay movimientos de auditoría en este rango de fechas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Fecha</th>
+              <th>Entidad</th>
+              <th>Acción</th>
+              <th>Detalle</th>
+              <th>Usuario</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => (
+              <tr key={f.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{f.created_at}</td>
+                <td>{ETIQUETA_ENTIDAD_AUDITORIA[f.entidad] || f.entidad}</td>
+                <td style={{ color: COLOR_ACCION_AUDITORIA[f.accion] || '#111', fontWeight: 600 }}>
+                  {ETIQUETA_ACCION_AUDITORIA[f.accion] || f.accion}
+                </td>
+                <td>{f.descripcion}</td>
+                <td>{f.usuario || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
         </table>
       )}
     </div>
