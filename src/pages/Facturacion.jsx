@@ -620,7 +620,7 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
     setMostrarModalPago(true);
   };
 
-  const emitirFactura = async (pagos) => {
+  const emitirFactura = async (pagos, vuelto) => {
     const cliente = { id: clienteSeleccionado.id };
     totalizandoRef.current = true;
     setEmitiendo(true);
@@ -632,7 +632,8 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
         depositoId: Number(depositoId),
         esNotaVenta,
         apartadoOrigenId: apartadoOrigen?.apartadoId || null,
-        pagos
+        pagos,
+        vuelto: vuelto || null
       });
 
       if (!res.ok) {
@@ -1057,9 +1058,9 @@ export default function Facturacion({ currentUser, modo = 'factura', apartadoOri
           totalUsd={total}
           tasaCambio={tasaCambio}
           onCancel={() => setMostrarModalPago(false)}
-          onConfirm={async (pagos) => {
+          onConfirm={async (pagos, vuelto) => {
             setMostrarModalPago(false);
-            await emitirFactura(pagos);
+            await emitirFactura(pagos, vuelto);
           }}
         />
       )}
