@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { fmt } from '../utils/format.js';
 
 // Ventana modal para armar el desglose de pago de una factura/nota de venta o de un abono de
@@ -63,6 +63,11 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
   const [lineas, setLineas] = useState([nuevaLinea(totalUsd ? String(totalUsd) : '')]);
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
+  // Moneda en la que se va a entregar el vuelto, cuando aplica. Arranca en null y se inicializa
+  // (en el render, mas abajo) con la sugerencia automatica la primera vez que aparece un
+  // sobrante en efectivo; el cajero puede cambiarla a mano si, por ejemplo, no tiene billete de
+  // $1 a mano y prefiere darlo en bolivares.
+  const [monedaVueltoElegida, setMonedaVueltoElegida] = useState(null);
 
   const montoUsdDeLinea = (linea) => {
     const m = parseFloat(linea.monto) || 0;
@@ -78,8 +83,23 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
   // sentido "dar vuelto" de un pago con tarjeta o transferencia.
   const haySobranteComoVuelto = diferencia > 0.01 && totalEfectivoUsd >= diferencia - 0.01;
   const cuadra = Math.abs(diferencia) <= 0.01 || haySobranteComoVuelto;
-  const monedaVuelto = haySobranteComoVuelto ? decidirMonedaVuelto(diferencia) : null;
+  const monedaVueltoSugerida = haySobranteComoVuelto ? decidirMonedaVuelto(diferencia) : null;
   const vueltoEnBs = diferencia * (tasaCambio || 0);
+
+  // Cada vez que aparece un sobrante nuevo se propone la moneda sugerida (el cajero la puede
+  // cambiar con los botones de abajo); cuando el sobrante desaparece se limpia la eleccion, para
+  // que la proxima vez vuelva a proponer segun el nuevo monto en vez de arrastrar una eleccion
+  // vieja.
+  useEffect(() => {
+    if (haySobranteComoVuelto) {
+      setMonedaVueltoElegida((prev) => prev || monedaVueltoSugerida);
+    } else if (monedaVueltoElegida) {
+      setMonedaVueltoElegida(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [haySobranteComoVuelto, monedaVueltoSugerida]);
+
+  const monedaVuelto = monedaVueltoElegida || monedaVueltoSugerida;
 
   const actualizarLinea = (key, campo, valor) => {
     setLineas((prev) => prev.map((l) => (l.key === key ? { ...l, [campo]: valor } : l)));
@@ -119,8 +139,14 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
       const lineasAEnviar = haySobranteComoVuelto
         ? restarVueltoDeLineasEfectivo(lineas, diferencia, tasaCambio)
         : lineas;
+      // Vuelto entregado, ya en la moneda que eligio el cajero, para que quede reflejado en la
+      // factura/nota de venta (ver facturas:crear y generarFacturaPDF.js).
+      const vueltoAEnviar = haySobranteComoVuelto
+        ? { monto: monedaVuelto === 'USD' ? diferencia : vueltoEnBs, moneda: monedaVuelto }
+        : null;
       await onConfirm(
-        lineasAEnviar.map((l) => ({ metodo: l.metodo, moneda: l.moneda, monto: parseFloat(l.monto) || 0 }))
+        lineasAEnviar.map((l) => ({ metodo: l.metodo, moneda: l.moneda, monto: parseFloat(l.monto) || 0 })),
+        vueltoAEnviar
       );
     } finally {
       setGuardando(false);
@@ -186,10 +212,27 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
           {haySobranteComoVuelto && (
             <div style={vueltoStyle}>
               <div style={{ fontWeight: 'bold', color: '#0b4f9e' }}>💵 Vuelto a entregar: ${fmt(diferencia)}</div>
-              <div style={{ color: '#334155', marginTop: '2px' }}>
+              <div style={{ color: '#334155', margin: '2px 0 6px' }}>
                 {monedaVuelto === 'USD'
                   ? `Entregar en dólares (billete de $${fmt(diferencia, 0)}).`
-                  : `Entregar en bolívares: Bs ${fmt(vueltoEnBs)} (equivalente a $${fmt(diferencia)}, no hay monedas de centavos de dólar).`}
+                  : `Entregar en bolívares: Bs ${fmt(vueltoEnBs)} (equivalente a $${fmt(diferencia)}).`}
+              </div>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <span style={{ color: '#667085', fontSize: '0.8rem' }}>¿No tienes esa denominación? Entrégalo en:</span>
+                <button
+                  type="button"
+                  onClick={() => setMonedaVueltoElegida('USD')}
+                  style={monedaVuelto === 'USD' ? btnMonedaVueltoActivo : btnMonedaVuelto}
+                >
+                  USD (${fmt(diferencia)})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMonedaVueltoElegida('Bs')}
+                  style={monedaVuelto === 'Bs' ? btnMonedaVueltoActivo : btnMonedaVuelto}
+                >
+                  Bs ({fmt(vueltoEnBs)})
+                </button>
               </div>
             </div>
           )}
@@ -288,6 +331,24 @@ const vueltoStyle = {
   padding: '8px 10px',
   fontSize: '0.85rem',
   marginTop: '4px'
+};
+
+const btnMonedaVuelto = {
+  padding: '3px 9px',
+  background: '#fff',
+  border: '1px solid #93b6d6',
+  borderRadius: '999px',
+  color: '#1a5fa3',
+  cursor: 'pointer',
+  fontSize: '0.78rem'
+};
+
+const btnMonedaVueltoActivo = {
+  ...btnMonedaVuelto,
+  background: '#0b4f9e',
+  borderColor: '#0b4f9e',
+  color: '#fff',
+  fontWeight: 'bold'
 };
 
 const footerStyle = {
