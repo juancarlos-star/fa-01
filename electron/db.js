@@ -647,6 +647,10 @@ function crearIndicesSiHacenFalta(database) {
     CREATE INDEX IF NOT EXISTS idx_apartado_abono_pagos_abono_id ON apartado_abono_pagos(abono_id);
     CREATE INDEX IF NOT EXISTS idx_notificaciones_tipo_producto ON notificaciones(tipo, producto_id);
     CREATE INDEX IF NOT EXISTS idx_caja_turnos_estado ON caja_turnos(estado);
+    CREATE INDEX IF NOT EXISTS idx_reparaciones_estado ON reparaciones(estado);
+    CREATE INDEX IF NOT EXISTS idx_reparaciones_unit_id ON reparaciones(unit_id);
+    CREATE INDEX IF NOT EXISTS idx_reparaciones_created_at ON reparaciones(created_at);
+    CREATE INDEX IF NOT EXISTS idx_reparaciones_eventos_reparacion_id ON reparaciones_eventos(reparacion_id);
   `);
 }
 
@@ -970,6 +974,51 @@ function initDb() {
       notas_apertura TEXT,
       notas_cierre TEXT
     );
+    -- Garantias/Reparaciones: cubre AMBOS casos (reparacion pagada por el cliente y reclamo de
+    -- garantia de fabrica), acotado a proposito a equipos YA VENDIDOS por la tienda (unit_id
+    -- siempre referencia un inventory_units con una venta real en factura_items -se valida en
+    -- reparaciones:buscarEquipoVendido antes de poder crear el caso). "resolucion" solo se llena
+    -- al cerrar el caso (estado='entregado'): 'reparado' (se le devuelve el mismo equipo ya
+    -- arreglado), 'reemplazado' (solo aplica a garantia: se le entrega un equipo nuevo del
+    -- inventario, guardado en unit_reemplazo_id) o 'rechazado' (no aplicaba garantia / no tuvo
+    -- arreglo, se le devuelve el mismo equipo tal cual). La reparacion pagada por el cliente NO
+    -- registra cobro aqui a proposito -eso se maneja aparte, fuera del sistema.
+    CREATE TABLE IF NOT EXISTS reparaciones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      numero INTEGER NOT NULL,
+      tipo TEXT NOT NULL CHECK(tipo IN ('reparacion','garantia')),
+      unit_id INTEGER NOT NULL,
+      product_id INTEGER,
+      factura_id INTEGER,
+      cliente_id INTEGER,
+      cliente_nombre TEXT,
+      cliente_telefono TEXT,
+      falla_reportada TEXT NOT NULL,
+      diagnostico TEXT,
+      estado TEXT NOT NULL DEFAULT 'recibido' CHECK(estado IN ('recibido','en_diagnostico','en_reparacion','esperando_repuesto','listo_entrega','entregado')),
+      resolucion TEXT CHECK(resolucion IN ('reparado','reemplazado','rechazado')),
+      unit_reemplazo_id INTEGER,
+      usuario_recibio TEXT,
+      usuario_entrego TEXT,
+      created_at TEXT NOT NULL,
+      entregado_at TEXT,
+      FOREIGN KEY (unit_id) REFERENCES inventory_units(id),
+      FOREIGN KEY (product_id) REFERENCES products(id),
+      FOREIGN KEY (factura_id) REFERENCES facturas(id),
+      FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+      FOREIGN KEY (unit_reemplazo_id) REFERENCES inventory_units(id)
+    );
+    -- Bitacora de cada caso: un renglon por cada cambio de estado (incluyendo el "recibido"
+    -- inicial), para poder mostrar una linea de tiempo en el detalle del caso.
+    CREATE TABLE IF NOT EXISTS reparaciones_eventos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reparacion_id INTEGER NOT NULL,
+      estado TEXT NOT NULL,
+      nota TEXT,
+      usuario TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (reparacion_id) REFERENCES reparaciones(id)
+    );
   `);
 
   migrarProductsSiHaceFalta(database);
@@ -1005,6 +1054,8 @@ function initDb() {
   insertSetting.run('numero_factura_siguiente', '1');
   insertSetting.run('numero_nota_venta_siguiente', '1');
   insertSetting.run('numero_apartado_siguiente', '1');
+  insertSetting.run('numero_reparacion_siguiente', '1');
+  insertSetting.run('numero_garantia_siguiente', '1');
   insertSetting.run('numero_recibo_abono_siguiente', '1');
   // Copia de seguridad automatica por correo (Configuracion > Email Reportes): queda
   // DESACTIVADA por defecto y sin credenciales cargadas. Antes este archivo traia una cuenta de

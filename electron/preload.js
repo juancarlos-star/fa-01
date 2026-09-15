@@ -130,6 +130,14 @@ contextBridge.exposeInMainWorld('api', {
   cajaAbrir: (data) => ipcRenderer.invoke('caja:abrir', data),
   cajaCerrar: (data) => ipcRenderer.invoke('caja:cerrar', data),
   cajaHistorial: (desde, hasta) => ipcRenderer.invoke('caja:historial', { desde, hasta }),
+
+  // Garantías / Reparaciones
+  buscarEquipoVendidoParaReparacion: (codigo) => ipcRenderer.invoke('reparaciones:buscarEquipoVendido', { codigo }),
+  crearReparacion: (data) => ipcRenderer.invoke('reparaciones:crear', data),
+  listarReparaciones: (estado) => ipcRenderer.invoke('reparaciones:listar', { estado }),
+  detalleReparacion: (id) => ipcRenderer.invoke('reparaciones:detalle', { id }),
+  cambiarEstadoReparacion: (data) => ipcRenderer.invoke('reparaciones:cambiarEstado', data),
+  cerrarReparacion: (data) => ipcRenderer.invoke('reparaciones:cerrar', data),
   // Reportes
   getReporteGanancias: (desde, hasta) => ipcRenderer.invoke('reportes:ganancias', { desde, hasta }),
   getReporteFacturas: (desde, hasta) => ipcRenderer.invoke('reportes:facturas', { desde, hasta }),

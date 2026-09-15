@@ -3211,6 +3211,159 @@ ipcMain.handle('caja:historial', (event, { desde, hasta } = {}) => {
   return { ok: true, turnos: db.prepare('SELECT * FROM caja_turnos ORDER BY id DESC LIMIT 200').all() };
 });
 
+// ---------- IPC: Garantías / Reparaciones ----------
+// Cubre AMBOS casos (reparacion pagada por el cliente y reclamo de garantia de fabrica), acotado
+// a proposito a equipos YA VENDIDOS por la tienda: para crear un caso primero hay que buscar el
+// equipo por su codigo/IMEI (reparaciones:buscarEquipoVendido), que exige que exista una venta
+// real en factura_items -no se puede crear un caso sobre un equipo que nunca vendio la tienda.
+
+ipcMain.handle('reparaciones:buscarEquipoVendido', (event, { codigo }) => {
+  const db = getDb();
+  const codigoLimpio = (codigo || '').trim();
+  if (!codigoLimpio) return { ok: false, message: 'Escribe el código o IMEI del equipo' };
+  const unit = db.prepare('SELECT * FROM inventory_units WHERE codigo = ?').get(codigoLimpio);
+  if (!unit) return { ok: false, message: `No se encontró ningún equipo con el código "${codigoLimpio}"` };
+  const factItem = db.prepare('SELECT * FROM factura_items WHERE unit_id = ? ORDER BY id DESC LIMIT 1').get(unit.id);
+  if (!factItem) return { ok: false, message: 'Este equipo no aparece vendido en el sistema (no tiene una factura asociada), así que no se le puede abrir garantía/reparación aquí.' };
+  const factura = db.prepare('SELECT * FROM facturas WHERE id = ?').get(factItem.factura_id);
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(unit.product_id);
+  let clienteTelefono = '';
+  if (factura?.cliente_id) {
+    const cliente = db.prepare('SELECT telefono FROM clientes WHERE id = ?').get(factura.cliente_id);
+    clienteTelefono = cliente?.telefono || '';
+  }
+  const casoAbierto = db.prepare("SELECT id FROM reparaciones WHERE unit_id = ? AND estado != 'entregado'").get(unit.id);
+  return { ok: true, unit, product, factura, clienteTelefono, casoAbiertoId: casoAbierto?.id || null };
+});
+
+ipcMain.handle('reparaciones:crear', (event, { tipo, unitId, clienteId, clienteNombre, clienteTelefono, fallaReportada, usuario } = {}) => {
+  const db = getDb();
+  if (!['reparacion', 'garantia'].includes(tipo)) return { ok: false, message: 'Tipo de caso inválido' };
+  const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(unitId);
+  if (!unit) return { ok: false, message: 'Equipo no encontrado' };
+  if (!fallaReportada || !fallaReportada.trim()) return { ok: false, message: 'Describe la falla reportada por el cliente' };
+  if (!clienteNombre || !clienteNombre.trim()) return { ok: false, message: 'El nombre del cliente es obligatorio' };
+  const casoAbierto = db.prepare("SELECT id FROM reparaciones WHERE unit_id = ? AND estado != 'entregado'").get(unitId);
+  if (casoAbierto) return { ok: false, message: `Este equipo ya tiene un caso abierto (N° ${casoAbierto.id}). Ciérralo antes de abrir uno nuevo.` };
+
+  const factItem = db.prepare('SELECT * FROM factura_items WHERE unit_id = ? ORDER BY id DESC LIMIT 1').get(unitId);
+
+  const numeroKey = tipo === 'garantia' ? 'numero_garantia_siguiente' : 'numero_reparacion_siguiente';
+  const settingsRow = db.prepare('SELECT value FROM settings WHERE key = ?').get(numeroKey);
+  let siguienteNumero = parseInt(settingsRow ? settingsRow.value : '1', 10);
+  if (!siguienteNumero || siguienteNumero < 1) siguienteNumero = 1;
+
+  let reparacionId;
+  const transaccion = db.transaction(() => {
+    const info = db.prepare(
+      `INSERT INTO reparaciones (numero, tipo, unit_id, product_id, factura_id, cliente_id, cliente_nombre, cliente_telefono, falla_reportada, estado, usuario_recibio, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'recibido', ?, datetime('now','localtime'))`
+    ).run(siguienteNumero, tipo, unitId, unit.product_id, factItem?.factura_id || null, clienteId || null, clienteNombre.trim(), (clienteTelefono || '').trim(), fallaReportada.trim(), usuario || null);
+    reparacionId = info.lastInsertRowid;
+    db.prepare(
+      `INSERT INTO reparaciones_eventos (reparacion_id, estado, nota, usuario, created_at) VALUES (?, 'recibido', ?, ?, datetime('now','localtime'))`
+    ).run(reparacionId, 'Caso recibido', usuario || null);
+    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(String(siguienteNumero + 1), numeroKey);
+  });
+  transaccion();
+
+  const reparacion = db.prepare('SELECT * FROM reparaciones WHERE id = ?').get(reparacionId);
+  return { ok: true, reparacion };
+});
+
+ipcMain.handle('reparaciones:listar', (event, { estado } = {}) => {
+  const db = getDb();
+  let sql = `
+    SELECT r.*, p.nombre AS product_nombre, iu.codigo AS unit_codigo
+    FROM reparaciones r
+    LEFT JOIN products p ON p.id = r.product_id
+    LEFT JOIN inventory_units iu ON iu.id = r.unit_id
+    WHERE 1=1`;
+  const params = [];
+  if (estado === 'abiertos') {
+    sql += " AND r.estado != 'entregado'";
+  } else if (estado && estado !== 'todos') {
+    sql += ' AND r.estado = ?';
+    params.push(estado);
+  }
+  sql += ' ORDER BY r.id DESC LIMIT 300';
+  return { ok: true, reparaciones: db.prepare(sql).all(...params) };
+});
+
+ipcMain.handle('reparaciones:detalle', (event, { id }) => {
+  const db = getDb();
+  const reparacion = db.prepare('SELECT * FROM reparaciones WHERE id = ?').get(id);
+  if (!reparacion) return { ok: false, message: 'Caso no encontrado' };
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(reparacion.product_id);
+  const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(reparacion.unit_id);
+  const factura = reparacion.factura_id ? db.prepare('SELECT * FROM facturas WHERE id = ?').get(reparacion.factura_id) : null;
+  const unitReemplazo = reparacion.unit_reemplazo_id ? db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(reparacion.unit_reemplazo_id) : null;
+  const eventos = db.prepare('SELECT * FROM reparaciones_eventos WHERE reparacion_id = ? ORDER BY id ASC').all(id);
+  return { ok: true, reparacion, product, unit, factura, unitReemplazo, eventos };
+});
+
+// Cambia el estado intermedio del caso (recibido -> en_diagnostico -> en_reparacion ->
+// esperando_repuesto -> listo_entrega). Cerrar el caso ('entregado') tiene su propio endpoint
+// (reparaciones:cerrar) porque implica mas validaciones (resolucion, posible reemplazo).
+ipcMain.handle('reparaciones:cambiarEstado', (event, { id, estado, nota, usuario } = {}) => {
+  const db = getDb();
+  const ESTADOS_INTERMEDIOS = ['recibido', 'en_diagnostico', 'en_reparacion', 'esperando_repuesto', 'listo_entrega'];
+  if (!ESTADOS_INTERMEDIOS.includes(estado)) return { ok: false, message: 'Estado inválido' };
+  const reparacion = db.prepare('SELECT * FROM reparaciones WHERE id = ?').get(id);
+  if (!reparacion) return { ok: false, message: 'Caso no encontrado' };
+  if (reparacion.estado === 'entregado') return { ok: false, message: 'Este caso ya fue entregado y no se puede modificar' };
+
+  const transaccion = db.transaction(() => {
+    db.prepare('UPDATE reparaciones SET estado = ? WHERE id = ?').run(estado, id);
+    db.prepare(
+      `INSERT INTO reparaciones_eventos (reparacion_id, estado, nota, usuario, created_at) VALUES (?, ?, ?, ?, datetime('now','localtime'))`
+    ).run(id, estado, (nota || '').trim() || null, usuario || null);
+  });
+  transaccion();
+
+  return { ok: true, reparacion: db.prepare('SELECT * FROM reparaciones WHERE id = ?').get(id) };
+});
+
+// Cierra el caso entregando el equipo al cliente. resolucion='reemplazado' SOLO aplica a
+// garantia (el negocio a veces reemplaza por un equipo nuevo del inventario si el original no
+// tiene arreglo) y da de baja del stock disponible la unidad de reemplazo.
+ipcMain.handle('reparaciones:cerrar', (event, { id, resolucion, unitReemplazoId, usuario, nota } = {}) => {
+  const db = getDb();
+  if (!['reparado', 'reemplazado', 'rechazado'].includes(resolucion)) {
+    return { ok: false, message: 'Selecciona cómo se resolvió el caso' };
+  }
+  const reparacion = db.prepare('SELECT * FROM reparaciones WHERE id = ?').get(id);
+  if (!reparacion) return { ok: false, message: 'Caso no encontrado' };
+  if (reparacion.estado === 'entregado') return { ok: false, message: 'Este caso ya fue entregado' };
+
+  let unitReemplazo = null;
+  if (resolucion === 'reemplazado') {
+    if (reparacion.tipo !== 'garantia') return { ok: false, message: 'El reemplazo por equipo nuevo solo aplica a casos de Garantía' };
+    if (!unitReemplazoId) return { ok: false, message: 'Selecciona el equipo del inventario que se entregará como reemplazo' };
+    unitReemplazo = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(unitReemplazoId);
+    if (!unitReemplazo) return { ok: false, message: 'El equipo de reemplazo no existe' };
+    if (unitReemplazo.estado !== 'disponible') return { ok: false, message: 'El equipo de reemplazo seleccionado ya no está disponible' };
+  }
+
+  const transaccion = db.transaction(() => {
+    db.prepare(
+      `UPDATE reparaciones
+       SET estado = 'entregado', resolucion = ?, unit_reemplazo_id = ?, usuario_entrego = ?, entregado_at = datetime('now','localtime')
+       WHERE id = ?`
+    ).run(resolucion, unitReemplazo?.id || null, usuario || null, id);
+    if (unitReemplazo) {
+      db.prepare("UPDATE inventory_units SET estado = 'vendido' WHERE id = ?").run(unitReemplazo.id);
+    }
+    const etiquetaResolucion = { reparado: 'Entregado: reparado', reemplazado: 'Entregado: reemplazado por equipo nuevo', rechazado: 'Entregado: garantía rechazada / sin arreglo' }[resolucion];
+    db.prepare(
+      `INSERT INTO reparaciones_eventos (reparacion_id, estado, nota, usuario, created_at) VALUES (?, 'entregado', ?, ?, datetime('now','localtime'))`
+    ).run(id, (nota || '').trim() || etiquetaResolucion, usuario || null);
+  });
+  transaccion();
+
+  return { ok: true, reparacion: db.prepare('SELECT * FROM reparaciones WHERE id = ?').get(id) };
+});
+
 // ---------- IPC: Compras (historial) ----------
 ipcMain.handle('compras:list', (event, { desde, hasta } = {}) => {
   const db = getDb();
