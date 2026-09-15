@@ -103,6 +103,13 @@ const CATEGORIAS = [
     ]
   },
   {
+    key: 'caja',
+    label: 'Caja',
+    items: [
+      { key: 'historialCierresCaja', label: 'Historial de cierres' }
+    ]
+  },
+  {
     key: 'etiquetas',
     label: 'Etiquetas',
     items: [
@@ -137,6 +144,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
           if (c.key === 'impuestos' && i.key === 'libroVentasIva') return false;
           if (c.key === 'vendedores' && i.key === 'vendedoresEfectividad') return false;
           if (c.key === 'auditoria') return false;
+          if (c.key === 'caja') return false;
           return true;
         })
       })).filter((c) => c.items.length > 0);
@@ -204,6 +212,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
       {tab === 'libroVentasIva' && <ReporteLibroVentasIva desde={desde} hasta={hasta} />}
       {tab === 'libroComprasIva' && <ReporteLibroComprasIva desde={desde} hasta={hasta} />}
       {tab === 'historialAuditoria' && <ReporteAuditoria desde={desde} hasta={hasta} />}
+      {tab === 'historialCierresCaja' && <ReporteHistorialCierresCaja desde={desde} hasta={hasta} />}
       {tab === 'etiquetas' && <Etiquetas />}
     </div>
   );
@@ -3283,6 +3292,82 @@ function ReporteAuditoria({ desde, hasta }) {
                 </td>
                 <td>{f.descripcion}</td>
                 <td>{f.usuario || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// Historial de apertura/cierre de caja por turno -exclusivo del administrador (el backend
+// tambien lo exige en caja:historial), para poder revisar despues si algun turno no cuadro.
+// Muestra el arqueo de USD y de Bs por separado, cada uno con su propio color (verde = cuadra,
+// rojo = falta, azul = sobra), igual que ya hace la propia pantalla de Caja al cerrar el turno.
+function ReporteHistorialCierresCaja({ desde, hasta }) {
+  const [turnos, setTurnos] = useState(null);
+  const [cargando, setCargando] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const res = await window.api.cajaHistorial(desde, hasta);
+    setTurnos(res.ok ? res.turnos : []);
+    setCargando(false);
+  }, [desde, hasta]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const colorDiferencia = (dif) => {
+    if (dif === null || dif === undefined) return '#667085';
+    if (Math.abs(dif) < 0.01) return '#0b8f4e';
+    return dif > 0 ? '#175cd3' : '#b42318';
+  };
+
+  const textoDiferencia = (dif, contado, simbolo) => {
+    if (contado === null || contado === undefined) return 'Sin contar';
+    if (Math.abs(dif) < 0.01) return 'Cuadra';
+    return dif > 0 ? `Sobran ${simbolo}${fmt(Math.abs(dif))}` : `Faltan ${simbolo}${fmt(Math.abs(dif))}`;
+  };
+
+  if (cargando) return <p>Cargando...</p>;
+  if (!turnos) return null;
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      {turnos.length === 0 ? (
+        <p>No hay turnos de caja en este rango de fechas.</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+              <th style={{ padding: '0.5rem' }}>Apertura</th>
+              <th>Cierre</th>
+              <th>Abrió</th>
+              <th>Cerró</th>
+              <th>Monto inicial</th>
+              <th>Esperado</th>
+              <th>Contado</th>
+              <th>Diferencia USD</th>
+              <th>Diferencia Bs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {turnos.map((t) => (
+              <tr key={t.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: '0.5rem' }}>{t.apertura_at}</td>
+                <td>{t.cierre_at || <em style={{ color: '#667085' }}>Abierto</em>}</td>
+                <td>{t.usuario_apertura || '—'}</td>
+                <td>{t.usuario_cierre || '—'}</td>
+                <td>${fmt(t.monto_inicial_usd)} / Bs {fmt(t.monto_inicial_bs)}</td>
+                <td>{t.esperado_usd !== null ? `$${fmt(t.esperado_usd)} / Bs ${fmt(t.esperado_bs)}` : '—'}</td>
+                <td>{t.contado_usd !== null ? `$${fmt(t.contado_usd)}` : '—'} / {t.contado_bs !== null ? `Bs ${fmt(t.contado_bs)}` : '—'}</td>
+                <td style={{ color: colorDiferencia(t.diferencia_usd), fontWeight: 600 }}>
+                  {textoDiferencia(t.diferencia_usd, t.contado_usd, '$')}
+                </td>
+                <td style={{ color: colorDiferencia(t.diferencia_bs), fontWeight: 600 }}>
+                  {textoDiferencia(t.diferencia_bs, t.contado_bs, 'Bs ')}
+                </td>
               </tr>
             ))}
           </tbody>
