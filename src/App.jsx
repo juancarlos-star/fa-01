@@ -55,6 +55,19 @@ const RIcon = {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, verticalAlign: -2 }}>
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
     </svg>
+  ),
+  // Estas dos categorias (Auditoria y Caja) ya existian dentro de Reportes.jsx (con su propia
+  // pestaña y su propio backend), pero no tenian boton aca en el menu lateral para llegar a
+  // ellas -por eso, aunque el reporte estuviera listo, nadie podia abrirlo desde la app.
+  Auditoria: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, verticalAlign: -2 }}>
+      <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  ),
+  Caja: () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 8, verticalAlign: -2 }}>
+      <rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2" /><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
+    </svg>
   )
 };
 
@@ -515,6 +528,16 @@ export default function App() {
                   <button className={view === 'reportes' && categoriaReportes === 'vendedores' ? 'active' : ''} onClick={() => irAReporte('vendedores')}>
                     <RIcon.Vendedores /> Vendedores
                   </button>
+                  {user.role === 'administrador' && (
+                    <button className={view === 'reportes' && categoriaReportes === 'auditoria' ? 'active' : ''} onClick={() => irAReporte('auditoria')}>
+                      <RIcon.Auditoria /> Auditoría
+                    </button>
+                  )}
+                  {user.role === 'administrador' && (
+                    <button className={view === 'reportes' && categoriaReportes === 'caja' ? 'active' : ''} onClick={() => irAReporte('caja')}>
+                      <RIcon.Caja /> Caja
+                    </button>
+                  )}
             </SidebarSubmenu>
           </div>
           <hr className="sidebar-section-divider" />
