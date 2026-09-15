@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { generarReciboEntregaPDF } from '../utils/generarReciboEntregaPDF.js';
 
 // Garantías / Reparaciones: cubre ambos casos (reparación pagada por el cliente y reclamo de
 // garantía de fábrica), siempre sobre un equipo YA VENDIDO por la tienda. Tres sub-vistas dentro
@@ -305,6 +306,10 @@ function DetalleCaso({ id, currentUser, onVolver }) {
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
+  const [settings, setSettings] = useState(null);
+  const [imprimiendo, setImprimiendo] = useState(false);
+
+  useEffect(() => { window.api.getSettings().then(setSettings); }, []);
 
   // Cambiar estado intermedio
   const [nuevoEstado, setNuevoEstado] = useState('');
@@ -378,9 +383,24 @@ function DetalleCaso({ id, currentUser, onVolver }) {
       });
       if (!res.ok) { setError(res.message); return; }
       setMostrarCierre(false);
-      await cargar();
+      // Se vuelve a pedir el detalle completo (en vez de usar la respuesta de cerrar) porque
+      // recien ahi vienen resueltos product/unit/unitReemplazo que necesita el recibo en PDF.
+      const fresco = await window.api.detalleReparacion(id);
+      if (fresco.ok) {
+        setDatos(fresco);
+        await generarReciboEntregaPDF(fresco.reparacion, fresco.product, fresco.unit, fresco.unitReemplazo, settings, { imprimir: true });
+      }
     } finally {
       setGuardandoCierre(false);
+    }
+  };
+
+  const handleImprimirRecibo = async () => {
+    setImprimiendo(true);
+    try {
+      await generarReciboEntregaPDF(reparacion, product, unit, unitReemplazo, settings, { imprimir: true });
+    } finally {
+      setImprimiendo(false);
     }
   };
 
@@ -412,6 +432,9 @@ function DetalleCaso({ id, currentUser, onVolver }) {
             <p><strong>Resolución:</strong> {ETIQUETA_RESOLUCION[reparacion.resolucion] || reparacion.resolucion}</p>
             {unitReemplazo && <p><strong>Equipo de reemplazo entregado:</strong> {unitReemplazo.codigo}</p>}
             <p style={{ color: '#666', fontSize: '0.85rem' }}>Entregado el {reparacion.entregado_at} por {reparacion.usuario_entrego || '—'}</p>
+            <button type="button" onClick={handleImprimirRecibo} disabled={imprimiendo}>
+              {imprimiendo ? 'Imprimiendo...' : 'Imprimir recibo de entrega'}
+            </button>
           </>
         )}
       </div>
