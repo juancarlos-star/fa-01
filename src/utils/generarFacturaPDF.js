@@ -127,6 +127,27 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
     });
   }
 
+  // Si el cliente pago de mas en efectivo y se le dio vuelto (factura.vuelto_monto,
+  // factura.vuelto_moneda -ver PagoModal.jsx y facturas:crear), se deja constancia de cuanto
+  // recibio en total y cuanto se le devolvio, en la moneda en que efectivamente se le entrego.
+  // factura.tasa_cambio es la del DIA en que se emitio esta factura (no la de hoy), para que
+  // una factura vieja reimpresa siga mostrando el monto correcto.
+  let yVuelto = yPagos + (pagos.length > 0 ? 5 + pagos.length * 5 + 3 : 0);
+  if (factura.vuelto_monto) {
+    if (yVuelto + 5 > 270) { doc.addPage(); yVuelto = 20; }
+    const vueltoEsUsd = factura.vuelto_moneda === 'USD';
+    const vueltoUsdEquiv = vueltoEsUsd ? factura.vuelto_monto : factura.vuelto_monto / (factura.tasa_cambio || 1);
+    const recibidoUsd = (factura.total_usd || 0) + vueltoUsdEquiv;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(
+      `Recibido: $${fmt(recibidoUsd)}  —  Vuelto entregado: ${vueltoEsUsd ? '$' : 'Bs '}${fmt(factura.vuelto_monto)}`,
+      10,
+      yVuelto
+    );
+    doc.setFont('helvetica', 'normal');
+  }
+
   dibujarPiePaginaEmpresa(doc, settings);
 
   if (opciones.imprimir) {
