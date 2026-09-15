@@ -14,6 +14,7 @@ import Apartados from './pages/Apartados.jsx';
 import ComprasTelfAcces from './pages/ComprasTelfAcces.jsx';
 import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
+import Caja from './pages/Caja.jsx';
 import Reportes from './pages/Reportes.jsx';
 import Inicio from './pages/Inicio.jsx';
 import LogoMoviSync from './components/LogoMoviSync.jsx';
@@ -101,6 +102,11 @@ const MIcon = {
   Apartados: () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
       <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
+  ),
+  Caja: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <rect x="2" y="6" width="20" height="14" rx="2" /><circle cx="12" cy="13" r="3" /><path d="M6 6V4h12v2" />
     </svg>
   ),
   Reportes: () => (
@@ -409,6 +415,7 @@ export default function App() {
             </SidebarSubmenu>
           </div>
           <button className={view === 'apartados' ? 'active' : ''} onClick={() => setView('apartados')}><MIcon.Apartados />Apartados</button>
+          <button className={view === 'caja' ? 'active' : ''} onClick={() => setView('caja')}><MIcon.Caja />Caja</button>
           <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuComprasAbierto ? ' dimmed' : ''}`}>
             <button
@@ -575,6 +582,7 @@ export default function App() {
         {view === 'devolucionCompras' && <DevolucionCompras currentUser={user} />}
         {view === 'traslados' && <Traslados currentUser={user} />}
         {view === 'apartados' && <Apartados currentUser={user} onIrAFacturar={irAFacturarDesdeApartado} />}
+        {view === 'caja' && <Caja currentUser={user} />}
         {view === 'categorias' && <CategoriasAdmin />}
         {view === 'cargo' && <CargosDescargos key="cargo" currentUser={user} tipoInicial="cargo" />}
         {view === 'descargo' && <CargosDescargos key="descargo" currentUser={user} tipoInicial="descargo" />}
