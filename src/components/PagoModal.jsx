@@ -28,6 +28,37 @@ function nuevaLinea(montoSugerido) {
   return { key: `p${contadorLinea}`, metodo: 'efectivo', moneda: 'USD', monto: montoSugerido || '' };
 }
 
+// Decide en que moneda conviene entregar el vuelto de un pago en efectivo. Si el vuelto es
+// (practicamente) un numero entero de dolares, se entrega en billetes de USD (los mas comunes
+// en el cambio de vuelto en Venezuela: $1, $5, $10...). Si tiene centavos, se entrega en
+// bolivares, porque no circulan monedas de centavo de dolar y no se puede dar vuelto exacto en
+// USD para esa parte.
+function decidirMonedaVuelto(vueltoUsd) {
+  const esEnteroUsd = Math.abs(vueltoUsd - Math.round(vueltoUsd)) < 0.01 && vueltoUsd >= 1;
+  return esEnteroUsd ? 'USD' : 'Bs';
+}
+
+// Antes de enviar los pagos al backend, si hubo sobrante en efectivo (vuelto), se resta ese
+// vuelto de las lineas en efectivo (empezando por la ultima agregada) para que la suma que
+// llega a validarYNormalizarPagos cuadre EXACTO con el total a cobrar. El backend nunca se
+// entera de que hubo vuelto -solo ve el monto que efectivamente quedo en caja-, asi que esto
+// no requiere ningun cambio en electron/main.js.
+function restarVueltoDeLineasEfectivo(lineas, vueltoUsd, tasaCambio) {
+  let restanteUsd = vueltoUsd;
+  const ajustadas = lineas.map((l) => ({ ...l }));
+  for (let i = ajustadas.length - 1; i >= 0 && restanteUsd > 0.0001; i -= 1) {
+    const l = ajustadas[i];
+    if (l.metodo !== 'efectivo') continue;
+    const montoActual = parseFloat(l.monto) || 0;
+    const montoActualUsd = l.moneda === 'USD' ? montoActual : montoActual / (tasaCambio || 1);
+    const descontarUsd = Math.min(montoActualUsd, restanteUsd);
+    const descontarEnMoneda = l.moneda === 'USD' ? descontarUsd : descontarUsd * (tasaCambio || 1);
+    l.monto = String(Math.max(0, montoActual - descontarEnMoneda));
+    restanteUsd -= descontarUsd;
+  }
+  return ajustadas.filter((l) => (parseFloat(l.monto) || 0) > 0);
+}
+
 export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onCancel }) {
   const [lineas, setLineas] = useState([nuevaLinea(totalUsd ? String(totalUsd) : '')]);
   const [error, setError] = useState('');
@@ -40,7 +71,15 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
 
   const totalCubiertoUsd = lineas.reduce((acc, l) => acc + montoUsdDeLinea(l), 0);
   const diferencia = Math.round((totalCubiertoUsd - (totalUsd || 0)) * 100) / 100;
-  const cuadra = Math.abs(diferencia) <= 0.01;
+  const totalEfectivoUsd = lineas
+    .filter((l) => l.metodo === 'efectivo')
+    .reduce((acc, l) => acc + montoUsdDeLinea(l), 0);
+  // El sobrante solo se puede tratar como "vuelto" si viene cubierto por efectivo: no tiene
+  // sentido "dar vuelto" de un pago con tarjeta o transferencia.
+  const haySobranteComoVuelto = diferencia > 0.01 && totalEfectivoUsd >= diferencia - 0.01;
+  const cuadra = Math.abs(diferencia) <= 0.01 || haySobranteComoVuelto;
+  const monedaVuelto = haySobranteComoVuelto ? decidirMonedaVuelto(diferencia) : null;
+  const vueltoEnBs = diferencia * (tasaCambio || 0);
 
   const actualizarLinea = (key, campo, valor) => {
     setLineas((prev) => prev.map((l) => (l.key === key ? { ...l, [campo]: valor } : l)));
@@ -70,15 +109,18 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
     if (!cuadra) {
       setError(
         diferencia > 0
-          ? `Las lineas de pago suman $${fmt(totalCubiertoUsd)}, que es $${fmt(diferencia)} MAS que el total a cobrar ($${fmt(totalUsd)})`
+          ? `Las lineas de pago suman $${fmt(totalCubiertoUsd)}, que es $${fmt(diferencia)} MAS que el total a cobrar ($${fmt(totalUsd)}). Para dar vuelto, ese sobrante debe venir de una linea en Efectivo.`
           : `Todavia falta cubrir $${fmt(Math.abs(diferencia))} del total a cobrar ($${fmt(totalUsd)})`
       );
       return;
     }
     setGuardando(true);
     try {
+      const lineasAEnviar = haySobranteComoVuelto
+        ? restarVueltoDeLineasEfectivo(lineas, diferencia, tasaCambio)
+        : lineas;
       await onConfirm(
-        lineas.map((l) => ({ metodo: l.metodo, moneda: l.moneda, monto: parseFloat(l.monto) || 0 }))
+        lineasAEnviar.map((l) => ({ metodo: l.metodo, moneda: l.moneda, monto: parseFloat(l.monto) || 0 }))
       );
     } finally {
       setGuardando(false);
@@ -138,8 +180,19 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
                 {diferencia > 0 ? `Sobran $${fmt(diferencia)}` : `Faltan $${fmt(Math.abs(diferencia))}`}
               </span>
             )}
-            {cuadra && <span style={{ color: '#0b8f4e', fontWeight: 'bold' }}>Cuadra ✓</span>}
+            {Math.abs(diferencia) <= 0.01 && <span style={{ color: '#0b8f4e', fontWeight: 'bold' }}>Cuadra ✓</span>}
           </div>
+
+          {haySobranteComoVuelto && (
+            <div style={vueltoStyle}>
+              <div style={{ fontWeight: 'bold', color: '#0b4f9e' }}>💵 Vuelto a entregar: ${fmt(diferencia)}</div>
+              <div style={{ color: '#334155', marginTop: '2px' }}>
+                {monedaVuelto === 'USD'
+                  ? `Entregar en dólares (billete de $${fmt(diferencia, 0)}).`
+                  : `Entregar en bolívares: Bs ${fmt(vueltoEnBs)} (equivalente a $${fmt(diferencia)}, no hay monedas de centavos de dólar).`}
+              </div>
+            </div>
+          )}
 
           {error && <p style={{ color: '#b42318', fontSize: '0.85rem', marginTop: '8px' }}>{error}</p>}
 
@@ -226,6 +279,15 @@ const resumenStyle = {
   fontSize: '0.9rem',
   padding: '8px 0',
   borderTop: '1px solid #eee'
+};
+
+const vueltoStyle = {
+  background: '#eef6ff',
+  border: '1px solid #93b6d6',
+  borderRadius: '6px',
+  padding: '8px 10px',
+  fontSize: '0.85rem',
+  marginTop: '4px'
 };
 
 const footerStyle = {
