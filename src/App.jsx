@@ -15,6 +15,7 @@ import ComprasTelfAcces from './pages/ComprasTelfAcces.jsx';
 import DevolucionCompras from './pages/DevolucionCompras.jsx';
 import Gastos from './pages/Gastos.jsx';
 import Caja from './pages/Caja.jsx';
+import Reparaciones from './pages/Reparaciones.jsx';
 import Reportes from './pages/Reportes.jsx';
 import Inicio from './pages/Inicio.jsx';
 import LogoMoviSync from './components/LogoMoviSync.jsx';
@@ -107,6 +108,11 @@ const MIcon = {
   Caja: () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
       <rect x="2" y="6" width="20" height="14" rx="2" /><circle cx="12" cy="13" r="3" /><path d="M6 6V4h12v2" />
+    </svg>
+  ),
+  Reparaciones: () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 9, verticalAlign: -3 }}>
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
     </svg>
   ),
   Reportes: () => (
@@ -416,6 +422,7 @@ export default function App() {
           </div>
           <button className={view === 'apartados' ? 'active' : ''} onClick={() => setView('apartados')}><MIcon.Apartados />Apartados</button>
           <button className={view === 'caja' ? 'active' : ''} onClick={() => setView('caja')}><MIcon.Caja />Caja</button>
+          <button className={view === 'reparaciones' ? 'active' : ''} onClick={() => setView('reparaciones')}><MIcon.Reparaciones />Garantías/Reparaciones</button>
           <hr className="sidebar-section-divider" />
           <div className={`sidebar-submenu-wrap${algunSubmenuAbierto && !menuComprasAbierto ? ' dimmed' : ''}`}>
             <button
@@ -583,6 +590,7 @@ export default function App() {
         {view === 'traslados' && <Traslados currentUser={user} />}
         {view === 'apartados' && <Apartados currentUser={user} onIrAFacturar={irAFacturarDesdeApartado} />}
         {view === 'caja' && <Caja currentUser={user} />}
+        {view === 'reparaciones' && <Reparaciones currentUser={user} />}
         {view === 'categorias' && <CategoriasAdmin />}
         {view === 'cargo' && <CargosDescargos key="cargo" currentUser={user} tipoInicial="cargo" />}
         {view === 'descargo' && <CargosDescargos key="descargo" currentUser={user} tipoInicial="descargo" />}
