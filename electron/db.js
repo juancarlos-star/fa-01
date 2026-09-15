@@ -646,6 +646,7 @@ function crearIndicesSiHacenFalta(database) {
     CREATE INDEX IF NOT EXISTS idx_factura_pagos_factura_id ON factura_pagos(factura_id);
     CREATE INDEX IF NOT EXISTS idx_apartado_abono_pagos_abono_id ON apartado_abono_pagos(abono_id);
     CREATE INDEX IF NOT EXISTS idx_notificaciones_tipo_producto ON notificaciones(tipo, producto_id);
+    CREATE INDEX IF NOT EXISTS idx_caja_turnos_estado ON caja_turnos(estado);
   `);
 }
 
@@ -942,6 +943,32 @@ function initDb() {
       monto_usd REAL NOT NULL,
       created_at TEXT NOT NULL,
       FOREIGN KEY (abono_id) REFERENCES apartado_abonos(id)
+    );
+    -- Cierre de caja / arqueo de turno. Es informativo y flexible a proposito (el usuario NO
+    -- quiere que sea obligatorio abrir caja para poder facturar): un vendedor puede abrir con
+    -- monto inicial en USD, en Bs, en ambas o en ninguna (0), y al cerrar cuenta lo que tenga a
+    -- mano (USD, Bs, o ambos) segun como le resulte mas comodo arquear. "esperado_usd/bs" se
+    -- calcula y se congela en el momento del cierre (monto inicial + pagos en efectivo de
+    -- facturas/abonos registrados durante el turno), para que el historial no cambie si despues
+    -- se hacen mas ventas; "diferencia_usd/bs" = contado - esperado (positivo = sobra, negativo
+    -- = falta).
+    CREATE TABLE IF NOT EXISTS caja_turnos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuario_apertura TEXT,
+      usuario_cierre TEXT,
+      apertura_at TEXT NOT NULL,
+      cierre_at TEXT,
+      estado TEXT NOT NULL CHECK(estado IN ('abierto','cerrado')) DEFAULT 'abierto',
+      monto_inicial_usd REAL NOT NULL DEFAULT 0,
+      monto_inicial_bs REAL NOT NULL DEFAULT 0,
+      contado_usd REAL,
+      contado_bs REAL,
+      esperado_usd REAL,
+      esperado_bs REAL,
+      diferencia_usd REAL,
+      diferencia_bs REAL,
+      notas_apertura TEXT,
+      notas_cierre TEXT
     );
   `);
 

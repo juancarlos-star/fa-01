@@ -3121,6 +3121,96 @@ ipcMain.handle('gastos:delete', (event, { id }) => {
   return { ok: true };
 });
 
+// ---------- IPC: Cierre de caja / arqueo ----------
+// Es a proposito flexible y NO obligatorio para poder facturar: el negocio pidio que el
+// vendedor pueda abrir/cerrar caja si le sirve, sin bloquear la Facturacion si no la usa.
+// "esperado" = monto inicial + pagos en EFECTIVO (facturas y abonos de apartados) registrados
+// durante el turno, por moneda. OJO: los Gastos no se restan del efectivo esperado porque hoy
+// esa tabla no guarda en que moneda ni con que metodo se pagaron -si mas adelante se le agrega
+// esa info, aqui es donde habria que descontarlos.
+function calcularEsperadoCaja(db, turno, hastaTimestamp) {
+  const desde = turno.apertura_at;
+  const sumaEfectivo = (tabla) => db.prepare(
+    `SELECT
+       COALESCE(SUM(CASE WHEN moneda = 'USD' THEN monto ELSE 0 END), 0) AS usd,
+       COALESCE(SUM(CASE WHEN moneda = 'Bs' THEN monto ELSE 0 END), 0) AS bs
+     FROM ${tabla}
+     WHERE metodo = 'efectivo' AND created_at BETWEEN ? AND ?`
+  ).get(desde, hastaTimestamp);
+  const deFacturas = sumaEfectivo('factura_pagos');
+  const deAbonos = sumaEfectivo('apartado_abono_pagos');
+  return {
+    esperado_usd: Math.round((turno.monto_inicial_usd + deFacturas.usd + deAbonos.usd) * 100) / 100,
+    esperado_bs: Math.round((turno.monto_inicial_bs + deFacturas.bs + deAbonos.bs) * 100) / 100
+  };
+}
+
+ipcMain.handle('caja:turnoActual', () => {
+  const db = getDb();
+  const turno = db.prepare("SELECT * FROM caja_turnos WHERE estado = 'abierto' ORDER BY id DESC LIMIT 1").get();
+  if (!turno) return { ok: true, turno: null };
+  const ahora = db.prepare("SELECT datetime('now','localtime') AS ahora").get().ahora;
+  const { esperado_usd, esperado_bs } = calcularEsperadoCaja(db, turno, ahora);
+  return { ok: true, turno: { ...turno, esperado_usd, esperado_bs } };
+});
+
+ipcMain.handle('caja:abrir', (event, { usuario, montoInicialUsd, montoInicialBs, notas } = {}) => {
+  const db = getDb();
+  const yaAbierto = db.prepare("SELECT id FROM caja_turnos WHERE estado = 'abierto'").get();
+  if (yaAbierto) return { ok: false, message: 'Ya hay una caja abierta. Cierra esa antes de abrir una nueva.' };
+  const montoUsd = Number(montoInicialUsd) || 0;
+  const montoBs = Number(montoInicialBs) || 0;
+  if (montoUsd < 0 || montoBs < 0) return { ok: false, message: 'El monto inicial no puede ser negativo' };
+  const info = db.prepare(
+    `INSERT INTO caja_turnos (usuario_apertura, apertura_at, estado, monto_inicial_usd, monto_inicial_bs, notas_apertura)
+     VALUES (?, datetime('now','localtime'), 'abierto', ?, ?, ?)`
+  ).run(usuario || null, montoUsd, montoBs, (notas || '').trim() || null);
+  const turno = db.prepare('SELECT * FROM caja_turnos WHERE id = ?').get(info.lastInsertRowid);
+  return { ok: true, turno };
+});
+
+ipcMain.handle('caja:cerrar', (event, { id, usuario, contadoUsd, contadoBs, notas } = {}) => {
+  const db = getDb();
+  const turno = db.prepare('SELECT * FROM caja_turnos WHERE id = ?').get(id);
+  if (!turno) return { ok: false, message: 'Turno de caja no encontrado' };
+  if (turno.estado !== 'abierto') return { ok: false, message: 'Este turno ya está cerrado' };
+  // Flexible a proposito: el vendedor puede contar solo USD, solo Bs, o ambos -- lo que no
+  // cuente queda en null (no se fuerza a 0) para no mostrar una "diferencia" falsa en la moneda
+  // que ni siquiera conto.
+  const cUsd = (contadoUsd === '' || contadoUsd === null || contadoUsd === undefined) ? null : Number(contadoUsd);
+  const cBs = (contadoBs === '' || contadoBs === null || contadoBs === undefined) ? null : Number(contadoBs);
+  if (cUsd === null && cBs === null) return { ok: false, message: 'Cuenta al menos una moneda para cerrar la caja' };
+  const cierreAt = db.prepare("SELECT datetime('now','localtime') AS ahora").get().ahora;
+  const { esperado_usd, esperado_bs } = calcularEsperadoCaja(db, turno, cierreAt);
+  const diferenciaUsd = cUsd === null ? null : Math.round((cUsd - esperado_usd) * 100) / 100;
+  const diferenciaBs = cBs === null ? null : Math.round((cBs - esperado_bs) * 100) / 100;
+  db.prepare(
+    `UPDATE caja_turnos
+     SET usuario_cierre = ?, cierre_at = ?, estado = 'cerrado', contado_usd = ?, contado_bs = ?,
+         esperado_usd = ?, esperado_bs = ?, diferencia_usd = ?, diferencia_bs = ?, notas_cierre = ?
+     WHERE id = ?`
+  ).run(usuario || null, cierreAt, cUsd, cBs, esperado_usd, esperado_bs, diferenciaUsd, diferenciaBs, (notas || '').trim() || null, id);
+  const turnoCerrado = db.prepare('SELECT * FROM caja_turnos WHERE id = ?').get(id);
+  return { ok: true, turno: turnoCerrado };
+});
+
+// Historial de turnos ya cerrados -queda para la pantalla de Reportes (parte siguiente), pero
+// se deja el endpoint listo de una vez porque es trivial y no tiene sentido dividirlo aparte.
+ipcMain.handle('caja:historial', (event, { desde, hasta } = {}) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
+  const db = getDb();
+  if (desde && hasta) {
+    return {
+      ok: true,
+      turnos: db.prepare(
+        "SELECT * FROM caja_turnos WHERE apertura_at BETWEEN ? AND ? ORDER BY id DESC"
+      ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`)
+    };
+  }
+  return { ok: true, turnos: db.prepare('SELECT * FROM caja_turnos ORDER BY id DESC LIMIT 200').all() };
+});
+
 // ---------- IPC: Compras (historial) ----------
 ipcMain.handle('compras:list', (event, { desde, hasta } = {}) => {
   const db = getDb();

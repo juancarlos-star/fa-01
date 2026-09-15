@@ -124,6 +124,12 @@ contextBridge.exposeInMainWorld('api', {
   createGasto: (data) => ipcRenderer.invoke('gastos:create', data),
   listGastos: (desde, hasta) => ipcRenderer.invoke('gastos:list', { desde, hasta }),
   deleteGasto: (id) => ipcRenderer.invoke('gastos:delete', { id }),
+
+  // Cierre de caja / arqueo (opcional, no bloquea Facturacion si no se usa)
+  cajaTurnoActual: () => ipcRenderer.invoke('caja:turnoActual'),
+  cajaAbrir: (data) => ipcRenderer.invoke('caja:abrir', data),
+  cajaCerrar: (data) => ipcRenderer.invoke('caja:cerrar', data),
+  cajaHistorial: (desde, hasta) => ipcRenderer.invoke('caja:historial', { desde, hasta }),
   // Reportes
   getReporteGanancias: (desde, hasta) => ipcRenderer.invoke('reportes:ganancias', { desde, hasta }),
   getReporteFacturas: (desde, hasta) => ipcRenderer.invoke('reportes:facturas', { desde, hasta }),
