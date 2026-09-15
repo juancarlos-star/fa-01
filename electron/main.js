@@ -501,6 +501,17 @@ function requireAdmin() {
   return null;
 }
 
+// Deja constancia en la tabla "auditoria" de un cambio de precio/costo o un borrado que el
+// dueño del negocio pueda querer revisar despues. "descripcion" ya viene redactada en texto
+// plano (incluyendo el valor anterior y el nuevo, si aplica) para poder mostrarla tal cual en
+// el reporte, sin que el frontend tenga que recomponerla.
+function registrarAuditoria(db, { entidad, entidadId, accion, descripcion }) {
+  db.prepare(
+    `INSERT INTO auditoria (entidad, entidad_id, accion, descripcion, usuario, created_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))`
+  ).run(entidad, entidadId || null, accion, descripcion, sesionActual?.username || '');
+}
+
 ipcMain.handle('auth:login', (event, { username, password }) => {
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username);
@@ -798,6 +809,26 @@ ipcMain.handle('categories:delete', (event, { id }) => {
       }
     });
     transaccion();
+
+    // Auditoria: un registro por cada producto que sí se llegó a borrar, y uno más para la
+    // categoría si terminó de eliminarse por completo.
+    const eliminados = productos.filter((p) => !bloqueados.includes(p.nombre));
+    eliminados.forEach((p) => {
+      registrarAuditoria(db, {
+        entidad: 'producto',
+        entidadId: p.id,
+        accion: 'eliminado',
+        descripcion: `Producto eliminado (por borrado de categoría "${categoria.nombre}"): "${p.nombre}"`
+      });
+    });
+    if (bloqueados.length === 0) {
+      registrarAuditoria(db, {
+        entidad: 'categoria',
+        entidadId: id,
+        accion: 'eliminado',
+        descripcion: `Categoría eliminada: "${categoria.nombre}" (${categoria.tipo})`
+      });
+    }
 
     if (bloqueados.length > 0) {
       return {
@@ -1114,6 +1145,18 @@ ipcMain.handle('products:update', (event, { id, nombre, categoria, precio, preci
     'UPDATE products SET tipo = ?, nombre = ?, categoria = ?, precio = ?, precio2 = ?, stock_minimo = ?, codigo_barras = ?, codigo_producto = ? WHERE id = ?'
   ).run(tipoFinal, nombreLimpio, categoriaLimpia, precioNum, precio2Num, stockMinNum, codigoBarras, codigoProducto, id);
 
+  // Auditoria: solo si el precio o precio2 realmente cambiaron (evita llenar el log con
+  // ediciones que tocaron otros campos, como el nombre o la categoria).
+  if (Math.abs(precioNum - (product.precio || 0)) > 0.001 || Math.abs(precio2Num - (product.precio2 || 0)) > 0.001) {
+    registrarAuditoria(db, {
+      entidad: 'producto',
+      entidadId: id,
+      accion: 'precio_actualizado',
+      descripcion: `Precio de "${nombreLimpio}": $${(product.precio || 0).toFixed(2)} → $${precioNum.toFixed(2)}` +
+        (Math.abs(precio2Num - (product.precio2 || 0)) > 0.001 ? ` | Precio 2: $${(product.precio2 || 0).toFixed(2)} → $${precio2Num.toFixed(2)}` : '')
+    });
+  }
+
   return { ok: true };
 });
 
@@ -1121,9 +1164,17 @@ ipcMain.handle('products:delete', (event, { id }) => {
   const chequeo = requireAdmin();
   if (chequeo) return chequeo;
   const db = getDb();
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+  if (!product) return { ok: false, message: 'Producto no encontrado' };
   const unitsCount = db.prepare('SELECT COUNT(*) AS c FROM inventory_units WHERE product_id = ?').get(id).c;
   if (unitsCount > 0) return { ok: false, message: 'No se puede eliminar: tiene unidades (IMEI/SIM) registradas' };
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
+  registrarAuditoria(db, {
+    entidad: 'producto',
+    entidadId: id,
+    accion: 'eliminado',
+    descripcion: `Producto eliminado: "${product.nombre}" (${product.tipo}, categoría ${product.categoria || '—'})`
+  });
   return { ok: true };
 });
 
@@ -1159,9 +1210,19 @@ ipcMain.handle('products:addStock', (event, { id, cantidad, costoUnitario, usuar
 
 ipcMain.handle('products:updateCosto', (event, { id, costoPromedio }) => {
   const db = getDb();
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+  if (!product) return { ok: false, message: 'Producto no encontrado' };
   const costo = parseFloat(costoPromedio);
   if (isNaN(costo) || costo < 0) return { ok: false, message: 'Costo invalido' };
   db.prepare('UPDATE products SET costo_promedio_usd = ? WHERE id = ?').run(costo, id);
+  if (Math.abs(costo - (product.costo_promedio_usd || 0)) > 0.001) {
+    registrarAuditoria(db, {
+      entidad: 'producto',
+      entidadId: id,
+      accion: 'costo_actualizado',
+      descripcion: `Costo promedio de "${product.nombre}": $${(product.costo_promedio_usd || 0).toFixed(2)} → $${costo.toFixed(2)}`
+    });
+  }
   return { ok: true };
 });
 
@@ -1402,9 +1463,19 @@ ipcMain.handle('units:updateCosto', (event, { id, costoUnitario }) => {
   const chequeo = requireAdmin();
   if (chequeo) return chequeo;
   const db = getDb();
+  const unit = db.prepare('SELECT iu.*, p.nombre AS producto_nombre FROM inventory_units iu LEFT JOIN products p ON p.id = iu.product_id WHERE iu.id = ?').get(id);
+  if (!unit) return { ok: false, message: 'No encontrado' };
   const costo = parseFloat(costoUnitario);
   if (isNaN(costo) || costo < 0) return { ok: false, message: 'Costo invalido' };
   db.prepare('UPDATE inventory_units SET costo_unitario_usd = ? WHERE id = ?').run(costo, id);
+  if (Math.abs(costo - (unit.costo_unitario_usd || 0)) > 0.001) {
+    registrarAuditoria(db, {
+      entidad: 'unidad',
+      entidadId: id,
+      accion: 'costo_actualizado',
+      descripcion: `Costo de la unidad ${unit.codigo} (${unit.producto_nombre || '—'}): $${(unit.costo_unitario_usd || 0).toFixed(2)} → $${costo.toFixed(2)}`
+    });
+  }
   return { ok: true };
 });
 
@@ -1426,10 +1497,16 @@ ipcMain.handle('units:updateCodigo', (event, { id, codigo }) => {
 
 ipcMain.handle('units:delete', (event, { id }) => {
   const db = getDb();
-  const unit = db.prepare('SELECT * FROM inventory_units WHERE id = ?').get(id);
+  const unit = db.prepare('SELECT iu.*, p.nombre AS producto_nombre FROM inventory_units iu LEFT JOIN products p ON p.id = iu.product_id WHERE iu.id = ?').get(id);
   if (!unit) return { ok: false, message: 'No encontrado' };
   if (unit.estado === 'vendido') return { ok: false, message: 'No se puede eliminar una unidad ya vendida' };
   db.prepare('DELETE FROM inventory_units WHERE id = ?').run(id);
+  registrarAuditoria(db, {
+    entidad: 'unidad',
+    entidadId: id,
+    accion: 'eliminado',
+    descripcion: `Unidad eliminada: ${unit.codigo} (${unit.producto_nombre || '—'})`
+  });
   return { ok: true };
 });
 
@@ -2862,6 +2939,22 @@ ipcMain.handle('facturas:listarEliminadas', () => {
   return db.prepare('SELECT * FROM facturas_eliminadas ORDER BY id DESC').all();
 });
 
+// Solo para el administrador: log general de cambios de precio/costo y borrados (productos,
+// unidades, gastos, categorias). Acepta un rango de fechas opcional (mismo patron que el
+// historial de Cierre de Caja); sin fechas devuelve todo (hasta 500 filas, de mas reciente a
+// mas antiguo, para no cargar un historial gigante de una vez).
+ipcMain.handle('auditoria:listar', (event, { desde, hasta } = {}) => {
+  const chequeo = requireAdmin();
+  if (chequeo) return chequeo;
+  const db = getDb();
+  if (desde && hasta) {
+    return db.prepare(
+      'SELECT * FROM auditoria WHERE created_at BETWEEN ? AND ? ORDER BY id DESC'
+    ).all(`${desde} 00:00:00`, `${hasta} 23:59:59`);
+  }
+  return db.prepare('SELECT * FROM auditoria ORDER BY id DESC LIMIT 500').all();
+});
+
 // ---------- IPC: Devolucion de Facturas (ventas) ----------
 
 // Busca una factura de VENTA (no una devolucion) por su numero correlativo, para el modulo de
@@ -3117,7 +3210,15 @@ ipcMain.handle('gastos:delete', (event, { id }) => {
   const chequeo = requireAdmin();
   if (chequeo) return chequeo;
   const db = getDb();
+  const gasto = db.prepare('SELECT * FROM gastos WHERE id = ?').get(id);
+  if (!gasto) return { ok: false, message: 'Gasto no encontrado' };
   db.prepare('DELETE FROM gastos WHERE id = ?').run(id);
+  registrarAuditoria(db, {
+    entidad: 'gasto',
+    entidadId: id,
+    accion: 'eliminado',
+    descripcion: `Gasto eliminado: "${gasto.concepto}" — $${(gasto.monto_usd || 0).toFixed(2)}`
+  });
   return { ok: true };
 });
 

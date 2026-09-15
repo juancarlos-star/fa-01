@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld('api', {
   detalleFactura: (id) => ipcRenderer.invoke('facturas:detalle', { id }),
   eliminarFactura: (id, motivo) => ipcRenderer.invoke('facturas:eliminar', { id, motivo }),
   listarFacturasEliminadas: () => ipcRenderer.invoke('facturas:listarEliminadas'),
+  listarAuditoria: (desde, hasta) => ipcRenderer.invoke('auditoria:listar', { desde, hasta }),
   buscarFacturaPorNumero: (numero) => ipcRenderer.invoke('facturas:buscarPorNumero', { numero }),
   proximoNumeroDevolucionFactura: () => ipcRenderer.invoke('facturas:proximoNumeroDevolucion'),
   crearDevolucionFactura: (payload) => ipcRenderer.invoke('facturas:crearDevolucion', payload),

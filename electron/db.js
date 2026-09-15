@@ -830,6 +830,20 @@ function initDb() {
       motivo TEXT NOT NULL,
       eliminado_at TEXT NOT NULL
     );
+    -- Auditoria general: a diferencia de facturas_eliminadas (especifica de facturas), esta
+    -- cubre cambios de precio/costo y borrados de otros registros que el dueño del negocio
+    -- pueda querer revisar despues si algo "no le cuadra" (ej: un producto que aparece mas
+    -- barato de lo que recordaba, o un gasto que ya no esta). Solo se inserta desde el backend
+    -- (registrarAuditoria en main.js), nunca se edita ni se borra desde la app.
+    CREATE TABLE IF NOT EXISTS auditoria (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entidad TEXT NOT NULL,
+      entidad_id INTEGER,
+      accion TEXT NOT NULL,
+      descripcion TEXT NOT NULL,
+      usuario TEXT,
+      created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS compras_encabezado (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       proveedor TEXT NOT NULL,
