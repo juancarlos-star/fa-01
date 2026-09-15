@@ -664,11 +664,49 @@ ipcMain.handle('categories:toggleVentaCruzada', (event, { id }) => {
   return { ok: true };
 });
 
+// Marcas conocidas de telefonos, usadas para no sugerir un accesorio de una marca distinta a la
+// del equipo que se esta facturando (ej. no ofrecer un estuche de iPhone en una venta de un
+// Samsung). Detecta la marca buscando estas palabras clave dentro del nombre del producto
+// (equipo o accesorio) -no requiere que el admin marque la marca a mano en ningun formulario-.
+// Si el nombre no menciona ninguna palabra clave conocida, se trata: para un accesorio, como
+// "universal" (compatible con cualquier equipo, ej. un power bank o un cable generico); para un
+// equipo, como marca desconocida (en ese caso no se aplica el filtro, para no ocultar
+// sugerencias validas solo porque no se pudo adivinar la marca del telefono).
+const PALABRAS_CLAVE_MARCA = [
+  { marca: 'apple', palabras: ['iphone', 'ipad', 'apple', 'airpods'] },
+  { marca: 'samsung', palabras: ['samsung', 'galaxy'] },
+  { marca: 'xiaomi', palabras: ['xiaomi', 'redmi', 'poco'] },
+  { marca: 'honor', palabras: ['honor'] },
+  { marca: 'huawei', palabras: ['huawei'] },
+  { marca: 'motorola', palabras: ['motorola', 'moto '] },
+  { marca: 'lg', palabras: ['lg '] },
+  { marca: 'oppo', palabras: ['oppo'] },
+  { marca: 'realme', palabras: ['realme'] },
+  { marca: 'vivo', palabras: ['vivo'] },
+  { marca: 'oneplus', palabras: ['oneplus', 'one plus'] },
+  { marca: 'google', palabras: ['pixel'] },
+  { marca: 'nokia', palabras: ['nokia'] },
+  { marca: 'zte', palabras: ['zte'] },
+  { marca: 'alcatel', palabras: ['alcatel'] },
+  { marca: 'tecno', palabras: ['tecno'] },
+  { marca: 'infinix', palabras: ['infinix'] }
+];
+
+function detectarMarca(nombre) {
+  const n = (nombre || '').toLowerCase();
+  for (const { marca, palabras } of PALABRAS_CLAVE_MARCA) {
+    if (palabras.some((p) => n.includes(p))) return marca;
+  }
+  return null;
+}
+
 // ---------- Facturacion: sugerencias de venta cruzada ----------
-// Regla simple: si el carrito tiene un producto tipo 'equipo' (telefono), se sugieren los
-// accesorios ACTIVOS (con stock disponible) que esten en una categoria marcada por el admin
-// como "sugerir_venta_cruzada" (ej. forros, vidrios templados, SIM). No sugiere nada si el
-// admin no marco ninguna categoria, para no inventar sugerencias que no aplican en la tienda.
+// Regla: si el carrito tiene un producto tipo 'equipo' (telefono), se sugieren los accesorios
+// ACTIVOS (con stock disponible) que esten en una categoria marcada por el admin como
+// "sugerir_venta_cruzada" (ej. forros, vidrios templados, SIM) Y cuya marca (detectada por el
+// nombre) sea compatible con la de los equipos ya en el carrito. Un accesorio "universal" (que
+// no menciona ninguna marca en su nombre) siempre se sugiere. No sugiere nada si el admin no
+// marco ninguna categoria, para no inventar sugerencias que no aplican en la tienda.
 ipcMain.handle('facturacion:sugerenciasVentaCruzada', (event, { idsEnCarrito = [] } = {}) => {
   const db = getDb();
   const categoriasMarcadas = db.prepare(
@@ -684,7 +722,26 @@ ipcMain.handle('facturacion:sugerenciasVentaCruzada', (event, { idsEnCarrito = [
      ORDER BY categoria, nombre`
   ).all(...categoriasMarcadas);
 
-  const sugerencias = accesorios.filter((a) => !idsEnCarrito.includes(a.id));
+  // Marca(s) de los equipos que ya estan en el carrito (puede haber mas de una si se factura,
+  // por ejemplo, un Samsung y un iPhone en la misma nota de venta).
+  let marcasEnCarrito = new Set();
+  if (idsEnCarrito.length > 0) {
+    const ph = idsEnCarrito.map(() => '?').join(',');
+    const equiposEnCarrito = db.prepare(
+      `SELECT nombre FROM products WHERE tipo = 'equipo' AND id IN (${ph})`
+    ).all(...idsEnCarrito);
+    marcasEnCarrito = new Set(equiposEnCarrito.map((e) => detectarMarca(e.nombre)).filter(Boolean));
+  }
+
+  const sugerencias = accesorios
+    .filter((a) => !idsEnCarrito.includes(a.id))
+    .filter((a) => {
+      if (marcasEnCarrito.size === 0) return true; // no se pudo detectar la marca del equipo
+      const marcaAccesorio = detectarMarca(a.nombre);
+      if (!marcaAccesorio) return true; // accesorio universal
+      return marcasEnCarrito.has(marcaAccesorio);
+    });
+
   return { ok: true, sugerencias };
 });
 
