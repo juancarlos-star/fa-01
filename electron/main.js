@@ -2618,7 +2618,7 @@ ipcMain.handle('proveedores:update', (event, { id, nombre, rif, telefono, direcc
 // ---------- IPC: Facturacion ----------
 ipcMain.handle('facturas:crear', (event, payload) => {
   const db = getDb();
-  const { cliente, items, usuario, sinCliente, depositoId, esNotaVenta, apartadoOrigenId, pagos } = payload;
+  const { cliente, items, usuario, sinCliente, depositoId, esNotaVenta, apartadoOrigenId, pagos, vuelto } = payload;
 
   if (!items || items.length === 0) {
     return { ok: false, message: `La ${esNotaVenta ? 'nota de venta' : 'factura'} debe tener al menos un producto` };
@@ -2754,6 +2754,18 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     pagosValidados = resultadoPagos.pagosNormalizados;
   }
 
+  // Vuelto entregado (si el cliente pago de mas en efectivo, ver PagoModal.jsx). Es informativo
+  // -las lineas de "pagos" ya vienen netas del vuelto (validarYNormalizarPagos arriba exige que
+  // cuadren exacto con totalUsd)-, asi que un dato invalido aqui simplemente se ignora en vez de
+  // bloquear la venta.
+  let vueltoValido = null;
+  if (vuelto && vuelto.monto) {
+    const montoVuelto = parseFloat(vuelto.monto);
+    if (montoVuelto > 0 && MONEDAS_PAGO_VALIDAS.includes(vuelto.moneda)) {
+      vueltoValido = { monto: Math.round(montoVuelto * 100) / 100, moneda: vuelto.moneda };
+    }
+  }
+
   let clienteId = null;
   let clienteNombre = 'Consumidor final';
   let clienteRif = '';
@@ -2786,10 +2798,10 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     const facturaInfo = db
       .prepare(
         `INSERT INTO facturas
-         (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, deposito_id, created_at, es_nota_venta, apartado_origen_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?)`
+         (cliente_id, cliente_nombre, cliente_rif, cliente_direccion, numero_factura, subtotal_usd, iva_usd, total_usd, tasa_cambio, subtotal_bs, iva_bs, total_bs, iva_porcentaje, usuario, deposito_id, created_at, es_nota_venta, apartado_origen_id, vuelto_monto, vuelto_moneda)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?)`
       )
-      .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '', depositoId, esNotaVenta ? 1 : 0, apartadoOrigenValido ? apartadoOrigenValido.id : null);
+      .run(clienteId, clienteNombre, clienteRif, clienteDireccion, numeroFacturaStr, subtotalUsd, ivaUsd, totalUsd, tasaCambio, subtotalBs, ivaBs, totalBs, ivaPorcentaje, usuario || '', depositoId, esNotaVenta ? 1 : 0, apartadoOrigenValido ? apartadoOrigenValido.id : null, vueltoValido ? vueltoValido.monto : null, vueltoValido ? vueltoValido.moneda : null);
 
     const facturaId = facturaInfo.lastInsertRowid;
 

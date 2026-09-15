@@ -66,6 +66,16 @@ function migrarFacturasSiHaceFalta(database) {
   if (!tieneColumna(database, 'facturas', 'apartado_origen_id')) {
     database.exec('ALTER TABLE facturas ADD COLUMN apartado_origen_id INTEGER');
   }
+  // Cuando el cliente paga en efectivo de mas y se le da vuelto (ver PagoModal.jsx), se deja
+  // constancia de cuanto y en que moneda se le entrego, para que quede reflejado en la
+  // factura/nota de venta impresa y en el reporte ("Recibio $800, vuelto $1"). vuelto_monto
+  // queda NULL cuando esa venta no tuvo vuelto (la gran mayoria), para no romper facturas viejas.
+  if (!tieneColumna(database, 'facturas', 'vuelto_monto')) {
+    database.exec('ALTER TABLE facturas ADD COLUMN vuelto_monto REAL');
+  }
+  if (!tieneColumna(database, 'facturas', 'vuelto_moneda')) {
+    database.exec('ALTER TABLE facturas ADD COLUMN vuelto_moneda TEXT');
+  }
 }
 
 function migrarCostosSiHaceFalta(database) {
