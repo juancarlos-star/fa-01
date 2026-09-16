@@ -10,6 +10,7 @@ export function etiquetaMetodoPago(metodo) {
     case 'tarjeta': return 'Tarjeta';
     case 'transferencia': return 'Transferencia';
     case 'pago_movil': return 'Pago móvil';
+    case 'zelle': return 'Zelle';
     case 'otro': return 'Otro';
     default: return metodo || 'Otro';
   }
