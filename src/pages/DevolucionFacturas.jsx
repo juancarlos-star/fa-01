@@ -1,6 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { generarFacturaPDF } from '../utils/generarFacturaPDF.js';
 import { fmt } from '../utils/format.js';
+import PagoModal from '../components/PagoModal.jsx';
+
+// A partir del desglose con que se cobro la factura ORIGINAL, arma una sugerencia de como
+// devolver el dinero: mismo metodo/moneda de cada linea, con el monto prorrateado si la
+// devolucion es parcial (para que la suma cuadre exacto con "totalUsdADevolver", no con el total
+// de la factura completa). Es solo un PUNTO DE PARTIDA -el vendedor puede cambiar metodo, moneda
+// o monto libremente en el PagoModal-, porque no siempre existe la misma forma de pago disponible
+// al momento de la devolucion (ej: no siempre se puede devolver a la misma tarjeta).
+function sugerirPagosDevolucion(pagosOriginales, totalUsdOriginal, totalUsdADevolver, tasaCambio) {
+  if (!pagosOriginales || pagosOriginales.length === 0 || !totalUsdOriginal) return null;
+  const proporcion = totalUsdADevolver / totalUsdOriginal;
+  const lineas = pagosOriginales.map((p) => ({
+    metodo: p.metodo,
+    moneda: p.moneda,
+    monto: Math.round(p.monto * proporcion * 100) / 100
+  })).filter((l) => l.monto > 0);
+  if (lineas.length === 0) return null;
+  // Ajusta la ultima linea para que la suma en USD cuadre exacto (el prorrateo linea por linea
+  // puede dejar 1-2 centavos de diferencia por redondeo).
+  const montoUsd = (l) => (l.moneda === 'USD' ? l.monto : l.monto / (tasaCambio || 1));
+  const sumaUsd = lineas.reduce((acc, l) => acc + montoUsd(l), 0);
+  const diffUsd = totalUsdADevolver - sumaUsd;
+  if (Math.abs(diffUsd) > 0.001) {
+    const ultima = lineas[lineas.length - 1];
+    const diffEnMoneda = ultima.moneda === 'USD' ? diffUsd : diffUsd * (tasaCambio || 1);
+    ultima.monto = Math.max(0, Math.round((ultima.monto + diffEnMoneda) * 100) / 100);
+  }
+  return lineas;
+}
 
 // Modulo de Devolucion de Factura. Misma idea que Devolucion de Compras, pero pidiendo el
 // numero de FACTURA DE VENTA en vez del documento de compra: al escribirlo y presionar Enter,
@@ -31,6 +60,7 @@ export default function DevolucionFacturas({ currentUser }) {
   const [confirmacion, setConfirmacion] = useState(null);
   const [registrando, setRegistrando] = useState(false);
   const [imprimiendo, setImprimiendo] = useState(false);
+  const [mostrarPagoModal, setMostrarPagoModal] = useState(false);
 
   const numeroRef = useRef(null);
   const totalizandoRef = useRef(false);
@@ -121,11 +151,23 @@ export default function DevolucionFacturas({ currentUser }) {
   const total = subtotal + iva;
   const totalPiezas = itemsSeleccionados.reduce((acc, i) => acc + i.cantidad, 0);
 
-  const handleRegistrarDevolucion = async () => {
+  // Los items a devolver (producto + cantidad/unidad) ya se saben con lo seleccionado en la
+  // tabla; esto solo abre el paso de "como se le devuelve el dinero al cliente" (PagoModal). El
+  // registro real en el backend queda en confirmarDevolucionConPagos, una vez el vendedor confirma
+  // el desglose.
+  const handleRegistrarDevolucion = () => {
     if (totalizandoRef.current) return;
     setError('');
     if (!factura) { setError('Busca primero una factura por su numero'); return; }
+    const items = itemsSeleccionados.filter((i) => i.cantidad > 0);
+    if (items.length === 0) {
+      setError('Selecciona al menos un producto para devolver');
+      return;
+    }
+    setMostrarPagoModal(true);
+  };
 
+  const confirmarDevolucionConPagos = async (pagos) => {
     const items = itemsSeleccionados
       .filter((i) => i.cantidad > 0)
       .map((i) => {
@@ -135,21 +177,17 @@ export default function DevolucionFacturas({ currentUser }) {
         return { product_id: i.item.product_id, tipo: i.item.tipo, unit_id: i.item.unit_id };
       });
 
-    if (items.length === 0) {
-      setError('Selecciona al menos un producto para devolver');
-      return;
-    }
-
     totalizandoRef.current = true;
     setRegistrando(true);
     try {
       const res = await window.api.crearDevolucionFactura({
         facturaId: factura.encabezado.id,
         items,
+        pagos,
         usuario: currentUser?.full_name || currentUser?.username
       });
 
-      if (!res.ok) { setError(res.message); return; }
+      if (!res.ok) { setError(res.message); setMostrarPagoModal(false); return; }
 
       const detalle = await window.api.detalleFactura(res.devolucionId);
       if (detalle.ok) {
@@ -160,6 +198,7 @@ export default function DevolucionFacturas({ currentUser }) {
         }
       }
 
+      setMostrarPagoModal(false);
       setConfirmacion({ devolucionId: res.devolucionId, numeroDevolucion: res.numeroDevolucion, totalUsd: res.totalDevueltoUsd, detalle: detalle.ok ? detalle : null });
       setFactura(null);
       setSelecciones({});
@@ -405,6 +444,18 @@ export default function DevolucionFacturas({ currentUser }) {
           {registrando ? 'Registrando...' : 'F10 Registrar Devolución'}
         </button>
       </div>
+
+      {mostrarPagoModal && (
+        <PagoModal
+          totalUsd={total}
+          tasaCambio={settings ? parseFloat(settings.tasa_cambio) : 1}
+          titulo="¿Cómo se le devuelve el dinero al cliente?"
+          lineasIniciales={sugerirPagosDevolucion(factura?.pagosOriginales, encabezado?.total_usd, total, settings ? parseFloat(settings.tasa_cambio) : 1)}
+          permitirVuelto={false}
+          onConfirm={confirmarDevolucionConPagos}
+          onCancel={() => setMostrarPagoModal(false)}
+        />
+      )}
     </div>
   );
 }
