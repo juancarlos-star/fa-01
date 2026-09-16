@@ -51,17 +51,28 @@ function depositoValido(db, depositoId) {
   return db.prepare('SELECT * FROM depositos WHERE id = ? AND activo = 1').get(depositoId);
 }
 
-const METODOS_PAGO_VALIDOS = ['efectivo', 'tarjeta', 'transferencia', 'pago_movil', 'otro'];
+const METODOS_PAGO_VALIDOS = ['efectivo', 'tarjeta', 'transferencia', 'pago_movil', 'zelle', 'otro'];
 const MONEDAS_PAGO_VALIDAS = ['Bs', 'USD'];
 
+// Algunos metodos de pago en Venezuela solo se manejan en una moneda en la practica (tarjeta,
+// transferencia y pago movil son siempre Bs; Zelle es siempre USD). "Efectivo" y "Otro" (Cashea
+// y demas formas digitales) quedan libres: el cajero elige Bs o USD segun como se cobre. Esto se
+// valida tanto en el frontend (PagoModal.jsx bloquea el selector) como aqui en el backend (nunca
+// hay que confiar solo en el frontend para datos que despues alimentan el cierre de caja).
+const MONEDA_FIJA_POR_METODO = { tarjeta: 'Bs', transferencia: 'Bs', pago_movil: 'Bs', zelle: 'USD' };
+
 // Valida y normaliza el arreglo "pagos" que llega desde el frontend (Facturacion.jsx /
-// Apartados.jsx) para facturas:crear y apartados:crear/abonar. Cada linea representa un
-// metodo+moneda+monto (un pago mixto es simplemente varias lineas: no existe un metodo
-// "mixto" aparte). Devuelve { ok:false, message } si algo no cuadra, o
-// { ok:true, pagosNormalizados, totalUsd } con cada linea ya con su equivalente en USD
+// Apartados.jsx / DevolucionFacturas.jsx) para facturas:crear, facturas:crearDevolucion y
+// apartados:crear/abonar. Cada linea representa un metodo+moneda+monto (un pago mixto es
+// simplemente varias lineas: no existe un metodo "mixto" aparte). Devuelve { ok:false, message }
+// si algo no cuadra, o { ok:true, pagosNormalizados } con cada linea ya con su equivalente en USD
 // calculado (monto tal cual si es USD, o monto / tasaCambio si es Bs), listo para insertar.
-// "montoEsperadoUsd" es el total que las lineas de pago deben sumar (con 1 centavo de
-// tolerancia, por redondeo): el total de la factura, o el monto del abono.
+// "montoEsperadoUsd" es el total que las lineas de pago deben sumar (con 1 centavo de tolerancia,
+// por redondeo): el total de la factura/devolucion, o el monto del abono. Cuando el pago es en
+// efectivo y el cliente pago de mas para que le den vuelto, "montoEsperadoUsd" ya viene con ese
+// sobrante sumado (ver facturas:crear) para que las lineas reflejen el monto BRUTO realmente
+// recibido -el vuelto se resta despues, de la caja de la moneda en que se entrego, no de la
+// linea de pago-.
 function validarYNormalizarPagos(pagos, tasaCambio, montoEsperadoUsd, etiquetaDocumento) {
   if (!Array.isArray(pagos) || pagos.length === 0) {
     return { ok: false, message: `Registra al menos una forma de pago para ${etiquetaDocumento}` };
@@ -77,6 +88,11 @@ function validarYNormalizarPagos(pagos, tasaCambio, montoEsperadoUsd, etiquetaDo
     }
     if (!MONEDAS_PAGO_VALIDAS.includes(moneda)) {
       return { ok: false, message: `Moneda de pago invalida: "${moneda}"` };
+    }
+    const monedaFija = MONEDA_FIJA_POR_METODO[metodo];
+    if (monedaFija && moneda !== monedaFija) {
+      const nombreMetodo = { tarjeta: 'Tarjeta', transferencia: 'Transferencia', pago_movil: 'Pago movil', zelle: 'Zelle' }[metodo];
+      return { ok: false, message: `${nombreMetodo} solo se puede registrar en ${monedaFija}` };
     }
     if (!monto || monto <= 0) {
       return { ok: false, message: 'Cada linea de pago debe tener un monto mayor a cero' };
@@ -2738,6 +2754,23 @@ ipcMain.handle('facturas:crear', (event, payload) => {
   const ivaBs = ivaUsd * tasaCambio;
   const totalBs = totalUsd * tasaCambio;
 
+  // Vuelto entregado (si el cliente pago de mas en efectivo, ver PagoModal.jsx). A partir de
+  // este cambio, las lineas de "pagos" que manda el frontend vienen en BRUTO (el monto fisico
+  // que de verdad entrego el cliente, sin descontar el vuelto): si pago $800 en efectivo/USD y
+  // se le dio $1 de vuelto en Bs, la linea de pago sigue diciendo $800/USD completos. Por eso
+  // aqui se valida el vuelto ANTES que los pagos, y se exige que las lineas sumen
+  // total + vuelto (no solo total): asi la caja de USD queda con el ingreso real de $800, y el
+  // vuelto se resta mas adelante de la caja de Bs (la moneda en que en verdad salio), no de la
+  // de USD -que es el bug que teniamos antes-.
+  let vueltoValido = null;
+  if (vuelto && vuelto.monto) {
+    const montoVuelto = parseFloat(vuelto.monto);
+    if (montoVuelto > 0 && MONEDAS_PAGO_VALIDAS.includes(vuelto.moneda)) {
+      vueltoValido = { monto: Math.round(montoVuelto * 100) / 100, moneda: vuelto.moneda };
+    }
+  }
+  const vueltoUsd = vueltoValido ? (vueltoValido.moneda === 'USD' ? vueltoValido.monto : vueltoValido.monto / (tasaCambio || 1)) : 0;
+
   // La Nota de Venta que se genera automaticamente al completar un Apartado ya cobro el pago
   // real como abonos DURANTE el apartado (ver apartados:abonar) -esta "factura" solo formaliza
   // el documento, no es un cobro nuevo-, asi que no se le vuelve a pedir forma de pago aparte.
@@ -2747,23 +2780,11 @@ ipcMain.handle('facturas:crear', (event, payload) => {
     const resultadoPagos = validarYNormalizarPagos(
       pagos,
       tasaCambio,
-      totalUsd,
+      totalUsd + vueltoUsd,
       esNotaVenta ? 'la nota de venta' : 'la factura'
     );
     if (!resultadoPagos.ok) return resultadoPagos;
     pagosValidados = resultadoPagos.pagosNormalizados;
-  }
-
-  // Vuelto entregado (si el cliente pago de mas en efectivo, ver PagoModal.jsx). Es informativo
-  // -las lineas de "pagos" ya vienen netas del vuelto (validarYNormalizarPagos arriba exige que
-  // cuadren exacto con totalUsd)-, asi que un dato invalido aqui simplemente se ignora en vez de
-  // bloquear la venta.
-  let vueltoValido = null;
-  if (vuelto && vuelto.monto) {
-    const montoVuelto = parseFloat(vuelto.monto);
-    if (montoVuelto > 0 && MONEDAS_PAGO_VALIDAS.includes(vuelto.moneda)) {
-      vueltoValido = { monto: Math.round(montoVuelto * 100) / 100, moneda: vuelto.moneda };
-    }
   }
 
   let clienteId = null;
@@ -3100,10 +3121,19 @@ ipcMain.handle('facturas:buscarPorNumero', (event, { numero }) => {
     };
   });
 
+  // Lineas de pago con las que se cobro la factura original, para que Devolucion de Facturas
+  // pueda PRECARGAR el mismo desglose como sugerencia (no obligatorio: al momento de la
+  // devolucion puede que ya no exista esa forma de pago -por ejemplo, no siempre hay como
+  // devolver a una tarjeta especifica-, asi que el vendedor puede cambiarlo libremente).
+  const pagosOriginales = db.prepare(
+    'SELECT metodo, moneda, monto FROM factura_pagos WHERE factura_id = ? ORDER BY id'
+  ).all(factura.id);
+
   return {
     ok: true,
     encabezado: { ...factura, cliente_telefono: clienteInfo?.telefono || '', cliente_email: clienteInfo?.email || '' },
-    items: itemsConDetalle
+    items: itemsConDetalle,
+    pagosOriginales
   };
 });
 
@@ -3131,7 +3161,7 @@ ipcMain.handle('facturas:proximoNumeroDevolucion', () => {
 ipcMain.handle('facturas:crearDevolucion', (event, payload) => {
   const db = getDb();
   try {
-    const { facturaId, items, usuario } = payload;
+    const { facturaId, items, usuario, pagos } = payload;
     if (!facturaId) return { ok: false, message: 'Factura invalida' };
     const original = db.prepare('SELECT * FROM facturas WHERE id = ? AND es_devolucion = 0').get(facturaId);
     if (!original) return { ok: false, message: 'La factura original no fue encontrada' };
@@ -3139,6 +3169,39 @@ ipcMain.handle('facturas:crearDevolucion', (event, payload) => {
     if (!original.deposito_id) return { ok: false, message: 'La factura original no tiene deposito asociado' };
 
     const devolucionesPrevias = db.prepare('SELECT id FROM facturas WHERE devuelve_a_factura_id = ?').all(facturaId).map((r) => r.id);
+
+    // Total a reembolsar, calculado ANTES de tocar nada, para poder validar el desglose de pago
+    // (como se le devuelve el dinero al cliente) antes de arrancar la transaccion. Se recalcula
+    // otra vez dentro de la transaccion (mas abajo) sobre los mismos datos, asi que siempre da lo
+    // mismo -esto solo evita insertar la devolucion y despues descubrir que el reembolso no cuadra.
+    let totalDevueltoUsdPrevio = 0;
+    for (const item of items) {
+      const lineaOriginalPrevia = db.prepare(
+        'SELECT * FROM factura_items WHERE factura_id = ? AND product_id = ? AND tipo = ? AND es_devolucion = 0'
+        + (item.unit_id ? ' AND unit_id = ?' : '')
+      ).get(...(item.unit_id ? [facturaId, item.product_id, item.tipo, item.unit_id] : [facturaId, item.product_id, item.tipo]));
+      if (lineaOriginalPrevia) {
+        const cantidadPrevia = item.tipo === 'accesorio' ? (parseInt(item.cantidad, 10) || 0) : 1;
+        totalDevueltoUsdPrevio += lineaOriginalPrevia.precio_unitario_usd * cantidadPrevia;
+      }
+    }
+    const ivaPorcentajePrevio = original.iva_porcentaje || 0;
+    const totalConIvaDevueltoPrevio = totalDevueltoUsdPrevio * (1 + ivaPorcentajePrevio / 100);
+
+    // Como se le devuelve el dinero al cliente: mismo desglose (metodo + moneda + monto) que se
+    // usa para cobrar una venta, para que quede registrado que renglon de la caja hay que restar
+    // (Problema 2 del pedido original). No es obligatorio que coincida con la forma de pago
+    // original -al momento de la devolucion puede que ya no haya forma de devolver a esa misma
+    // tarjeta, por ejemplo- asi que se valida igual que un cobro normal, sin comparar contra los
+    // pagos originales.
+    const resultadoPagos = validarYNormalizarPagos(
+      pagos,
+      original.tasa_cambio || 1,
+      totalConIvaDevueltoPrevio,
+      'la devolucion'
+    );
+    if (!resultadoPagos.ok) return resultadoPagos;
+    const pagosValidados = resultadoPagos.pagosNormalizados;
 
     for (const item of items) {
       const lineaOriginal = db.prepare(
@@ -3240,6 +3303,12 @@ ipcMain.handle('facturas:crearDevolucion', (event, payload) => {
         devolucionId
       );
 
+      // Se cuelgan de la MISMA tabla factura_pagos que usan las ventas (factura_id = la fila de
+      // la devolucion, que ya tiene es_devolucion=1): el cierre de caja distingue venta vs
+      // devolucion con ese flag y resta en vez de sumar cuando corresponde (ver
+      // calcularEsperadoCaja / caja:reporteDetallado).
+      insertarLineasDePago(db, 'factura_pagos', 'factura_id', devolucionId, pagosValidados);
+
       return { devolucionId, numeroDevolucion, totalConIvaDevuelto };
     });
 
@@ -3298,21 +3367,19 @@ ipcMain.handle('gastos:delete', (event, { id }) => {
 // durante el turno, por moneda. OJO: los Gastos no se restan del efectivo esperado porque hoy
 // esa tabla no guarda en que moneda ni con que metodo se pagaron -si mas adelante se le agrega
 // esa info, aqui es donde habria que descontarlos.
+// Usado solo para el "esperado en vivo" que se muestra mientras la caja sigue abierta
+// (caja:turnoActual). Delega en calcularCierreDetallado (misma logica que usa el cierre real)
+// para no duplicar la cuenta de devoluciones/vuelto en dos sitios: antes esta funcion sumaba
+// factura_pagos en efectivo sin excluir las devoluciones, lo que las contaba de mas en vez de
+// restarlas -mismo bug que el cierre, pero aqui hubiera quedado sin corregir por separado-.
 function calcularEsperadoCaja(db, turno, hastaTimestamp) {
-  const desde = turno.apertura_at;
-  const sumaEfectivo = (tabla) => db.prepare(
-    `SELECT
-       COALESCE(SUM(CASE WHEN moneda = 'USD' THEN monto ELSE 0 END), 0) AS usd,
-       COALESCE(SUM(CASE WHEN moneda = 'Bs' THEN monto ELSE 0 END), 0) AS bs
-     FROM ${tabla}
-     WHERE metodo = 'efectivo' AND created_at BETWEEN ? AND ?`
-  ).get(desde, hastaTimestamp);
-  const deFacturas = sumaEfectivo('factura_pagos');
-  const deAbonos = sumaEfectivo('apartado_abono_pagos');
-  return {
-    esperado_usd: Math.round((turno.monto_inicial_usd + deFacturas.usd + deAbonos.usd) * 100) / 100,
-    esperado_bs: Math.round((turno.monto_inicial_bs + deFacturas.bs + deAbonos.bs) * 100) / 100
-  };
+  const detalle = calcularCierreDetallado(db, {
+    desde: turno.apertura_at,
+    hasta: hastaTimestamp,
+    montoInicialUsd: turno.monto_inicial_usd,
+    montoInicialBs: turno.monto_inicial_bs
+  });
+  return { esperado_usd: detalle.renglones.efectivo.usd, esperado_bs: detalle.renglones.efectivo.bs };
 }
 
 ipcMain.handle('caja:turnoActual', () => {
@@ -3339,7 +3406,7 @@ ipcMain.handle('caja:abrir', (event, { usuario, montoInicialUsd, montoInicialBs,
   return { ok: true, turno };
 });
 
-ipcMain.handle('caja:cerrar', (event, { id, usuario, contadoUsd, contadoBs, notas } = {}) => {
+ipcMain.handle('caja:cerrar', (event, { id, usuario, contadoUsd, contadoBs, notas, desde, hasta } = {}) => {
   const db = getDb();
   const turno = db.prepare('SELECT * FROM caja_turnos WHERE id = ?').get(id);
   if (!turno) return { ok: false, message: 'Turno de caja no encontrado' };
@@ -3351,17 +3418,141 @@ ipcMain.handle('caja:cerrar', (event, { id, usuario, contadoUsd, contadoBs, nota
   const cBs = (contadoBs === '' || contadoBs === null || contadoBs === undefined) ? null : Number(contadoBs);
   if (cUsd === null && cBs === null) return { ok: false, message: 'Cuenta al menos una moneda para cerrar la caja' };
   const cierreAt = db.prepare("SELECT datetime('now','localtime') AS ahora").get().ahora;
-  const { esperado_usd, esperado_bs } = calcularEsperadoCaja(db, turno, cierreAt);
+  // El rango de Fecha/Hora es el que el vendedor eligio en la pantalla de Caja (por defecto hoy
+  // 1:00 am a 11:00 pm, editable); si no llega ninguno (compatibilidad con llamadas viejas), cae
+  // al comportamiento anterior de "desde que se abrio el turno hasta ahora".
+  const rangoDesde = desde || turno.apertura_at;
+  const rangoHasta = hasta || cierreAt;
+  const detalle = calcularCierreDetallado(db, {
+    desde: rangoDesde,
+    hasta: rangoHasta,
+    montoInicialUsd: turno.monto_inicial_usd,
+    montoInicialBs: turno.monto_inicial_bs
+  });
+  const esperado_usd = detalle.renglones.efectivo.usd;
+  const esperado_bs = detalle.renglones.efectivo.bs;
   const diferenciaUsd = cUsd === null ? null : Math.round((cUsd - esperado_usd) * 100) / 100;
   const diferenciaBs = cBs === null ? null : Math.round((cBs - esperado_bs) * 100) / 100;
   db.prepare(
     `UPDATE caja_turnos
      SET usuario_cierre = ?, cierre_at = ?, estado = 'cerrado', contado_usd = ?, contado_bs = ?,
-         esperado_usd = ?, esperado_bs = ?, diferencia_usd = ?, diferencia_bs = ?, notas_cierre = ?
+         esperado_usd = ?, esperado_bs = ?, diferencia_usd = ?, diferencia_bs = ?, notas_cierre = ?,
+         rango_desde = ?, rango_hasta = ?, detalle_cierre_json = ?
      WHERE id = ?`
-  ).run(usuario || null, cierreAt, cUsd, cBs, esperado_usd, esperado_bs, diferenciaUsd, diferenciaBs, (notas || '').trim() || null, id);
+  ).run(
+    usuario || null, cierreAt, cUsd, cBs, esperado_usd, esperado_bs, diferenciaUsd, diferenciaBs,
+    (notas || '').trim() || null, rangoDesde, rangoHasta, JSON.stringify(detalle), id
+  );
   const turnoCerrado = db.prepare('SELECT * FROM caja_turnos WHERE id = ?').get(id);
   return { ok: true, turno: turnoCerrado };
+});
+
+// Cierre de caja DETALLADO (pedido del dueño del negocio): a diferencia de calcularEsperadoCaja
+// (que solo da un numero esperado por moneda, contando desde que se abrio el turno hasta ahora),
+// esto arma el desglose completo por renglon -Efectivo Bs, Efectivo USD, Tarjeta, Transferencia,
+// Pago movil, Zelle, Otro- para un rango de Fecha/Hora que el propio vendedor elige (por defecto
+// hoy 1:00 am a 11:00 pm, pero editable), y da un total unico consolidado en USD usando la tasa
+// de cambio que este configurada en ese momento.
+//
+// Reglas de negocio que aplica (ver conversacion con el dueño del negocio):
+//  - Ventas (facturas + notas de venta) SUMAN a cada renglon segun su metodo/moneda.
+//  - Devoluciones (es_devolucion=1) RESTAN de esos mismos renglones -antes de este cambio las
+//    devoluciones no tenian forma de pago asociada, asi que no se podian restar de nada-.
+//  - Solo Efectivo (Bs o USD) afecta el efectivo FISICO esperado en caja; Tarjeta/Transferencia/
+//    Pago movil/Zelle/Otro no mueven el efectivo aunque si afectan las ventas netas del renglon.
+//  - El vuelto entregado (facturas.vuelto_monto/vuelto_moneda) se resta del efectivo esperado en
+//    la moneda en que en verdad se entrego (no en la que se recibio -Problema 1 corregido-).
+//  - Los abonos de Apartados (apartado_abono_pagos) se cuentan igual que una venta: son dinero
+//    real que entro a caja durante el rango.
+function calcularCierreDetallado(db, { desde, hasta, montoInicialUsd, montoInicialBs }) {
+  const renglonVacio = () => ({ bs: 0, usd: 0 });
+  const renglones = {
+    efectivo: renglonVacio(),
+    tarjeta: renglonVacio(),
+    transferencia: renglonVacio(),
+    pago_movil: renglonVacio(),
+    zelle: renglonVacio(),
+    otro: renglonVacio()
+  };
+
+  // Ventas y devoluciones (factura_pagos, unidas a facturas para saber si es_devolucion).
+  const filasFacturaPagos = db.prepare(
+    `SELECT fp.metodo, fp.moneda, fp.monto, f.es_devolucion
+     FROM factura_pagos fp
+     JOIN facturas f ON f.id = fp.factura_id
+     WHERE fp.created_at BETWEEN ? AND ?`
+  ).all(desde, hasta);
+  filasFacturaPagos.forEach((fila) => {
+    const signo = fila.es_devolucion ? -1 : 1;
+    const campo = fila.moneda === 'USD' ? 'usd' : 'bs';
+    renglones[fila.metodo][campo] += signo * fila.monto;
+  });
+
+  // Abonos de Apartados: siempre suman (no existe "devolucion de abono" en el sistema).
+  const filasAbonoPagos = db.prepare(
+    `SELECT metodo, moneda, monto FROM apartado_abono_pagos WHERE created_at BETWEEN ? AND ?`
+  ).all(desde, hasta);
+  filasAbonoPagos.forEach((fila) => {
+    const campo = fila.moneda === 'USD' ? 'usd' : 'bs';
+    renglones[fila.metodo][campo] += fila.monto;
+  });
+
+  // Vuelto entregado en el rango (solo aplica a ventas, no a devoluciones): se resta del
+  // efectivo de la moneda en que se entrego.
+  const filasVuelto = db.prepare(
+    `SELECT vuelto_monto, vuelto_moneda FROM facturas
+     WHERE created_at BETWEEN ? AND ? AND es_devolucion = 0 AND vuelto_monto IS NOT NULL`
+  ).all(desde, hasta);
+  filasVuelto.forEach((fila) => {
+    const campo = fila.vuelto_moneda === 'USD' ? 'usd' : 'bs';
+    renglones.efectivo[campo] -= fila.vuelto_monto;
+  });
+
+  // Conteo de documentos en el rango, para que el vendedor vea cuanto se filtro.
+  const conteoDocumentos = db.prepare(
+    `SELECT
+       COALESCE(SUM(CASE WHEN es_devolucion = 0 AND es_nota_venta = 0 THEN 1 ELSE 0 END), 0) AS facturas,
+       COALESCE(SUM(CASE WHEN es_devolucion = 0 AND es_nota_venta = 1 THEN 1 ELSE 0 END), 0) AS notasVenta,
+       COALESCE(SUM(CASE WHEN es_devolucion = 1 THEN 1 ELSE 0 END), 0) AS devoluciones
+     FROM facturas WHERE created_at BETWEEN ? AND ?`
+  ).get(desde, hasta);
+
+  const settingsRows = db.prepare('SELECT key, value FROM settings').all();
+  const settings = {};
+  settingsRows.forEach((r) => { settings[r.key] = r.value; });
+  const tasaCambio = parseFloat(settings.tasa_cambio) || 1;
+
+  renglones.efectivo.bs += Number(montoInicialBs) || 0;
+  renglones.efectivo.usd += Number(montoInicialUsd) || 0;
+
+  const redondear = (n) => Math.round(n * 100) / 100;
+  Object.keys(renglones).forEach((m) => {
+    renglones[m].bs = redondear(renglones[m].bs);
+    renglones[m].usd = redondear(renglones[m].usd);
+  });
+
+  // Total consolidado: todo lo que este en Bs se convierte a USD con la tasa de configuracion
+  // ACTUAL (no la tasa historica de cada factura), tal como se pidio.
+  const totalUsdConsolidado = redondear(
+    Object.values(renglones).reduce((acc, r) => acc + r.usd + (r.bs / tasaCambio), 0)
+  );
+
+  return { renglones, conteoDocumentos, tasaCambio, totalUsdConsolidado };
+}
+
+ipcMain.handle('caja:reporteDetallado', (event, { turnoId, desde, hasta } = {}) => {
+  const db = getDb();
+  if (!desde || !hasta) return { ok: false, message: 'Selecciona la fecha/hora de inicio y de fin' };
+  let montoInicialUsd = 0;
+  let montoInicialBs = 0;
+  if (turnoId) {
+    const turno = db.prepare('SELECT * FROM caja_turnos WHERE id = ?').get(turnoId);
+    if (!turno) return { ok: false, message: 'Turno de caja no encontrado' };
+    montoInicialUsd = turno.monto_inicial_usd;
+    montoInicialBs = turno.monto_inicial_bs;
+  }
+  const reporte = calcularCierreDetallado(db, { desde, hasta, montoInicialUsd, montoInicialBs });
+  return { ok: true, ...reporte };
 });
 
 // Historial de turnos ya cerrados -queda para la pantalla de Reportes (parte siguiente), pero

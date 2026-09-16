@@ -678,6 +678,64 @@ function migrarCostoDescargosSiHaceFalta(database) {
   }
 }
 
+// Agrega "zelle" como metodo de pago valido en factura_pagos y apartado_abono_pagos. SQLite no
+// permite modificar un CHECK con ALTER TABLE, asi que hay que reconstruir la tabla: crearla de
+// nuevo con el CHECK actualizado, copiar los datos tal cual estaban, y reemplazar la vieja.
+// Se detecta si hace falta mirando el SQL con el que se creo la tabla (sqlite_master.sql): si ya
+// contiene 'zelle' en el CHECK, no se toca nada (migracion idempotente, segura de correr siempre
+// al iniciar la app).
+function migrarMetodoZelleSiHaceFalta(database) {
+  const reconstruirSiHaceFalta = (tabla, columnaId) => {
+    const meta = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(tabla);
+    if (!meta) return; // la tabla se acaba de crear arriba ya con 'zelle' incluido
+    if (meta.sql.includes('zelle')) return; // ya migrada
+    database.exec('PRAGMA foreign_keys = OFF');
+    const transaccion = database.transaction(() => {
+      database.exec(`ALTER TABLE ${tabla} RENAME TO ${tabla}_old_zelle`);
+      database.exec(`
+        CREATE TABLE ${tabla} (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ${columnaId} INTEGER NOT NULL,
+          metodo TEXT NOT NULL CHECK(metodo IN ('efectivo','tarjeta','transferencia','pago_movil','zelle','otro')),
+          moneda TEXT NOT NULL CHECK(moneda IN ('Bs','USD')),
+          monto REAL NOT NULL,
+          monto_usd REAL NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      `);
+      database.exec(
+        `INSERT INTO ${tabla} (id, ${columnaId}, metodo, moneda, monto, monto_usd, created_at)
+         SELECT id, ${columnaId}, metodo, moneda, monto, monto_usd, created_at FROM ${tabla}_old_zelle`
+      );
+      database.exec(`DROP TABLE ${tabla}_old_zelle`);
+    });
+    transaccion();
+    database.exec('PRAGMA foreign_keys = ON');
+  };
+  reconstruirSiHaceFalta('factura_pagos', 'factura_id');
+  reconstruirSiHaceFalta('apartado_abono_pagos', 'abono_id');
+}
+
+// Guarda el rango de Fecha/Hora que se eligio para el cierre (ya no es necesariamente
+// apertura_at -> ahora) y el desglose completo por renglon (Efectivo Bs/USD, Tarjeta,
+// Transferencia, Pago movil, Zelle, Otro) como JSON, para que el historial de cierres pueda
+// mostrar exactamente lo mismo que vio el vendedor al cerrar, sin tener que recalcularlo despues
+// (y sin que cambie si mas adelante se edita algo, ya que queda "congelado" en el momento del
+// cierre).
+function migrarCierreDetalladoCajaSiHaceFalta(database) {
+  const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='caja_turnos'").get();
+  if (!existe) return;
+  if (!tieneColumna(database, 'caja_turnos', 'rango_desde')) {
+    database.exec('ALTER TABLE caja_turnos ADD COLUMN rango_desde TEXT');
+  }
+  if (!tieneColumna(database, 'caja_turnos', 'rango_hasta')) {
+    database.exec('ALTER TABLE caja_turnos ADD COLUMN rango_hasta TEXT');
+  }
+  if (!tieneColumna(database, 'caja_turnos', 'detalle_cierre_json')) {
+    database.exec('ALTER TABLE caja_turnos ADD COLUMN detalle_cierre_json TEXT');
+  }
+}
+
 // no perder la reserva de stock que ya tenian.
 function migrarApartadosSiHaceFalta(database) {
   const existe = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='apartados'").get();
@@ -951,7 +1009,7 @@ function initDb() {
     CREATE TABLE IF NOT EXISTS factura_pagos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       factura_id INTEGER NOT NULL,
-      metodo TEXT NOT NULL CHECK(metodo IN ('efectivo','tarjeta','transferencia','pago_movil','otro')),
+      metodo TEXT NOT NULL CHECK(metodo IN ('efectivo','tarjeta','transferencia','pago_movil','zelle','otro')),
       moneda TEXT NOT NULL CHECK(moneda IN ('Bs','USD')),
       monto REAL NOT NULL,
       monto_usd REAL NOT NULL,
@@ -965,7 +1023,7 @@ function initDb() {
     CREATE TABLE IF NOT EXISTS apartado_abono_pagos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       abono_id INTEGER NOT NULL,
-      metodo TEXT NOT NULL CHECK(metodo IN ('efectivo','tarjeta','transferencia','pago_movil','otro')),
+      metodo TEXT NOT NULL CHECK(metodo IN ('efectivo','tarjeta','transferencia','pago_movil','zelle','otro')),
       moneda TEXT NOT NULL CHECK(moneda IN ('Bs','USD')),
       monto REAL NOT NULL,
       monto_usd REAL NOT NULL,
@@ -1067,6 +1125,8 @@ function initDb() {
   migrarPrefijoFacturasSiHaceFalta(database);
   migrarApartadosSiHaceFalta(database);
   migrarCostoDescargosSiHaceFalta(database);
+  migrarMetodoZelleSiHaceFalta(database);
+  migrarCierreDetalladoCajaSiHaceFalta(database);
   crearIndicesSiHacenFalta(database);
 
   const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

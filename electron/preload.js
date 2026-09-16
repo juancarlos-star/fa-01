@@ -131,6 +131,9 @@ contextBridge.exposeInMainWorld('api', {
   cajaAbrir: (data) => ipcRenderer.invoke('caja:abrir', data),
   cajaCerrar: (data) => ipcRenderer.invoke('caja:cerrar', data),
   cajaHistorial: (desde, hasta) => ipcRenderer.invoke('caja:historial', { desde, hasta }),
+  // Vista previa del cierre detallado (desglose por Efectivo Bs/USD, Tarjeta, Transferencia,
+  // Pago movil, Zelle y Otro) para un rango de Fecha/Hora elegido, ANTES de confirmar el cierre.
+  cajaReporteDetallado: (data) => ipcRenderer.invoke('caja:reporteDetallado', data),
 
   // Garantías / Reparaciones
   buscarEquipoVendidoParaReparacion: (codigo) => ipcRenderer.invoke('reparaciones:buscarEquipoVendido', { codigo }),
