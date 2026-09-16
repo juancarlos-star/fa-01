@@ -19,13 +19,26 @@ const METODOS = [
   { value: 'tarjeta', label: 'Tarjeta' },
   { value: 'transferencia', label: 'Transferencia' },
   { value: 'pago_movil', label: 'Pago movil' },
-  { value: 'otro', label: 'Otro' }
+  { value: 'zelle', label: 'Zelle' },
+  { value: 'otro', label: 'Otro (Cashea, etc.)' }
 ];
+
+// Tarjeta/Transferencia/Pago movil son siempre en Bs y Zelle es siempre en USD en la practica de
+// Venezuela: en vez de dejar que el cajero elija una moneda que despues no cuadra, se bloquea el
+// selector de moneda automaticamente al elegir uno de estos metodos. Efectivo y Otro (Cashea y
+// demas formas digitales) se dejan libres, tal cual estaba antes. El backend (electron/main.js,
+// MONEDA_FIJA_POR_METODO) vuelve a exigir esto mismo, asi que aunque el frontend fallara, nunca
+// se puede guardar una combinacion invalida.
+const MONEDA_FIJA_POR_METODO = { tarjeta: 'Bs', transferencia: 'Bs', pago_movil: 'Bs', zelle: 'USD' };
 
 let contadorLinea = 0;
 function nuevaLinea(montoSugerido) {
   contadorLinea += 1;
   return { key: `p${contadorLinea}`, metodo: 'efectivo', moneda: 'USD', monto: montoSugerido || '' };
+}
+function lineaDesdeDatos(datos) {
+  contadorLinea += 1;
+  return { key: `p${contadorLinea}`, metodo: datos.metodo || 'efectivo', moneda: datos.moneda || 'USD', monto: datos.monto != null ? String(datos.monto) : '' };
 }
 
 // Decide en que moneda conviene entregar el vuelto de un pago en efectivo. Si el vuelto es
@@ -38,29 +51,17 @@ function decidirMonedaVuelto(vueltoUsd) {
   return esEnteroUsd ? 'USD' : 'Bs';
 }
 
-// Antes de enviar los pagos al backend, si hubo sobrante en efectivo (vuelto), se resta ese
-// vuelto de las lineas en efectivo (empezando por la ultima agregada) para que la suma que
-// llega a validarYNormalizarPagos cuadre EXACTO con el total a cobrar. El backend nunca se
-// entera de que hubo vuelto -solo ve el monto que efectivamente quedo en caja-, asi que esto
-// no requiere ningun cambio en electron/main.js.
-function restarVueltoDeLineasEfectivo(lineas, vueltoUsd, tasaCambio) {
-  let restanteUsd = vueltoUsd;
-  const ajustadas = lineas.map((l) => ({ ...l }));
-  for (let i = ajustadas.length - 1; i >= 0 && restanteUsd > 0.0001; i -= 1) {
-    const l = ajustadas[i];
-    if (l.metodo !== 'efectivo') continue;
-    const montoActual = parseFloat(l.monto) || 0;
-    const montoActualUsd = l.moneda === 'USD' ? montoActual : montoActual / (tasaCambio || 1);
-    const descontarUsd = Math.min(montoActualUsd, restanteUsd);
-    const descontarEnMoneda = l.moneda === 'USD' ? descontarUsd : descontarUsd * (tasaCambio || 1);
-    l.monto = String(Math.max(0, montoActual - descontarEnMoneda));
-    restanteUsd -= descontarUsd;
-  }
-  return ajustadas.filter((l) => (parseFloat(l.monto) || 0) > 0);
-}
-
-export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onCancel }) {
-  const [lineas, setLineas] = useState([nuevaLinea(totalUsd ? String(totalUsd) : '')]);
+// "lineasIniciales" (opcional): [{ metodo, moneda, monto }], para precargar el desglose -por
+// ejemplo, en Devolucion de Facturas se sugiere el mismo desglose con que se cobro la venta
+// original-. Es solo una sugerencia editable: el usuario puede cambiar metodo, moneda, monto,
+// quitar lineas o agregar otras nuevas con total libertad, exactamente igual que si las hubiera
+// escrito el mismo desde cero.
+export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onCancel, lineasIniciales, permitirVuelto = true }) {
+  const [lineas, setLineas] = useState(() => (
+    lineasIniciales && lineasIniciales.length > 0
+      ? lineasIniciales.map(lineaDesdeDatos)
+      : [nuevaLinea(totalUsd ? String(totalUsd) : '')]
+  ));
   const [error, setError] = useState('');
   const [guardando, setGuardando] = useState(false);
   // Moneda en la que se va a entregar el vuelto, cuando aplica. Arranca en null y se inicializa
@@ -79,9 +80,11 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
   const totalEfectivoUsd = lineas
     .filter((l) => l.metodo === 'efectivo')
     .reduce((acc, l) => acc + montoUsdDeLinea(l), 0);
-  // El sobrante solo se puede tratar como "vuelto" si viene cubierto por efectivo: no tiene
-  // sentido "dar vuelto" de un pago con tarjeta o transferencia.
-  const haySobranteComoVuelto = diferencia > 0.01 && totalEfectivoUsd >= diferencia - 0.01;
+  // El sobrante solo se puede tratar como "vuelto" si viene cubierto por efectivo (no tiene
+  // sentido "dar vuelto" de un pago con tarjeta o transferencia) y si el contexto lo permite -en
+  // una devolucion no aplica el concepto de vuelto, un sobrante ahi es simplemente un error de
+  // captura que hay que corregir-.
+  const haySobranteComoVuelto = permitirVuelto && diferencia > 0.01 && totalEfectivoUsd >= diferencia - 0.01;
   const cuadra = Math.abs(diferencia) <= 0.01 || haySobranteComoVuelto;
   const monedaVueltoSugerida = haySobranteComoVuelto ? decidirMonedaVuelto(diferencia) : null;
   const vueltoEnBs = diferencia * (tasaCambio || 0);
@@ -102,7 +105,17 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
   const monedaVuelto = monedaVueltoElegida || monedaVueltoSugerida;
 
   const actualizarLinea = (key, campo, valor) => {
-    setLineas((prev) => prev.map((l) => (l.key === key ? { ...l, [campo]: valor } : l)));
+    setLineas((prev) => prev.map((l) => {
+      if (l.key !== key) return l;
+      const actualizada = { ...l, [campo]: valor };
+      // Si el metodo elegido tiene moneda fija (tarjeta/transferencia/pago movil/zelle), se
+      // fuerza esa moneda automaticamente para que el cajero no tenga que acordarse de cambiarla.
+      if (campo === 'metodo') {
+        const monedaFija = MONEDA_FIJA_POR_METODO[valor];
+        if (monedaFija) actualizada.moneda = monedaFija;
+      }
+      return actualizada;
+    }));
   };
 
   const agregarLinea = () => {
@@ -136,16 +149,15 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
     }
     setGuardando(true);
     try {
-      const lineasAEnviar = haySobranteComoVuelto
-        ? restarVueltoDeLineasEfectivo(lineas, diferencia, tasaCambio)
-        : lineas;
-      // Vuelto entregado, ya en la moneda que eligio el cajero, para que quede reflejado en la
-      // factura/nota de venta (ver facturas:crear y generarFacturaPDF.js).
+      // Las lineas se mandan TAL CUAL las tecleo el cajero (en bruto, incluyendo el sobrante que
+      // dio pie al vuelto): el backend es quien resta el vuelto de la caja de la moneda en que
+      // en verdad se entrego, para que cuadre exacto por cada moneda (ver electron/main.js,
+      // facturas:crear).
       const vueltoAEnviar = haySobranteComoVuelto
         ? { monto: monedaVuelto === 'USD' ? diferencia : vueltoEnBs, moneda: monedaVuelto }
         : null;
       await onConfirm(
-        lineasAEnviar.map((l) => ({ metodo: l.metodo, moneda: l.moneda, monto: parseFloat(l.monto) || 0 })),
+        lineas.map((l) => ({ metodo: l.metodo, moneda: l.moneda, monto: parseFloat(l.monto) || 0 })),
         vueltoAEnviar
       );
     } finally {
@@ -172,7 +184,13 @@ export default function PagoModal({ totalUsd, tasaCambio, titulo, onConfirm, onC
               <select value={l.metodo} onChange={(e) => actualizarLinea(l.key, 'metodo', e.target.value)} style={{ ...inputStyle, flex: '1.3' }}>
                 {METODOS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
-              <select value={l.moneda} onChange={(e) => actualizarLinea(l.key, 'moneda', e.target.value)} style={{ ...inputStyle, flex: '0.7' }}>
+              <select
+                value={l.moneda}
+                onChange={(e) => actualizarLinea(l.key, 'moneda', e.target.value)}
+                disabled={!!MONEDA_FIJA_POR_METODO[l.metodo]}
+                title={MONEDA_FIJA_POR_METODO[l.metodo] ? `${METODOS.find((m) => m.value === l.metodo)?.label} siempre es en ${MONEDA_FIJA_POR_METODO[l.metodo]}` : undefined}
+                style={{ ...inputStyle, flex: '0.7', opacity: MONEDA_FIJA_POR_METODO[l.metodo] ? 0.7 : 1 }}
+              >
                 <option value="USD">USD</option>
                 <option value="Bs">Bs</option>
               </select>
