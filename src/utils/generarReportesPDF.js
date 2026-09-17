@@ -86,20 +86,102 @@ export async function generarPDFGanancias(reporte, desde, hasta, opciones = {}) 
     formatoValor: (v) => `$${fmt(v)}`
   });
 
-  autoTable(doc, {
-    startY: y + 6,
-    head: [['Fecha', 'Concepto', 'Categoria', 'Monto']],
-    body: reporte.gastos.map((g) => [g.created_at, g.concepto, g.categoria || '—', `$${fmt(g.monto_usd)}`]),
-    theme: 'grid',
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
-    margin: { left: 10, right: 10 }
-  });
+  // La tabla de abajo es el detalle de los GASTOS del periodo (lo mismo que se ve en pantalla
+  // debajo del resumen). Antes salia sin titulo y, cuando no habia ningun gasto registrado en el
+  // rango, quedaba solo el encabezado azul con los renglones vacios — parecia un error del
+  // reporte cuando en realidad significaba "no hubo gastos". Ahora lleva su titulo y, si no hay
+  // nada, se imprime el mismo mensaje que muestra la pantalla en vez de una tabla vacia.
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('Gastos del periodo', 10, y + 10);
+
+  if (!reporte.gastos || reporte.gastos.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(102, 112, 133);
+    doc.text('No hay gastos registrados en este rango de fechas.', 10, y + 17);
+    doc.setTextColor(0, 0, 0);
+  } else {
+    autoTable(doc, {
+      startY: y + 13,
+      head: [['Fecha', 'Concepto', 'Categoria', 'Monto']],
+      body: reporte.gastos.map((g) => [g.created_at, g.concepto, g.categoria || '—', `$${fmt(g.monto_usd)}`]),
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+      margin: { left: 10, right: 10 }
+    });
+  }
 
   if (opciones.imprimir) {
     await guardarAbrirEImprimirPDF(doc, `Reporte-Ventas-Ganancias_${fechaParaNombreArchivo()}`, 'Reportes');
   } else {
     await guardarYAbrirPDF(doc, `Reporte-Ventas-Ganancias_${fechaParaNombreArchivo()}`, 'Reportes');
+  }
+}
+
+// ---------------- Historial de movimientos por producto ----------------
+
+// Misma informacion que la pantalla (Reportes > Inventario > Historial de movimientos), para
+// poder imprimirla o archivarla: sirve como respaldo en papel cuando hay un reclamo por un IMEI
+// puntual o cuando no cuadra un conteo fisico. Las filas llegan ya filtradas desde la pantalla.
+export async function generarPDFHistorialMovimientos(reporte, movimientos, opciones = {}) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  const producto = reporte?.producto || {};
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text('Historial de Movimientos', 10, 15);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`Producto: ${producto.nombre || '—'}${producto.codigo_producto ? ` (${producto.codigo_producto})` : ''}`, 10, 22);
+  if (reporte?.codigoFiltrado) {
+    doc.text(`Unidad / IMEI: ${reporte.codigoFiltrado}`, 10, 28);
+  }
+  const yResumen = reporte?.codigoFiltrado ? 34 : 28;
+  doc.text(
+    `Entradas: +${reporte?.entradas ?? 0}   Salidas: -${reporte?.salidas ?? 0}   Neto: ${reporte?.neto ?? 0}   Stock actual: ${reporte?.stockActual ?? 0}`,
+    10,
+    yResumen
+  );
+  doc.setDrawColor(200);
+  doc.line(10, yResumen + 4, 200, yResumen + 4);
+
+  if (!movimientos || movimientos.length === 0) {
+    // Igual que en el reporte de ganancias: sin datos NO se dibuja la tabla, para que no quede
+    // el encabezado azul con los renglones vacios pareciendo un error del sistema.
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(102, 112, 133);
+    doc.text('Este producto no tiene movimientos registrados.', 10, yResumen + 14);
+    doc.setTextColor(0, 0, 0);
+  } else {
+  autoTable(doc, {
+    startY: yResumen + 9,
+    head: [['Fecha y hora', 'Movimiento', 'Cant.', 'Código / IMEI', 'Documento', 'Usuario', 'Depósito', 'Detalle']],
+    body: (movimientos || []).map((m) => [
+      m.fecha,
+      m.etiqueta,
+      m.cantidad === 0 ? '—' : (m.cantidad > 0 ? `+${m.cantidad}` : String(m.cantidad)),
+      m.codigo || '—',
+      m.documento,
+      m.usuario,
+      m.deposito,
+      m.detalle || '—'
+    ]),
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 1.6 },
+    headStyles: { fillColor: [11, 79, 158], textColor: [255, 255, 255] },
+    columnStyles: { 2: { halign: 'center' } },
+    margin: { left: 10, right: 10 }
+  });
+  }
+
+  const nombreArchivo = `Historial-Movimientos_${(producto.nombre || 'producto').replace(/[^a-zA-Z0-9]/g, '-').slice(0, 30)}_${fechaParaNombreArchivo()}`;
+  if (opciones.imprimir) {
+    await guardarAbrirEImprimirPDF(doc, nombreArchivo, 'Reportes');
+  } else {
+    await guardarYAbrirPDF(doc, nombreArchivo, 'Reportes');
   }
 }
 

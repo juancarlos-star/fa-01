@@ -19,12 +19,16 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   // abajo dinamicamente segun cuanto espacio ocupe esto, para no superponerse si se usan las 4
   // lineas completas.
   const yEncabezadoEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 88, sinLogo: true });
-  const yCliente = Math.max(35, yEncabezadoEmpresa + 6);
+  // 41 (antes 35): el bloque de la derecha ahora tiene un renglon mas (HORA), asi que CONTADO
+  // bajo hasta y=33 — el bloque del cliente arranca debajo de eso para que la DIRECCION larga,
+  // que se extiende hacia la derecha, nunca se le monte encima.
+  const yCliente = Math.max(41, yEncabezadoEmpresa + 6);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.text(factura.es_nota_venta ? 'NOTA DE VENTA N°' : 'FACTURA N°', 145, 15);
   doc.text('FECHA:', 145, 21);
+  doc.text('HORA:', 145, 27);
 
   // Todos los valores de este bloque quedan alineados en la misma columna (x=182), con
   // suficiente separacion de la etiqueta mas larga ("NOTA DE VENTA N°"), para que nunca queden
@@ -33,12 +37,19 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   const xValor = 182;
   doc.setFont('helvetica', 'normal');
   doc.text(factura.numero_factura || String(factura.id).padStart(6, '0'), xValor, 15);
-  const fecha = (factura.created_at || '').split(' ')[0].split('-').reverse().join('/');
+  // Fecha Y HORA de emision, igual que ya hacian el resto de los documentos del sistema
+  // (recibo de abono, cargos/descargos, compras, recibo de entrega): la Factura/Nota de Venta
+  // era el unico documento que mostraba solo la fecha. La hora se toma tal cual quedo guardada
+  // en created_at al emitir, asi que una factura vieja reimpresa sigue mostrando SU hora, no la
+  // de hoy. Si por lo que sea el registro no trae hora, se imprime solo la fecha (sin romper).
+  const [fechaParte, horaParte] = (factura.created_at || '').split(' ');
+  const fecha = (fechaParte || '').split('-').reverse().join('/');
   doc.text(fecha, xValor, 21);
+  doc.text(horaParte || '—', xValor, 27);
 
   doc.setTextColor(200, 0, 0);
   doc.setFont('helvetica', 'bold');
-  doc.text('CONTADO', 145, 27);
+  doc.text('CONTADO', 145, 33);
   doc.setTextColor(0, 0, 0);
 
   doc.setFont('helvetica', 'bold');
@@ -88,8 +99,21 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
     margin: { left: 10, right: 10 }
   });
 
+  // Desglose de como se cobro (metodo + moneda de cada linea, cubre tambien pagos mixtos).
+  // opciones.pagos llega desde facturas:detalle (columna factura_pagos); facturas viejas,
+  // emitidas antes de que existiera este desglose, no tendran lineas y ese bloque simplemente
+  // no se dibuja, sin romper la impresion de esos documentos antiguos.
+  const pagos = opciones.pagos || [];
+
+  // El bloque de cierre (totales a la derecha + forma de pago a la izquierda + vuelto) se
+  // mantiene SIEMPRE completo en una misma pagina: se mide su alto real -lo que ocupen los
+  // totales o las lineas de pago, lo que sea mas alto- antes de decidir si hay que saltar de
+  // pagina, para que nunca quede la forma de pago cortada o sola en la hoja siguiente.
+  const altoPagos = pagos.length > 0 ? 5 + pagos.length * 5 : 0;
+  const altoVuelto = factura.vuelto_monto ? altoPagos + 3 + 5 : 0;
+  const altoCierre = Math.max(20, altoPagos, altoVuelto);
   let finalY = doc.lastAutoTable.finalY + 8;
-  if (finalY > 245) { doc.addPage(); finalY = 20; }
+  if (finalY + altoCierre > 265) { doc.addPage(); finalY = 20; }
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
@@ -110,14 +134,12 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   // hoy, para que una factura vieja impresa de nuevo siga mostrando el monto correcto de su dia.
   doc.text(`Bs ${fmt(factura.total_usd * (factura.tasa_cambio || 1))}`, 195, finalY + 20, { align: 'right' });
 
-  // Desglose de como se cobro (metodo + moneda de cada linea, cubre tambien pagos mixtos).
-  // opciones.pagos llega desde facturas:detalle (columna factura_pagos); facturas viejas,
-  // emitidas antes de que existiera este desglose, no tendran lineas y este bloque simplemente
-  // no se dibuja, sin romper la impresion de esos documentos antiguos.
-  const pagos = opciones.pagos || [];
-  let yPagos = finalY + 28;
+  // La forma de pago va a la IZQUIERDA y arrancando en el mismo renglon que "TOTAL NETO"
+  // (finalY), no debajo de todo: asi el desglose queda dentro del cuerpo de la factura, al lado
+  // de los totales, en vez de aparecer suelto mas abajo. Ocupa desde x=10 hasta ~x=125, sin
+  // invadir la columna de totales (que empieza en x=130).
+  const yPagos = finalY;
   if (pagos.length > 0) {
-    if (yPagos + pagos.length * 5 > 270) { doc.addPage(); yPagos = 20; }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text('FORMA DE PAGO:', 10, yPagos);
@@ -132,9 +154,8 @@ export async function generarFacturaPDF(factura, items, settings, opciones = {})
   // recibio en total y cuanto se le devolvio, en la moneda en que efectivamente se le entrego.
   // factura.tasa_cambio es la del DIA en que se emitio esta factura (no la de hoy), para que
   // una factura vieja reimpresa siga mostrando el monto correcto.
-  let yVuelto = yPagos + (pagos.length > 0 ? 5 + pagos.length * 5 + 3 : 0);
+  const yVuelto = yPagos + (pagos.length > 0 ? 5 + pagos.length * 5 + 3 : 0);
   if (factura.vuelto_monto) {
-    if (yVuelto + 5 > 270) { doc.addPage(); yVuelto = 20; }
     const vueltoEsUsd = factura.vuelto_moneda === 'USD';
     const vueltoUsdEquiv = vueltoEsUsd ? factura.vuelto_monto : factura.vuelto_monto / (factura.tasa_cambio || 1);
     const recibidoUsd = (factura.total_usd || 0) + vueltoUsdEquiv;
