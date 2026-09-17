@@ -29,7 +29,8 @@ import {
   generarPDFVentasPorCliente,
   generarPDFLibroVentasIva,
   generarPDFLibroComprasIva,
-  generarPDFCatalogo
+  generarPDFCatalogo,
+  generarPDFHistorialMovimientos
 } from '../utils/generarReportesPDF.js';import { fmt } from '../utils/format.js';
 
 // Reportes organizados por categorias (Inventario, Vendedores, Ventas, Compras...), cada una
@@ -44,6 +45,7 @@ const CATEGORIAS = [
       { key: 'inventarioFisico', label: 'Inventario Físico' },
       { key: 'stockBajo', label: 'Stock Bajo' },
       { key: 'stockMuerto', label: 'Stock muerto' },
+      { key: 'historialMovimientos', label: 'Historial de movimientos' },
       { key: 'catalogoWhatsapp', label: 'Catálogo para WhatsApp' },
       { key: 'historialCargos', label: 'Hist. cargos' },
       { key: 'historialDescargos', label: 'Hist. descargo' }
@@ -119,7 +121,7 @@ const CATEGORIAS = [
 ];
 
 // Pestañas que no usan el filtro de rango de fechas global (manejan su propia carga de datos).
-const SIN_FILTRO_FECHA = ['clientes', 'clientesFrecuentes', 'historial', 'gestionProductos', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'stockMuerto', 'catalogoWhatsapp', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas', 'metasComisiones'];
+const SIN_FILTRO_FECHA = ['clientes', 'clientesFrecuentes', 'historial', 'gestionProductos', 'inventarioProductos', 'inventarioFisico', 'stockBajo', 'stockMuerto', 'historialMovimientos', 'catalogoWhatsapp', 'vendedoresUltimasVentas', 'ventasCierreDiario', 'etiquetas', 'metasComisiones'];
 
 // Hook compartido para traer la configuracion de la tienda (nombre, RIF, logo, etc.), usado por
 // las pestañas de Reportes que generan el PDF de una factura individual (necesitan pasarsela a
@@ -198,6 +200,7 @@ export default function Reportes({ currentUser, categoriaInicial }) {
       {tab === 'inventarioFisico' && <ReporteInventarioFisico />}
       {tab === 'stockBajo' && <ReporteStockBajo />}
       {tab === 'stockMuerto' && <ReporteStockMuerto />}
+      {tab === 'historialMovimientos' && <ReporteHistorialMovimientos />}
       {tab === 'catalogoWhatsapp' && <ReporteCatalogoWhatsapp />}
       {tab === 'vendedoresEfectividad' && <ReporteVendedoresEfectividad desde={desde} hasta={hasta} />}
       {tab === 'vendedoresUltimasVentas' && <ReporteVendedoresUltimasVentas />}
@@ -1469,6 +1472,227 @@ function ReporteStockMuerto() {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Inventario: Historial de movimientos por producto ----------------
+
+// Responde "¿que le paso a este producto (o a este IMEI) y quien lo movio?": cada entrada y
+// cada salida en orden, con fecha+hora, documento, usuario y deposito. Se puede consultar de
+// dos formas: eligiendo un producto del desplegable (historial del modelo completo), o
+// escaneando/escribiendo un codigo o IMEI, que filtra a ESA unidad puntual -util para rastrear
+// un telefono especifico cuando un cliente reclama o cuando no cuadra el conteo fisico-.
+//
+// El backend (reportes:historialMovimientos) arma esto leyendo los registros que el sistema ya
+// venia guardando desde el primer dia, asi que el historial incluye tambien todo lo viejo, no
+// solo lo que pase de ahora en adelante.
+const MOV_ESTILO = {
+  compra: { icono: '📥', color: '#027a48', fondo: '#ecfdf3' },
+  cargo: { icono: '📥', color: '#027a48', fondo: '#ecfdf3' },
+  devolucion_venta: { icono: '↩️', color: '#027a48', fondo: '#ecfdf3' },
+  venta: { icono: '🧾', color: '#b42318', fondo: '#fef3f2' },
+  devolucion_compra: { icono: '↪️', color: '#b42318', fondo: '#fef3f2' },
+  descargo: { icono: '⚠️', color: '#b54708', fondo: '#fffaeb' },
+  traslado: { icono: '🔁', color: '#175cd3', fondo: '#eff8ff' }
+};
+
+function ReporteHistorialMovimientos() {
+  const [productos, setProductos] = useState([]);
+  const [productoId, setProductoId] = useState('');
+  const [codigo, setCodigo] = useState('');
+  const [reporte, setReporte] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState('');
+  const [generandoPDF, setGenerandoPDF] = useState(false);
+  const [tipoFiltro, setTipoFiltro] = useState('todos');
+
+  useEffect(() => { window.api.listProducts().then((lista) => setProductos(lista || [])); }, []);
+
+  const consultar = useCallback(async (params) => {
+    setCargando(true);
+    setError('');
+    const data = await window.api.getHistorialMovimientos(params);
+    if (!data || !data.ok) {
+      setReporte(null);
+      setError(data?.message || 'No se pudo cargar el historial');
+    } else {
+      setReporte(data);
+      // Al buscar por codigo, el backend devuelve a que producto pertenece: se deja
+      // seleccionado en el desplegable para que se vea de que producto es ese IMEI.
+      if (data.producto) setProductoId(String(data.producto.id));
+    }
+    setCargando(false);
+  }, []);
+
+  // Al elegir un producto en el desplegable se consulta solo (sin boton): el codigo se limpia
+  // porque pasa a verse el historial del modelo completo, no el de una unidad.
+  const elegirProducto = (id) => {
+    setProductoId(id);
+    setCodigo('');
+    if (id) consultar({ productId: id });
+    else { setReporte(null); setError(''); }
+  };
+
+  // La pistola laser manda Enter automatico al disparar, asi que buscar con Enter cubre tanto el
+  // escaneo como el tecleo manual.
+  const buscarPorCodigo = () => {
+    const limpio = codigo.trim();
+    if (!limpio) return;
+    consultar({ codigo: limpio });
+  };
+
+  const movimientosFiltrados = (reporte?.movimientos || []).filter(
+    (m) => tipoFiltro === 'todos' || m.tipo === tipoFiltro
+  );
+
+  // El PDF sale con lo que se esta viendo en pantalla (respeta el filtro de tipo de movimiento).
+  const descargarPDF = async (imprimir = false) => {
+    setGenerandoPDF(true);
+    try {
+      await generarPDFHistorialMovimientos(reporte, movimientosFiltrados, { imprimir });
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div className="form-box" style={{ maxWidth: '380px', flex: '1 1 320px' }}>
+          <label>Producto (historial del modelo completo)</label>
+          <SelectorProducto
+            productos={productos}
+            value={productoId}
+            onChange={elegirProducto}
+            placeholder="-- Nombre o código de producto --"
+            mostrarStock
+          />
+        </div>
+
+        <div className="form-box" style={{ maxWidth: '380px', flex: '1 1 320px' }}>
+          <label>O escanea un código / IMEI (historial de esa unidad)</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarPorCodigo(); } }}
+              placeholder="Dispara la pistola o escribe el código"
+              style={{ flex: 1 }}
+            />
+            <button type="button" onClick={buscarPorCodigo}>Buscar</button>
+          </div>
+          {reporte?.codigoFiltrado && (
+            <button
+              type="button"
+              onClick={() => { setCodigo(''); if (productoId) consultar({ productId: productoId }); }}
+              style={{ marginTop: '0.4rem' }}
+            >
+              Ver todo el producto (quitar filtro del código)
+            </button>
+          )}
+        </div>
+      </div>
+
+      {error && <p style={{ color: '#b42318' }}>{error}</p>}
+      {cargando && <p>Cargando...</p>}
+
+      {!cargando && !reporte && !error && (
+        <p style={{ color: '#667085' }}>
+          Elige un producto o escanea un código/IMEI para ver todo lo que ha pasado con él:
+          ventas, devoluciones, compras, cargos, descargos y traslados, con fecha, hora y usuario.
+        </p>
+      )}
+
+      {!cargando && reporte && (
+        <>
+          <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+
+          <div className="form-box" style={{ maxWidth: '620px' }}>
+            <p style={{ margin: 0 }}>
+              <strong className="producto-nombre">{reporte.producto.nombre}</strong>
+              <span style={{ color: '#98a2b3' }}>
+                {' '}— {TIPO_LABEL_INV[reporte.producto.tipo] || reporte.producto.tipo}
+                {reporte.producto.codigo_producto ? ` · ${reporte.producto.codigo_producto}` : ''}
+              </span>
+            </p>
+            {reporte.codigoFiltrado && (
+              <p style={{ margin: '0.35rem 0 0', color: '#175cd3' }}>
+                Mostrando solo la unidad <strong>{reporte.codigoFiltrado}</strong>
+              </p>
+            )}
+            <p style={{ margin: '0.5rem 0 0', fontSize: '0.88rem', color: '#344054' }}>
+              Entradas: <strong style={{ color: '#027a48' }}>+{reporte.entradas}</strong>
+              {' '}· Salidas: <strong style={{ color: '#b42318' }}>−{reporte.salidas}</strong>
+              {' '}· Neto: <strong>{reporte.neto >= 0 ? `+${reporte.neto}` : reporte.neto}</strong>
+              {' '}· Stock actual en todos los depósitos: <strong>{reporte.stockActual}</strong>
+            </p>
+          </div>
+
+          <div className="tab-container" style={{ marginTop: '0.8rem' }}>
+            {[
+              ['todos', 'Todos'],
+              ['venta', 'Ventas'],
+              ['devolucion_venta', 'Devoluciones'],
+              ['compra', 'Compras'],
+              ['cargo', 'Cargos'],
+              ['descargo', 'Descargos'],
+              ['traslado', 'Traslados']
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={tipoFiltro === key ? 'tab-item-claro active' : 'tab-item-claro'}
+                onClick={() => setTipoFiltro(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {movimientosFiltrados.length === 0 ? (
+            <p style={{ marginTop: '0.8rem' }}>
+              {reporte.movimientos.length === 0
+                ? 'Este producto todavía no tiene ningún movimiento registrado.'
+                : 'No hay movimientos de ese tipo.'}
+            </p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', marginTop: '0.8rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid #ddd' }}>
+                  <th style={{ padding: '0.5rem' }}>Fecha y hora</th>
+                  <th>Movimiento</th>
+                  <th style={{ textAlign: 'center' }}>Cant.</th>
+                  <th>Código / IMEI</th>
+                  <th>Documento</th>
+                  <th>Usuario</th>
+                  <th>Depósito</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movimientosFiltrados.map((m, i) => {
+                  const estilo = MOV_ESTILO[m.tipo] || { icono: '•', color: '#344054', fondo: '#fff' };
+                  return (
+                    <tr key={i} style={{ borderBottom: '1px solid #eee', background: estilo.fondo }}>
+                      <td style={{ padding: '0.5rem', whiteSpace: 'nowrap' }}>{m.fecha}</td>
+                      <td style={{ color: estilo.color, fontWeight: 600 }}>{estilo.icono} {m.etiqueta}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 700, color: estilo.color }}>
+                        {m.cantidad === 0 ? '—' : (m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad)}
+                      </td>
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{m.codigo || '—'}</td>
+                      <td>{m.documento}</td>
+                      <td>{m.usuario}</td>
+                      <td style={{ fontSize: '0.82rem' }}>{m.deposito}</td>
+                      <td style={{ fontSize: '0.82rem', color: '#667085' }}>{m.detalle || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </div>
   );
