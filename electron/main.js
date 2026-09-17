@@ -5437,6 +5437,202 @@ ipcMain.handle('reportes:stockMuerto', () => {
   return obtenerReporteStockMuerto(db);
 });
 
+// ---------------- Historial de movimientos por producto ----------------
+// Responde la pregunta "¿que le paso a este producto (o a este IMEI) y quien lo movio?": cada
+// entrada y cada salida de inventario, en orden, con fecha+hora, documento, usuario y deposito.
+//
+// A proposito NO se creo una tabla nueva de movimientos: todo se arma leyendo los registros que
+// el sistema YA venia guardando desde el primer dia (compras, descargos, factura_items,
+// traslados). La ventaja es enorme: el historial sirve desde el momento en que se instala esta
+// version, incluyendo TODO lo viejo, en vez de empezar vacio y solo registrar de hoy en
+// adelante. Cada fila trae "cantidad" con signo: positivo = entro al inventario, negativo = salio.
+//
+// Fuentes y como se distingue cada una:
+//   - compras (es_devolucion = 0): entrada. Si tiene encabezado_id es un CARGO manual
+//     (cargos_descargos_encabezado); si no, es una COMPRA normal a proveedor.
+//   - compras (es_devolucion = 1): devolucion al proveedor -> salida.
+//   - descargos: salida (dañado/vencido/robado/etc.), con su motivo.
+//   - factura_items + facturas: venta (salida) o devolucion del cliente (entrada, es_devolucion = 1).
+//   - traslados_detalle + traslados: cambio de deposito. No suma ni resta stock total, por eso va
+//     con cantidad 0 y se muestra como "Origen -> Destino".
+function obtenerHistorialMovimientos(db, { productId, codigo, desde, hasta } = {}) {
+  let producto = null;
+  let unitIdFiltro = null;
+
+  // Si llega un codigo/IMEI (escaneado con la pistola o escrito a mano), se resuelve a que
+  // producto pertenece y ADEMAS se filtra el historial a esa unidad puntual: asi se puede
+  // rastrear un telefono especifico, no solo el modelo.
+  const codigoLimpio = (codigo || '').trim();
+  if (codigoLimpio) {
+    const unidad = db.prepare(
+      `SELECT u.id AS unit_id, u.product_id FROM inventory_units u WHERE u.codigo = ?`
+    ).get(codigoLimpio);
+    if (!unidad) return { ok: false, message: `No existe ninguna unidad con el codigo/IMEI "${codigoLimpio}"` };
+    unitIdFiltro = unidad.unit_id;
+    producto = db.prepare('SELECT * FROM products WHERE id = ?').get(unidad.product_id);
+  } else {
+    if (!productId) return { ok: false, message: 'Selecciona un producto o escanea un codigo/IMEI' };
+    producto = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+  }
+  if (!producto) return { ok: false, message: 'Producto no encontrado' };
+
+  const rangoDesde = desde ? `${desde} 00:00:00` : '0000-01-01 00:00:00';
+  const rangoHasta = hasta ? `${hasta} 23:59:59` : '9999-12-31 23:59:59';
+
+  const depositos = {};
+  db.prepare('SELECT id, nombre FROM depositos').all().forEach((d) => { depositos[d.id] = d.nombre; });
+  const nombreDeposito = (id) => (id ? (depositos[id] || `Deposito ${id}`) : '—');
+  const usuarios = mapaUsuarios(db);
+  const nombreUsuario = (u) => (u ? (usuarios[u] || u) : '—');
+
+  // Filtro opcional por unidad: se arma como fragmento de SQL + parametro para no repetir dos
+  // veces cada consulta (una con unidad y otra sin ella).
+  const filtroUnidad = (columna) => (unitIdFiltro ? ` AND ${columna} = ${unitIdFiltro}` : '');
+
+  const movimientos = [];
+
+  // --- Entradas por compra / cargo, y salidas por devolucion al proveedor ---
+  db.prepare(
+    `SELECT c.id, c.cantidad, c.created_at, c.usuario, c.deposito_id, c.es_devolucion,
+            c.compra_encabezado_id, c.encabezado_id, c.costo_unitario_usd,
+            u.codigo AS unidad_codigo,
+            ce.numero_devolucion AS compra_numero_devolucion,
+            cd.tipo_documento AS cd_tipo, cd.numero_documento AS cd_numero, cd.motivo AS cd_motivo
+     FROM compras c
+     LEFT JOIN inventory_units u ON u.id = c.unit_id
+     LEFT JOIN compras_encabezado ce ON ce.id = c.compra_encabezado_id
+     LEFT JOIN cargos_descargos_encabezado cd ON cd.id = c.encabezado_id
+     WHERE c.product_id = ? AND c.created_at BETWEEN ? AND ?${filtroUnidad('c.unit_id')}`
+  ).all(producto.id, rangoDesde, rangoHasta).forEach((r) => {
+    const esCargo = r.encabezado_id != null;
+    const esDevolucion = !!r.es_devolucion;
+    movimientos.push({
+      fecha: r.created_at,
+      tipo: esDevolucion ? 'devolucion_compra' : (esCargo ? 'cargo' : 'compra'),
+      etiqueta: esDevolucion ? 'Devolución a proveedor' : (esCargo ? 'Cargo manual' : 'Compra'),
+      cantidad: esDevolucion ? -(r.cantidad || 0) : (r.cantidad || 0),
+      codigo: r.unidad_codigo || null,
+      documento: esCargo
+        ? `CAR-${String(r.cd_numero || r.encabezado_id).padStart(5, '0')}`
+        : (r.compra_encabezado_id
+            ? `${esDevolucion ? 'DEV-COM-' : 'COM-'}${String(esDevolucion ? (r.compra_numero_devolucion || '') : r.compra_encabezado_id).padStart(6, '0')}`
+            : '—'),
+      usuario: nombreUsuario(r.usuario),
+      deposito: nombreDeposito(r.deposito_id),
+      detalle: esCargo ? (r.cd_motivo || '') : ''
+    });
+  });
+
+  // --- Salidas por descargo (dañado, vencido, robado, etc.) ---
+  db.prepare(
+    `SELECT d.id, d.cantidad, d.created_at, d.usuario, d.deposito_id, d.motivo, d.encabezado_id,
+            u.codigo AS unidad_codigo, cd.numero_documento AS cd_numero
+     FROM descargos d
+     LEFT JOIN inventory_units u ON u.id = d.unit_id
+     LEFT JOIN cargos_descargos_encabezado cd ON cd.id = d.encabezado_id
+     WHERE d.product_id = ? AND d.created_at BETWEEN ? AND ?${filtroUnidad('d.unit_id')}`
+  ).all(producto.id, rangoDesde, rangoHasta).forEach((r) => {
+    movimientos.push({
+      fecha: r.created_at,
+      tipo: 'descargo',
+      etiqueta: 'Descargo',
+      cantidad: -(r.cantidad || 0),
+      codigo: r.unidad_codigo || null,
+      documento: r.encabezado_id ? `DES-${String(r.cd_numero || r.encabezado_id).padStart(5, '0')}` : '—',
+      usuario: nombreUsuario(r.usuario),
+      deposito: nombreDeposito(r.deposito_id),
+      detalle: r.motivo || ''
+    });
+  });
+
+  // --- Ventas (salida) y devoluciones del cliente (entrada) ---
+  db.prepare(
+    `SELECT fi.cantidad, fi.unit_id, fi.codigo AS item_codigo, fi.es_devolucion,
+            f.created_at, f.usuario, f.deposito_id, f.numero_factura, f.es_nota_venta,
+            f.cliente_nombre, f.id AS factura_id,
+            u.codigo AS unidad_codigo
+     FROM factura_items fi
+     JOIN facturas f ON f.id = fi.factura_id
+     LEFT JOIN inventory_units u ON u.id = fi.unit_id
+     WHERE fi.product_id = ? AND f.created_at BETWEEN ? AND ?${filtroUnidad('fi.unit_id')}`
+  ).all(producto.id, rangoDesde, rangoHasta).forEach((r) => {
+    const esDevolucion = !!r.es_devolucion;
+    movimientos.push({
+      fecha: r.created_at,
+      tipo: esDevolucion ? 'devolucion_venta' : 'venta',
+      etiqueta: esDevolucion ? 'Devolución del cliente' : (r.es_nota_venta ? 'Venta (nota de venta)' : 'Venta'),
+      cantidad: esDevolucion ? (r.cantidad || 0) : -(r.cantidad || 0),
+      codigo: r.unidad_codigo || r.item_codigo || null,
+      documento: r.numero_factura || String(r.factura_id).padStart(6, '0'),
+      usuario: nombreUsuario(r.usuario),
+      deposito: nombreDeposito(r.deposito_id),
+      detalle: r.cliente_nombre || ''
+    });
+  });
+
+  // --- Traslados entre depositos (no cambian el stock total: cantidad 0) ---
+  db.prepare(
+    `SELECT td.cantidad, t.created_at, t.usuario, t.numero_traslado, t.nota,
+            t.deposito_origen_id, t.deposito_destino_id,
+            u.codigo AS unidad_codigo
+     FROM traslados_detalle td
+     JOIN traslados t ON t.id = td.traslado_id
+     LEFT JOIN inventory_units u ON u.id = td.unit_id
+     WHERE td.product_id = ? AND t.created_at BETWEEN ? AND ?${filtroUnidad('td.unit_id')}`
+  ).all(producto.id, rangoDesde, rangoHasta).forEach((r) => {
+    movimientos.push({
+      fecha: r.created_at,
+      tipo: 'traslado',
+      etiqueta: 'Traslado',
+      cantidad: 0,
+      codigo: r.unidad_codigo || null,
+      documento: `TRA-${String(r.numero_traslado || '').padStart(5, '0')}`,
+      usuario: nombreUsuario(r.usuario),
+      deposito: `${nombreDeposito(r.deposito_origen_id)} → ${nombreDeposito(r.deposito_destino_id)}`,
+      detalle: r.nota || ''
+    });
+  });
+
+  // Mas reciente primero (igual que el resto de los reportes del sistema). El desempate por
+  // etiqueta mantiene un orden estable cuando dos movimientos caen en el mismo segundo.
+  movimientos.sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : a.etiqueta.localeCompare(b.etiqueta)));
+
+  const entradas = movimientos.filter((m) => m.cantidad > 0).reduce((acc, m) => acc + m.cantidad, 0);
+  const salidas = movimientos.filter((m) => m.cantidad < 0).reduce((acc, m) => acc + Math.abs(m.cantidad), 0);
+
+  // Stock actual del producto (sumando todos los depositos) solo como referencia en pantalla.
+  // Ojo: si hay filtro de fechas, "entradas - salidas" es el movimiento NETO DEL RANGO, que no
+  // tiene por que coincidir con este stock -por eso se muestran como dos datos distintos.
+  const stockActual = obtenerStockPorDepositoDeTodosLosProductos(db)(producto.id).reduce((acc, d) => acc + d.cantidad, 0);
+
+  return {
+    ok: true,
+    producto: {
+      id: producto.id,
+      nombre: producto.nombre,
+      tipo: producto.tipo,
+      categoria: producto.categoria,
+      codigo_producto: producto.codigo_producto
+    },
+    codigoFiltrado: codigoLimpio || null,
+    movimientos,
+    entradas,
+    salidas,
+    neto: entradas - salidas,
+    stockActual
+  };
+}
+
+ipcMain.handle('reportes:historialMovimientos', (event, params = {}) => {
+  const db = getDb();
+  try {
+    return obtenerHistorialMovimientos(db, params);
+  } catch (err) {
+    console.error('Error en reportes:historialMovimientos', err);
+    return { ok: false, message: 'Error inesperado: ' + (err?.message || String(err)) };
+  }
+});
+
 // "Inventario Fisico": hoja de conteo por deposito -- para accesorios muestra la cantidad que
 // dice el sistema (para comparar contra el conteo real); para equipo/simcard/usim lista cada
 // unidad individual (IMEI/codigo) porque el conteo fisico de esos se hace unidad por unidad.
