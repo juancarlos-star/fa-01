@@ -1025,6 +1025,165 @@ function generarPDFMargenProductoFondo(reporte, desde, hasta, settings) {
   return { nombre: `Reporte-Margen-Por-Producto_${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
 }
 
+// =========================================================================================
+// CIERRE DE CAJA -- PDF con el detalle COMPLETO de cada cierre de caja (turno) que se le pase:
+// apertura/cierre, montos, arqueo (esperado/contado/diferencia) y el desglose por renglon de
+// pago (Efectivo Bs/USD, Tarjeta, Transferencia, Pago movil, Zelle, Otro) que ya se guardo en
+// su momento en la columna detalle_cierre_json de caja_turnos -el mismo desglose que ya se ve
+// en la pantalla de Caja al cerrar y en Reportes > Caja > Historial de cierres, solo que aqui
+// va completo (no solo el resumen de una fila de tabla) y en PDF, para poder adjuntarlo a un
+// correo o archivarlo. Recibe un array de turnos (filas de caja_turnos ya cerrados, con su
+// detalle_cierre_json) y arma una pagina por turno.
+// =========================================================================================
+const LABELS_RENGLON_FONDO = {
+  tarjeta: 'Tarjeta (Bs)',
+  transferencia: 'Transferencia (Bs)',
+  pago_movil: 'Pago movil (Bs)',
+  zelle: 'Zelle (USD)',
+  otro: 'Otro (Cashea, etc.)'
+};
+
+function textoDiferenciaFondo(dif, contado, simbolo) {
+  if (contado === null || contado === undefined) return 'Sin contar';
+  if (Math.abs(dif) < 0.01) return 'Cuadra exacto';
+  return dif > 0 ? `Sobran ${simbolo}${fmt(Math.abs(dif))}` : `Faltan ${simbolo}${fmt(Math.abs(dif))}`;
+}
+
+function generarPDFCierreCajaFondo(turnos, settings) {
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', compress: true });
+  const colorAcento = [11, 79, 158];
+
+  (turnos || []).forEach((turno, indice) => {
+    if (indice > 0) doc.addPage();
+
+    const yEmpresa = dibujarEncabezadoEmpresa(doc, settings, { x: 10, y: 15, maxWidth: 90 });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(colorAcento[0], colorAcento[1], colorAcento[2]);
+    doc.text('REPORTE DE CIERRE DE CAJA', 200, 15, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Turno #${turno.id}`, 200, 21, { align: 'right' });
+
+    let y = Math.max(30, yEmpresa + 6);
+    doc.setDrawColor(200);
+    doc.line(10, y, 200, y);
+    y += 8;
+
+    doc.setFontSize(10);
+    const filasEncabezado = [
+      ['Abierto', `${turno.apertura_at || '—'}  (por ${turno.usuario_apertura || '—'})`],
+      ['Cerrado', `${turno.cierre_at || '—'}  (por ${turno.usuario_cierre || '—'})`],
+      ['Rango cerrado', `${turno.rango_desde || turno.apertura_at || '—'}  al  ${turno.rango_hasta || turno.cierre_at || '—'}`],
+      ['Monto inicial', `$${fmt(turno.monto_inicial_usd)}  /  Bs ${fmt(turno.monto_inicial_bs)}`]
+    ];
+    filasEncabezado.forEach(([label, valor]) => {
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${label}:`, 10, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(valor, 55, y);
+      y += 6;
+    });
+    if (turno.notas_apertura) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('Notas apertura:', 10, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(turno.notas_apertura), 55, y, { maxWidth: 145 });
+      y += 6;
+    }
+    if (turno.notas_cierre) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('Notas cierre:', 10, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(String(turno.notas_cierre), 55, y, { maxWidth: 145 });
+      y += 6;
+    }
+
+    y += 2;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('ARQUEO', 10, y);
+    y += 3;
+    autoTable(doc, {
+      startY: y,
+      head: [['Moneda', 'Esperado', 'Contado', 'Diferencia']],
+      body: [
+        ['USD', `$${fmt(turno.esperado_usd)}`,
+          (turno.contado_usd !== null && turno.contado_usd !== undefined) ? `$${fmt(turno.contado_usd)}` : '—',
+          textoDiferenciaFondo(turno.diferencia_usd, turno.contado_usd, '$')],
+        ['Bs', `Bs ${fmt(turno.esperado_bs)}`,
+          (turno.contado_bs !== null && turno.contado_bs !== undefined) ? `Bs ${fmt(turno.contado_bs)}` : '—',
+          textoDiferenciaFondo(turno.diferencia_bs, turno.contado_bs, 'Bs ')]
+      ],
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: colorAcento, textColor: [255, 255, 255] },
+      margin: { left: 10, right: 10 }
+    });
+
+    y = doc.lastAutoTable.finalY + 8;
+
+    let detalle = null;
+    try { detalle = turno.detalle_cierre_json ? JSON.parse(turno.detalle_cierre_json) : null; } catch (err) { detalle = null; }
+
+    if (detalle) {
+      const { renglones, conteoDocumentos, tasaCambio, totalUsdConsolidado } = detalle;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('DESGLOSE POR RENGLON', 10, y);
+
+      autoTable(doc, {
+        startY: y + 3,
+        head: [['Renglon', 'Monto']],
+        body: [
+          ['Efectivo Bs', `Bs ${fmt(renglones.efectivo.bs)}`],
+          ['Efectivo USD', `$${fmt(renglones.efectivo.usd)}`],
+          [LABELS_RENGLON_FONDO.tarjeta, `Bs ${fmt(renglones.tarjeta.bs)}`],
+          [LABELS_RENGLON_FONDO.transferencia, `Bs ${fmt(renglones.transferencia.bs)}`],
+          [LABELS_RENGLON_FONDO.pago_movil, `Bs ${fmt(renglones.pago_movil.bs)}`],
+          [LABELS_RENGLON_FONDO.zelle, `$${fmt(renglones.zelle.usd)}`],
+          [LABELS_RENGLON_FONDO.otro, `${renglones.otro.bs ? 'Bs ' + fmt(renglones.otro.bs) : ''}${renglones.otro.bs && renglones.otro.usd ? ' + ' : ''}${renglones.otro.usd ? '$' + fmt(renglones.otro.usd) : ''}${(!renglones.otro.bs && !renglones.otro.usd) ? '—' : ''}`]
+        ],
+        theme: 'grid',
+        styles: { fontSize: 9, cellPadding: 2 },
+        headStyles: { fillColor: colorAcento, textColor: [255, 255, 255] },
+        margin: { left: 10, right: 10 },
+        didDrawPage: () => dibujarPiePaginaEmpresa(doc, settings)
+      });
+
+      y = doc.lastAutoTable.finalY + 6;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(
+        `Facturas: ${conteoDocumentos.facturas}   —   Notas de venta: ${conteoDocumentos.notasVenta}   —   Devoluciones: ${conteoDocumentos.devoluciones}`,
+        10, y
+      );
+      y += 6;
+      doc.text(`Tasa de cambio usada: Bs ${fmt(tasaCambio)} / USD`, 10, y);
+      y += 8;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(`Total consolidado: $${fmt(totalUsdConsolidado)}`, 10, y);
+    } else {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text('No hay desglose detallado guardado para este cierre.', 10, y);
+      dibujarPiePaginaEmpresa(doc, settings);
+    }
+  });
+
+  if (!turnos || turnos.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text('No hubo cierres de caja en este periodo.', 10, 20);
+  }
+
+  const fechaArchivo = new Date().toISOString().slice(0, 10);
+  return { nombre: `Reporte-Cierre-Caja_${fechaArchivo}.pdf`, buffer: docABuffer(doc) };
+}
+
 module.exports = {
   fmt,
   agruparItemsPorProducto,
@@ -1039,5 +1198,6 @@ module.exports = {
   generarPDFInventarioFisicoFondo,
   generarPDFGananciasFondo,
   generarPDFStockMuertoFondo,
-  generarPDFMargenProductoFondo
+  generarPDFMargenProductoFondo,
+  generarPDFCierreCajaFondo
 };

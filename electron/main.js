@@ -16,7 +16,8 @@ const {
   generarPDFInventarioFisicoFondo,
   generarPDFGananciasFondo,
   generarPDFStockMuertoFondo,
-  generarPDFMargenProductoFondo
+  generarPDFMargenProductoFondo,
+  generarPDFCierreCajaFondo
 } = require('./pdfGeneradoresFondo');
 
 // ---------- Helpers de STOCK POR DEPOSITO (accesorios) ----------
@@ -3444,6 +3445,16 @@ ipcMain.handle('caja:cerrar', (event, { id, usuario, contadoUsd, contadoBs, nota
     (notas || '').trim() || null, rangoDesde, rangoHasta, JSON.stringify(detalle), id
   );
   const turnoCerrado = db.prepare('SELECT * FROM caja_turnos WHERE id = ?').get(id);
+
+  // Dispara el mismo envio de correo (backup + todos los reportes del dia + el PDF de Cierre
+  // de Caja, que ya incluye este turno recien cerrado porque su cierre_at es de hoy) que se
+  // hace al cerrar el programa. Se hace en segundo plano, sin esperar la respuesta ni bloquear
+  // la pantalla de Caja: un fallo de correo aqui jamas debe deshacer ni retrasar el cierre del
+  // turno, que ya quedo guardado en la linea de arriba.
+  respaldarYNotificarAlCerrar().catch((err) => {
+    console.error('Error enviando reportes tras el cierre de caja:', err);
+  });
+
   return { ok: true, turno: turnoCerrado };
 });
 
@@ -4040,7 +4051,7 @@ function recolectarDocumentosDeHoy(db, settings) {
 
 
 // inventario (unidades y valor) tal como quedo al momento de cerrar el programa.
-function generarResumenDiarioTexto(db, cantidadDocumentosHoy) {
+function generarResumenDiarioTexto(db, cantidadDocumentosHoy, cantidadCierresCajaHoy = 0) {
   const hoyLegible = new Date().toLocaleDateString('es-VE');
 
   const ventasHoy = db.prepare(
@@ -4093,8 +4104,12 @@ function generarResumenDiarioTexto(db, cantidadDocumentosHoy) {
   }
   lineas.push('Ademas se adjunta el Reporte de Inventario - Productos (Deposito: Todos) y la Hoja de');
   lineas.push('Conteo Fisico de Inventario de cada deposito activo.');
+  if (cantidadCierresCajaHoy > 0) {
+    lineas.push(`Se adjunta tambien el Reporte de Cierre de Caja, con el detalle completo de ${cantidadCierresCajaHoy}`);
+    lineas.push(`${cantidadCierresCajaHoy === 1 ? 'cierre de caja realizado hoy' : 'cierres de caja realizados hoy'}.`);
+  }
   lineas.push('');
-  lineas.push('Este correo se genera y se envía automáticamente al cerrar MoviSync.');
+  lineas.push('Este correo se genera y se envía automáticamente al cerrar MoviSync o al hacer un cierre de caja.');
   return lineas.join('\n');
 }
 
@@ -4222,10 +4237,29 @@ async function respaldarYNotificarAlCerrar() {
       registrarLogBackup('Aviso: fallo generando el Reporte de Margen Real por Producto: ' + (err?.message || String(err)));
     }
 
+    // Reporte de Cierre de Caja: se adjunta el detalle COMPLETO de cada turno de caja cerrado
+    // HOY (puede haber mas de uno si se abrio/cerro varias veces en el dia). Se dispara tanto
+    // al cerrar el programa como al hacer un cierre de caja puntual (ver caja:cerrar, que
+    // dispara esta misma funcion justo despues de cerrar el turno), asi que el turno recien
+    // cerrado siempre queda incluido en este corte.
+    let turnosCerradosHoy = [];
+    try {
+      turnosCerradosHoy = db.prepare(
+        "SELECT * FROM caja_turnos WHERE estado = 'cerrado' AND date(cierre_at) = date('now','localtime') ORDER BY id"
+      ).all();
+      if (turnosCerradosHoy.length > 0) {
+        const pdfCierreCaja = generarPDFCierreCajaFondo(turnosCerradosHoy, settingsObj);
+        adjuntos.push({ nombre: pdfCierreCaja.nombre, buffer: pdfCierreCaja.buffer });
+      }
+    } catch (err) {
+      console.error('No se pudo generar el Reporte de Cierre de Caja:', err);
+      registrarLogBackup('Aviso: fallo generando el Reporte de Cierre de Caja: ' + (err?.message || String(err)));
+    }
+
     const pesoTotalMB = (adjuntos.reduce((acc, a) => acc + a.buffer.length, 0) / (1024 * 1024)).toFixed(2);
     registrarLogBackup(`Enviando correo con ${adjuntos.length} adjunto(s), ${pesoTotalMB} MB en total...`);
 
-    const textoBody = generarResumenDiarioTexto(db, cantidadDocumentosHoy);
+    const textoBody = generarResumenDiarioTexto(db, cantidadDocumentosHoy, turnosCerradosHoy.length);
     await enviarCorreoConAdjunto({
       host: 'smtp.gmail.com',
       port: 465,
