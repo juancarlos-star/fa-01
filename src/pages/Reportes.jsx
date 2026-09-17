@@ -30,7 +30,8 @@ import {
   generarPDFLibroVentasIva,
   generarPDFLibroComprasIva,
   generarPDFCatalogo,
-  generarPDFHistorialMovimientos
+  generarPDFHistorialMovimientos,
+  generarPDFHistorialCierresCaja
 } from '../utils/generarReportesPDF.js';import { fmt } from '../utils/format.js';
 
 // Reportes organizados por categorias (Inventario, Vendedores, Ventas, Compras...), cada una
@@ -3532,6 +3533,7 @@ function ReporteAuditoria({ desde, hasta }) {
 function ReporteHistorialCierresCaja({ desde, hasta }) {
   const [turnos, setTurnos] = useState(null);
   const [cargando, setCargando] = useState(false);
+  const [generandoPDF, setGenerandoPDF] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -3541,6 +3543,17 @@ function ReporteHistorialCierresCaja({ desde, hasta }) {
   }, [desde, hasta]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  const descargarPDF = async (imprimir = false) => {
+    setGenerandoPDF(true);
+    try {
+      // Solo los turnos ya CERRADOS tienen detalle_cierre_json guardado -uno abierto todavia
+      // no tiene arqueo ni desglose que mostrar.
+      await generarPDFHistorialCierresCaja((turnos || []).filter((t) => t.estado === 'cerrado'), desde, hasta, { imprimir });
+    } finally {
+      setGenerandoPDF(false);
+    }
+  };
 
   const colorDiferencia = (dif) => {
     if (dif === null || dif === undefined) return '#667085';
@@ -3559,6 +3572,9 @@ function ReporteHistorialCierresCaja({ desde, hasta }) {
 
   return (
     <div style={{ marginTop: '1rem' }}>
+      {turnos.some((t) => t.estado === 'cerrado') && (
+        <BotonPDF onClick={descargarPDF} generando={generandoPDF} />
+      )}
       {turnos.length === 0 ? (
         <p>No hay turnos de caja en este rango de fechas.</p>
       ) : (
